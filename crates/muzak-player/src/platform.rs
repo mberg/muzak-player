@@ -80,7 +80,10 @@ pub fn parse_connected(bluetoothctl_info: &str) -> bool {
 }
 
 async fn bluetoothctl(args: &[&str]) -> Option<String> {
-    let run = Command::new("bluetoothctl").args(args).output();
+    let run = Command::new("bluetoothctl")
+        .args(args)
+        .kill_on_drop(true)
+        .output();
     match tokio::time::timeout(Duration::from_secs(10), run).await {
         Ok(Ok(output)) => Some(String::from_utf8_lossy(&output.stdout).into_owned()),
         _ => None,

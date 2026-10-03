@@ -18,6 +18,7 @@ grep -q '^dtoverlay=vc4-kms-dsi-7inch' "$CONFIG" || echo 'dtoverlay=vc4-kms-dsi-
 grep -q '^dtparam=audio=on' "$CONFIG" || echo 'dtparam=audio=on' >> "$CONFIG"
 CMDLINE=/boot/firmware/cmdline.txt
 grep -q 'vt.global_cursor_default=0' "$CMDLINE" || sed -i '1 s/$/ vt.global_cursor_default=0 consoleblank=0/' "$CMDLINE"
+grep -q 'loglevel=3' "$CMDLINE" || sed -i '1 s/$/ quiet loglevel=3/' "$CMDLINE"
 
 cat > /etc/udev/rules.d/90-muzak-backlight.rules <<'EOR'
 SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"

@@ -1,5 +1,6 @@
 //! Mac-side setup: sign a kid's Spotify account in and check Web API access.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow, bail};
@@ -70,10 +71,13 @@ async fn auth(state_dir: &Path) -> anyhow::Result<()> {
     session
         .connect(Credentials::with_access_token(token.access_token), true)
         .await?;
+    let credentials = dir.join("credentials.json");
+    std::fs::set_permissions(&credentials, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("restricting {}", credentials.display()))?;
     println!(
         "Signed in as {}. Saved {}",
         session.username(),
-        dir.join("credentials.json").display()
+        credentials.display()
     );
     Ok(())
 }
