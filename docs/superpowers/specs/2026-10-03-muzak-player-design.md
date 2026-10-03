@@ -28,7 +28,7 @@ Success means:
 | Language | Rust |
 | UI | Slint, `linuxkms` backend on the Pi (no X/Wayland), GPU renderer; normal window on macOS |
 | Playback | librespot embedded as a library (fallback: go-librespot as a separate process) |
-| Content data | Spotify Web API via the parent's own developer app |
+| Content data | Spotify Web API, using access tokens from the librespot session (no developer app needed). Fallback if Spotify rejects those tokens: the parent's own developer app. |
 | Voice | openWakeWord models run in-process (fallback: Porcupine), then Gemini Flash with audio input and function calling |
 | OS | Raspberry Pi OS Lite 64-bit, no desktop |
 | Configuration | Done off-device with `muzak-setup` on the Mac, pushed over SSH. No settings UI on the device. |
@@ -82,25 +82,24 @@ Out of v1: typed search (needs a custom on-screen keyboard; voice covers search)
 
 ## Setup, authentication, configuration
 
-**Spotify developer app.** The parent creates one app at developer.spotify.com and allowlists both kids' accounts as users. Development-mode limits must be checked at implementation time (see Open items).
+**Web API access.** librespot can issue Web API access tokens for the signed-in account (this is how other librespot-based players browse Spotify). That avoids a developer app and its development-mode limits. `muzak-setup probe` checks this works for each endpoint we use. If Spotify rejects these tokens, the fallback is the parent's own developer app at developer.spotify.com with both kids' accounts allowlisted.
 
-**Sign-in.** Spotify only allows OAuth redirects to HTTPS or to loopback (`127.0.0.1`), so sign-in runs on the Mac. `muzak-setup auth <device>`:
+**Sign-in.** Spotify only allows OAuth redirects to HTTPS or to loopback (`127.0.0.1`), so sign-in runs on the Mac. `muzak-setup auth --state-dir secrets/<kid>`:
 
 1. Runs a loopback OAuth flow in the Mac browser; the parent signs in as the kid.
-2. Obtains librespot playback credentials and a Web API refresh token.
-3. Copies both to the device over SSH.
+2. Connects a librespot session once, which saves reusable credentials to `secrets/<kid>/librespot/credentials.json`.
 
-Tokens refresh automatically on the device.
+`scripts/deploy.sh` copies that file to the device. The device mints fresh access tokens from it as needed.
 
-**Configuration.** `muzak-setup` writes `/etc/muzak/config.toml` on each device:
+**Configuration.** Each device has a TOML file in `devices/<kid>.toml`, installed by `scripts/deploy.sh` as `/etc/muzak/config.toml`:
 
 - device name (also the Spotify Connect name)
-- audio output (`jack` or a Bluetooth speaker address)
-- Gemini API key and model name
-- wake word model
+- audio backend and ALSA device (headphone jack or a bluez-alsa Bluetooth device)
+- Bluetooth speaker address, if any
+- initial volume
 - dim and sleep timeouts
 
-The device never edits its own config.
+Gemini and wake word settings are added in phase 2. The device never edits its own config.
 
 **Cache.** JSON files for playlist/album lists and track lists, plus image files for covers, under `/var/lib/muzak/`. No database.
 
@@ -134,7 +133,7 @@ Privacy: audio is sent to Google only after the wake word. Use a paid Gemini API
 | No Wi-Fi | Cached grids; "No internet" on Play | Retries in the background and recovers automatically |
 | Spotify auth invalid | "Ask a grown-up" screen | Logs it; the parent reruns `muzak-setup auth` |
 | Track unavailable | Skips to the next track | Logs the track |
-| Account playing elsewhere | Paused, with the other device's name | Normal Spotify Connect behavior |
+| Account playing elsewhere | Paused (librespot does not report the other device's name) | Normal Spotify Connect behavior |
 | Bluetooth speaker missing | "Speaker not connected" | Retries the connection |
 | Gemini error or no match | "Sorry, I didn't catch that" | Restores the volume |
 | Process crash | Brief blank screen | systemd restarts it within about 2 seconds |
@@ -149,12 +148,12 @@ Logs go to journald.
   - Tests for voice intent resolution and fuzzy matching.
   - Tests for cache read/write, using recorded Web API fixtures.
   - No hardware or network needed.
-- **Build:** `cargo zigbuild --target aarch64-unknown-linux-gnu` on the Mac.
-- **`muzak-setup` commands:**
-  - `provision <device>`: one-time OS setup over SSH (display overlay, audio, bluez-alsa and speaker pairing, systemd unit, journald limits).
-  - `auth <device>`: sign-in, as above.
-  - `deploy <device>`: copy the binary and config, then restart the service.
-- **Optional memory check:** run the arm64 Linux build in Docker with `--memory=512m`.
+- **Build:** `scripts/build-pi.sh` compiles inside an arm64 Debian Trixie container (native speed on Apple Silicon). This avoids cross-compiling the ALSA, DRM and libinput system libraries.
+- **Commands:**
+  - `muzak-setup auth` and `muzak-setup probe`: sign-in and Web API check, as above.
+  - `scripts/provision.sh <host>`: one-time OS setup over SSH (display overlay, audio, bluez-alsa, systemd unit, journald limits).
+  - `scripts/deploy.sh <host> <config> [secrets-dir]`: copy the binary, config and credentials, then restart the service.
+- **Memory check:** read the service's memory use on the Pi (`systemctl status`) during the hardware checklist.
 - **Hardware checklist per release:**
   - boots into the app
   - touch works
@@ -184,8 +183,8 @@ Each phase gets its own implementation plan.
 
 ## Open items to verify during implementation
 
-- Current Spotify Web API development-mode limits: allowlisted user count, Premium requirement for the app owner, and endpoint availability (user playlists, saved albums, liked songs, recently played, search).
-- How librespot's OAuth login works for headless credential creation, and whether its credentials cache can be copied between machines.
+- Whether the Web API accepts librespot session tokens for every endpoint we use (`muzak-setup probe`). If not, switch to the developer-app fallback and check its development-mode limits.
+- Whether the playlist items endpoint is `/playlists/{id}/items` or `/playlists/{id}/tracks` in 2026. The client tries `items` first and falls back to `tracks`.
 - Slint `linuxkms` backend with the vc4 KMS driver on Pi 3 A+: renderer choice (FemtoVG vs Skia) and touch input via libinput.
 - openWakeWord inference cost on the Cortex-A53, and the choice between `ort` and `tract`.
 - Porcupine free-tier terms, if the fallback is needed.
