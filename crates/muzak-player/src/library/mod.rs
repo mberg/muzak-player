@@ -1,3 +1,6 @@
+pub mod cache;
+pub mod fake;
+pub mod service;
 pub mod web_api;
 
 use std::future::Future;
