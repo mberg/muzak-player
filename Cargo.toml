@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["crates/muzak-player", "crates/muzak-setup"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+librespot = { version = "0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"] }
