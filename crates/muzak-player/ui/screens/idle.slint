@@ -1,0 +1,20 @@
+import { Theme } from "../theme.slint";
+
+// mode 1 = dim (clock), mode 2 = off (black). Any tap wakes.
+export component IdleOverlay inherits Rectangle {
+    in property <int> mode;
+    in property <string> clock;
+    callback touched();
+    background: root.mode == 2 ? #000000 : #000000c0;
+    animate background { duration: 600ms; }
+    Text {
+        visible: root.mode == 1;
+        text: root.clock;
+        color: Theme.text;
+        font-size: 96px;
+        font-weight: 800;
+    }
+    TouchArea {
+        clicked => { root.touched(); }
+    }
+}

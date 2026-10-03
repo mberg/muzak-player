@@ -1,0 +1,36 @@
+import { Theme } from "../theme.slint";
+
+export component PillButton inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> primary: false;
+    callback clicked();
+    height: Theme.touch;
+    min-width: 120px;
+    border-radius: root.height / 2;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : (touch.pressed ? Theme.surface-hi : Theme.surface);
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 22px;
+        spacing: 8px;
+        alignment: center;
+        Image {
+            source: root.icon;
+            width: 26px;
+            height: 26px;
+            colorize: root.primary ? Theme.accent-text : Theme.text;
+        }
+        Text {
+            text: root.label;
+            color: root.primary ? Theme.accent-text : Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

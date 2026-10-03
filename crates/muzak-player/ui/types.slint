@@ -1,0 +1,18 @@
+export struct TileData {
+    uri: string,
+    title: string,
+    subtitle: string,
+    image: image,
+    has-image: bool,
+}
+
+export struct TrackData {
+    title: string,
+    artists: string,
+    duration: string,
+    current: bool,
+}
+
+export enum ScreenKind { grid, detail, now-playing }
+
+export enum LoadState { loading, empty, failed, ready }

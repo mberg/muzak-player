@@ -1,0 +1,47 @@
+import { Theme } from "../theme.slint";
+import { IconButton } from "icon_button.slint";
+
+export component MiniPlayer inherits Rectangle {
+    in property <string> title;
+    in property <string> artists;
+    in property <image> art;
+    in property <bool> has-art;
+    in property <bool> playing;
+    callback open();
+    callback toggle-play();
+    height: Theme.mini-height;
+    background: Theme.surface;
+    TouchArea {
+        clicked => { root.open(); }
+    }
+    HorizontalLayout {
+        padding: 8px;
+        padding-right: 16px;
+        spacing: 12px;
+        Rectangle {
+            width: 64px;
+            height: 64px;
+            border-radius: 8px;
+            clip: true;
+            background: Theme.surface-hi;
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.art;
+                image-fit: cover;
+                visible: root.has-art;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text { text: root.title; color: Theme.text; font-size: Theme.font-body; font-weight: 800; overflow: elide; }
+            Text { text: root.artists; color: Theme.text-dim; font-size: Theme.font-small; overflow: elide; }
+        }
+        IconButton {
+            size: Theme.touch;
+            primary: true;
+            icon: root.playing ? @image-url("../icons/pause.svg") : @image-url("../icons/play.svg");
+            clicked => { root.toggle-play(); }
+        }
+    }
+}

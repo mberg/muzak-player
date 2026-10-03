@@ -1,0 +1,14 @@
+import { Theme } from "../theme.slint";
+import { LoadState } from "../types.slint";
+
+export component StateMessage inherits Rectangle {
+    in property <LoadState> state;
+    in property <string> empty-text: "Nothing here yet";
+    Text {
+        text: root.state == LoadState.loading ? "Loading…"
+            : root.state == LoadState.failed ? "Can't load this right now"
+            : root.empty-text;
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+    }
+}

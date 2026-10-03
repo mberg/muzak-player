@@ -7,4 +7,5 @@ pub mod library;
 pub mod model;
 pub mod player;
 pub mod runtime;
+pub mod ui_bridge;
 pub mod view;

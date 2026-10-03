@@ -1,0 +1,41 @@
+import { Theme } from "../theme.slint";
+import { TrackData } from "../types.slint";
+
+export component TrackRow inherits Rectangle {
+    in property <TrackData> data;
+    callback clicked();
+    height: Theme.touch;
+    border-radius: 10px;
+    background: touch.pressed ? Theme.surface-hi : transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.data.title;
+                color: root.data.current ? Theme.accent : Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 800;
+                overflow: elide;
+            }
+            Text {
+                text: root.data.artists;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                overflow: elide;
+            }
+        }
+        Text {
+            text: root.data.duration;
+            color: Theme.text-dim;
+            font-size: Theme.font-small;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
