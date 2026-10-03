@@ -51,17 +51,135 @@ enum Exit {
     CommandsClosed,
 }
 
+#[derive(Debug, PartialEq)]
 enum Failure {
-    Auth,
+    /// No credentials.json on disk.
+    NoCredentials,
+    /// Spotify rejected the stored credentials (or the account cannot stream).
+    BadCredentials,
+    /// Anything else (network, captive portal, HTTP 403, ...): retry.
     Other(String),
+}
+
+/// Only a definite login rejection is fatal. HTTP 401/403 from other services and
+/// io errors also map to Unauthenticated/PermissionDenied, so the error kind alone is not used.
+/// librespot-core does not export its `AuthenticationError`, so the login failure is matched by
+/// the message librespot-core 0.8.0 gives each `ErrorCode` (`connection::login_error_message`).
+fn classify(e: &SpotifyError) -> Failure {
+    const FATAL: [&str; 3] = [
+        "Login failed with reason: Bad credentials",
+        "Login failed with reason: Could not validate credentials",
+        "Login failed with reason: Premium account required",
+    ];
+    let message = e.to_string();
+    if e.kind == ErrorKind::PermissionDenied && FATAL.iter().any(|m| message.contains(m)) {
+        Failure::BadCredentials
+    } else {
+        Failure::Other(message)
+    }
 }
 
 impl From<SpotifyError> for Failure {
     fn from(e: SpotifyError) -> Self {
-        match e.kind {
-            ErrorKind::Unauthenticated | ErrorKind::PermissionDenied => Failure::Auth,
-            _ => Failure::Other(e.to_string()),
+        classify(&e)
+    }
+}
+
+const STABLE_AFTER: Duration = Duration::from_secs(30);
+const MIN_BACKOFF: Duration = Duration::from_secs(2);
+const MAX_BACKOFF: Duration = Duration::from_secs(60);
+
+/// How long to wait before reconnecting. A connection that stayed up resets the backoff.
+fn sleep_for(current: Duration, uptime: Duration) -> Duration {
+    if uptime >= STABLE_AFTER {
+        MIN_BACKOFF
+    } else {
+        current
+    }
+}
+
+fn next_backoff(slept: Duration) -> Duration {
+    (slept * 2).min(MAX_BACKOFF)
+}
+
+/// What this adapter knows about the Connect device, kept across reconnects.
+#[derive(Debug, Default)]
+struct Tracking {
+    /// True while this device is the active Connect device. Spirc ignores most commands otherwise.
+    active: bool,
+    last_context: Option<(String, bool)>,
+    track_uri: Option<String>,
+    position_ms: u32,
+}
+
+impl Tracking {
+    fn observe(&mut self, event: &PlayerEvent) {
+        match event {
+            PlayerEvent::SessionConnected { .. } => self.active = true,
+            PlayerEvent::SessionDisconnected { .. } => self.active = false,
+            PlayerEvent::TrackChanged { audio_item } => {
+                self.track_uri = Some(audio_item.uri.clone());
+                self.position_ms = 0;
+            }
+            PlayerEvent::Playing { position_ms, .. }
+            | PlayerEvent::Paused { position_ms, .. }
+            | PlayerEvent::PositionChanged { position_ms, .. }
+            | PlayerEvent::Seeked { position_ms, .. }
+            | PlayerEvent::PositionCorrection { position_ms, .. } => {
+                self.position_ms = *position_ms
+            }
+            _ => {}
         }
+    }
+
+    fn note_command(&mut self, command: &PlayerCommand) {
+        if let PlayerCommand::Load {
+            context_uri,
+            shuffle,
+            ..
+        } = command
+        {
+            self.last_context = Some((context_uri.clone(), *shuffle));
+            self.track_uri = None;
+            self.position_ms = 0;
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// Hand the command to Spirc.
+    Forward,
+    /// Re-activate this device and reload the last context at the remembered track and position.
+    Resume {
+        context_uri: String,
+        shuffle: bool,
+        track_uri: Option<String>,
+        position_ms: u32,
+    },
+    /// Answer from the adapter without touching Spirc.
+    Report(PlayerUpdate),
+    Skip,
+}
+
+fn route(state: &Tracking, command: &PlayerCommand) -> Route {
+    if state.active || matches!(command, PlayerCommand::Load { .. }) {
+        return Route::Forward;
+    }
+    match command {
+        PlayerCommand::Play => match &state.last_context {
+            Some((uri, shuffle)) => Route::Resume {
+                context_uri: uri.clone(),
+                shuffle: *shuffle,
+                track_uri: state.track_uri.clone(),
+                position_ms: state.position_ms,
+            },
+            None => Route::Report(PlayerUpdate::Stopped),
+        },
+        PlayerCommand::Pause => Route::Report(PlayerUpdate::Paused {
+            position_ms: state.position_ms,
+        }),
+        _ => Route::Skip,
     }
 }
 
@@ -81,18 +199,33 @@ async fn run(
     inputs: UnboundedSender<Input>,
     mut commands: UnboundedReceiver<PlayerCommand>,
 ) {
-    let mut backoff = Duration::from_secs(2);
+    let mut backoff = MIN_BACKOFF;
+    let mut tracking = Tracking::default();
     loop {
         // Commands queued while disconnected are stale.
         while commands.try_recv().is_ok() {}
-        match connect_and_serve(&settings, &session_tx, &inputs, &mut commands).await {
+        tracking.active = false;
+        let started = std::time::Instant::now();
+        match connect_and_serve(
+            &settings,
+            &session_tx,
+            &inputs,
+            &mut commands,
+            &mut tracking,
+        )
+        .await
+        {
             Ok(Exit::CommandsClosed) => return,
-            Ok(Exit::Disconnected) => {
-                tracing::warn!("Spotify connection ended; reconnecting");
-                backoff = Duration::from_secs(2);
+            Ok(Exit::Disconnected) => tracing::warn!("Spotify connection ended; reconnecting"),
+            Err(Failure::NoCredentials) => {
+                tracing::error!("no Spotify credentials found; run muzak-setup auth");
+                session_tx.send_replace(None);
+                let _ = inputs.send(Input::AuthInvalid);
+                return;
             }
-            Err(Failure::Auth) => {
+            Err(Failure::BadCredentials) => {
                 tracing::error!("Spotify credentials rejected; rerun muzak-setup auth");
+                session_tx.send_replace(None);
                 let _ = inputs.send(Input::AuthInvalid);
                 return;
             }
@@ -100,8 +233,9 @@ async fn run(
         }
         session_tx.send_replace(None);
         let _ = inputs.send(Input::Player(PlayerUpdate::Disconnected));
-        tokio::time::sleep(backoff).await;
-        backoff = (backoff * 2).min(Duration::from_secs(60));
+        let sleep = sleep_for(backoff, started.elapsed());
+        tokio::time::sleep(sleep).await;
+        backoff = next_backoff(sleep);
     }
 }
 
@@ -110,10 +244,11 @@ async fn connect_and_serve(
     session_tx: &watch::Sender<Option<Session>>,
     inputs: &UnboundedSender<Input>,
     commands: &mut UnboundedReceiver<PlayerCommand>,
+    tracking: &mut Tracking,
 ) -> Result<Exit, Failure> {
     let dir = &settings.credentials_dir;
     let cache = Cache::new(Some(dir), Some(dir), None, None)?;
-    let credentials = cache.credentials().ok_or(Failure::Auth)?;
+    let credentials = cache.credentials().ok_or(Failure::NoCredentials)?;
     let session = Session::new(SessionConfig::default(), Some(cache));
 
     let mixer_builder = mixer::find(None).ok_or_else(|| Failure::Other("no mixer".into()))?;
@@ -150,17 +285,33 @@ async fn connect_and_serve(
             _ = &mut spirc_task => return Ok(Exit::Disconnected),
             command = commands.recv() => match command {
                 Some(command) => {
-                    if let Err(e) = apply(&spirc, &session, command) {
-                        tracing::warn!("player command failed: {e}");
+                    tracking.note_command(&command);
+                    match route(tracking, &command) {
+                        Route::Forward => {
+                            if let Err(e) = apply(&spirc, &session, command) {
+                                tracing::warn!("player command failed: {e}");
+                            }
+                        }
+                        Route::Resume { context_uri, shuffle, track_uri, position_ms } => {
+                            if let Err(e) = resume(&spirc, &session, &context_uri, shuffle, track_uri, position_ms) {
+                                tracing::warn!("resume failed: {e}");
+                            }
+                        }
+                        Route::Report(update) => {
+                            let _ = inputs.send(Input::Player(update));
+                        }
+                        Route::Skip => tracing::debug!("skipping {command:?} while inactive"),
                     }
                 }
                 None => {
                     let _ = spirc.shutdown();
+                    let _ = tokio::time::timeout(Duration::from_secs(2), &mut spirc_task).await;
                     return Ok(Exit::CommandsClosed);
                 }
             },
             event = events.recv() => match event {
                 Some(event) => {
+                    tracking.observe(&event);
                     if let Some(update) = map_event(event) {
                         let _ = inputs.send(Input::Player(update));
                     }
@@ -179,6 +330,45 @@ pub(crate) fn context_uri_for(context_uri: &str, username: &str) -> String {
     }
 }
 
+fn load_request(
+    context_uri: String,
+    shuffle: bool,
+    playing_track: Option<PlayingTrack>,
+    seek_to: u32,
+) -> LoadRequest {
+    LoadRequest::from_context_uri(
+        context_uri,
+        LoadRequestOptions {
+            start_playing: true,
+            seek_to,
+            context_options: Some(LoadContextOptions::Options(Options {
+                shuffle,
+                repeat: false,
+                repeat_track: false,
+            })),
+            playing_track,
+        },
+    )
+}
+
+fn resume(
+    spirc: &Spirc,
+    session: &Session,
+    context_uri: &str,
+    shuffle: bool,
+    track_uri: Option<String>,
+    position_ms: u32,
+) -> Result<(), SpotifyError> {
+    let uri = context_uri_for(context_uri, &session.username());
+    spirc.activate()?;
+    spirc.load(load_request(
+        uri,
+        shuffle,
+        track_uri.map(PlayingTrack::Uri),
+        position_ms,
+    ))
+}
+
 fn apply(spirc: &Spirc, session: &Session, command: PlayerCommand) -> Result<(), SpotifyError> {
     match command {
         PlayerCommand::Load {
@@ -188,18 +378,11 @@ fn apply(spirc: &Spirc, session: &Session, command: PlayerCommand) -> Result<(),
         } => {
             let uri = context_uri_for(&context_uri, &session.username());
             spirc.activate()?;
-            spirc.load(LoadRequest::from_context_uri(
+            spirc.load(load_request(
                 uri,
-                LoadRequestOptions {
-                    start_playing: true,
-                    seek_to: 0,
-                    context_options: Some(LoadContextOptions::Options(Options {
-                        shuffle,
-                        repeat: false,
-                        repeat_track: false,
-                    })),
-                    playing_track: start_index.map(PlayingTrack::Index),
-                },
+                shuffle,
+                start_index.map(PlayingTrack::Index),
+                0,
             ))
         }
         PlayerCommand::Play => spirc.play(),
@@ -242,8 +425,6 @@ pub fn map_event(event: PlayerEvent) -> Option<PlayerUpdate> {
             Repeat::Off
         }),
         PlayerEvent::Unavailable { .. } => PlayerUpdate::Unavailable,
-        PlayerEvent::SessionConnected { .. } => PlayerUpdate::Connected,
-        PlayerEvent::SessionDisconnected { .. } => PlayerUpdate::Disconnected,
         _ => return None,
     })
 }
@@ -328,6 +509,21 @@ mod tests {
             Some(PlayerUpdate::Unavailable)
         );
         assert_eq!(map_event(PlayerEvent::Preloading { track_id: uri() }), None);
+        // Connect activation is not network state.
+        assert_eq!(
+            map_event(PlayerEvent::SessionConnected {
+                connection_id: "c".into(),
+                user_name: "u".into()
+            }),
+            None
+        );
+        assert_eq!(
+            map_event(PlayerEvent::SessionDisconnected {
+                connection_id: "c".into(),
+                user_name: "u".into()
+            }),
+            None
+        );
     }
 
     #[test]
@@ -366,5 +562,139 @@ mod tests {
             context_uri_for("spotify:album:x", "kid1"),
             "spotify:album:x"
         );
+    }
+
+    fn login(reason: &str) -> SpotifyError {
+        // Same shape librespot-core builds for AuthenticationError::LoginFailed.
+        SpotifyError::permission_denied(format!("Login failed with reason: {reason}"))
+    }
+
+    #[test]
+    fn only_definite_login_rejections_are_fatal() {
+        assert_eq!(classify(&login("Bad credentials")), Failure::BadCredentials);
+        assert_eq!(
+            classify(&login("Could not validate credentials")),
+            Failure::BadCredentials
+        );
+        assert_eq!(
+            classify(&login("Premium account required")),
+            Failure::BadCredentials
+        );
+        assert!(matches!(
+            classify(&login("Try another access point")),
+            Failure::Other(_)
+        ));
+        assert!(matches!(
+            classify(&login("Travel restriction")),
+            Failure::Other(_)
+        ));
+        assert!(matches!(
+            classify(&SpotifyError::unauthenticated("http 401")),
+            Failure::Other(_)
+        ));
+        assert!(matches!(
+            classify(&SpotifyError::permission_denied("http 403")),
+            Failure::Other(_)
+        ));
+        assert!(matches!(
+            classify(&SpotifyError::unavailable("down")),
+            Failure::Other(_)
+        ));
+    }
+
+    #[test]
+    fn backoff_resets_only_after_a_stable_connection() {
+        let s = Duration::from_secs;
+        assert_eq!(sleep_for(s(8), s(1)), s(8));
+        assert_eq!(sleep_for(s(8), s(29)), s(8));
+        assert_eq!(sleep_for(s(8), s(30)), s(2));
+        assert_eq!(next_backoff(s(2)), s(4));
+        assert_eq!(next_backoff(s(40)), s(60));
+        assert_eq!(next_backoff(s(60)), s(60));
+    }
+
+    fn inactive_with_context() -> Tracking {
+        Tracking {
+            active: false,
+            last_context: Some(("spotify:album:a".into(), true)),
+            track_uri: Some("spotify:track:t".into()),
+            position_ms: 1234,
+        }
+    }
+
+    #[test]
+    fn inactive_commands_are_routed_by_the_adapter() {
+        let t = inactive_with_context();
+        assert_eq!(
+            route(&t, &PlayerCommand::Play),
+            Route::Resume {
+                context_uri: "spotify:album:a".into(),
+                shuffle: true,
+                track_uri: Some("spotify:track:t".into()),
+                position_ms: 1234,
+            }
+        );
+        assert_eq!(
+            route(&t, &PlayerCommand::Pause),
+            Route::Report(PlayerUpdate::Paused { position_ms: 1234 })
+        );
+        assert_eq!(route(&t, &PlayerCommand::Next), Route::Skip);
+        assert_eq!(
+            route(&t, &PlayerCommand::SetVolume { percent: 5 }),
+            Route::Skip
+        );
+        let load = PlayerCommand::Load {
+            context_uri: "x".into(),
+            start_index: None,
+            shuffle: false,
+        };
+        assert_eq!(route(&t, &load), Route::Forward);
+        assert_eq!(
+            route(&Tracking::default(), &PlayerCommand::Play),
+            Route::Report(PlayerUpdate::Stopped)
+        );
+    }
+
+    #[test]
+    fn active_commands_go_to_spirc() {
+        let t = Tracking {
+            active: true,
+            ..inactive_with_context()
+        };
+        for c in [
+            PlayerCommand::Play,
+            PlayerCommand::Pause,
+            PlayerCommand::Next,
+        ] {
+            assert_eq!(route(&t, &c), Route::Forward);
+        }
+    }
+
+    #[test]
+    fn tracking_follows_events_and_loads() {
+        let mut t = Tracking::default();
+        t.observe(&PlayerEvent::SessionConnected {
+            connection_id: "c".into(),
+            user_name: "u".into(),
+        });
+        assert!(t.active);
+        t.observe(&PlayerEvent::Playing {
+            play_request_id: 1,
+            track_id: uri(),
+            position_ms: 500,
+        });
+        assert_eq!(t.position_ms, 500);
+        t.note_command(&PlayerCommand::Load {
+            context_uri: "spotify:album:b".into(),
+            start_index: Some(2),
+            shuffle: true,
+        });
+        assert_eq!(t.last_context, Some(("spotify:album:b".into(), true)));
+        assert_eq!(t.position_ms, 0);
+        t.observe(&PlayerEvent::SessionDisconnected {
+            connection_id: "c".into(),
+            user_name: "u".into(),
+        });
+        assert!(!t.active);
     }
 }

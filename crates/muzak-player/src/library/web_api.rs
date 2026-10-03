@@ -38,6 +38,9 @@ pub trait Http: Send + Sync + 'static {
 
 pub trait TokenSource: Send + Sync + 'static {
     fn token(&self) -> impl Future<Output = Result<String, FetchError>> + Send;
+
+    /// Called after the API rejected the last token, so the next `token()` must not reuse it.
+    fn invalidate(&self) {}
 }
 
 pub struct ReqwestHttp {
@@ -309,7 +312,10 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
             let token = self.tokens.token().await?;
             match self.http.get_json(&url, &token).await {
                 Ok(value) => return Ok(value),
-                Err(HttpError::Status(401)) if !retried => retried = true,
+                Err(HttpError::Status(401)) if !retried => {
+                    retried = true;
+                    self.tokens.invalidate();
+                }
                 Err(HttpError::Status(401)) => return Err(FetchError::Auth),
                 Err(HttpError::Status(404)) => return Err(FetchError::NotFound),
                 Err(HttpError::Status(code)) => {
@@ -480,9 +486,13 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct CountingTokens(AtomicU32);
+    struct CountingTokens(AtomicU32, AtomicU32);
 
     impl TokenSource for CountingTokens {
+        fn invalidate(&self) {
+            self.1.fetch_add(1, Ordering::SeqCst);
+        }
+
         async fn token(&self) -> Result<String, FetchError> {
             Ok(format!("t{}", self.0.fetch_add(1, Ordering::SeqCst) + 1))
         }
@@ -654,6 +664,7 @@ mod tests {
             calls.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
             vec!["t1", "t2"]
         );
+        assert_eq!(api.tokens.1.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
