@@ -28,7 +28,12 @@ pub struct Config {
 }
 
 fn default_audio_backend() -> String {
-    if cfg!(target_os = "linux") { "alsa" } else { "rodio" }.to_string()
+    if cfg!(target_os = "linux") {
+        "alsa"
+    } else {
+        "rodio"
+    }
+    .to_string()
 }
 fn default_dim_after_secs() -> u64 {
     180
@@ -49,7 +54,10 @@ impl Config {
 
     pub fn parse(text: &str) -> anyhow::Result<Config> {
         let config: Config = toml::from_str(text)?;
-        ensure!(!config.device_name.trim().is_empty(), "device_name must not be blank");
+        ensure!(
+            !config.device_name.trim().is_empty(),
+            "device_name must not be blank"
+        );
         ensure!(config.initial_volume <= 100, "initial_volume must be 0-100");
         ensure!(
             config.off_after_secs > config.dim_after_secs,
@@ -91,7 +99,9 @@ mod tests {
 
     #[test]
     fn rejects_volume_over_100() {
-        let err = Config::parse("device_name = \"Leo\"\nstate_dir = \"/x\"\ninitial_volume = 101\n").unwrap_err();
+        let err =
+            Config::parse("device_name = \"Leo\"\nstate_dir = \"/x\"\ninitial_volume = 101\n")
+                .unwrap_err();
         assert!(err.to_string().contains("initial_volume"), "{err}");
     }
 

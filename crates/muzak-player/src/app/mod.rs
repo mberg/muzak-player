@@ -1,7 +1,7 @@
 pub mod input;
 pub mod state;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::sync::Arc;
 
@@ -25,10 +25,10 @@ pub struct CoreConfig {
 /// The app's state machine. Pure: no I/O, time is passed in.
 pub struct Core {
     state: AppState,
-        cfg: CoreConfig,
+    cfg: CoreConfig,
     last_activity_ms: u64,
-        notice_until_ms: u64,
-        last_load: Option<((String, Option<u32>, bool), u64)>,
+    notice_until_ms: u64,
+    last_load: Option<((String, Option<u32>, bool), u64)>,
 }
 
 impl Core {
@@ -54,7 +54,13 @@ impl Core {
             auth_needed: false,
             speaker_connected: true,
         };
-        let mut core = Core { state, cfg, last_activity_ms: now_ms, notice_until_ms: 0, last_load: None };
+        let mut core = Core {
+            state,
+            cfg,
+            last_activity_ms: now_ms,
+            notice_until_ms: 0,
+            last_load: None,
+        };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
             core.request_section(section, &mut fx);
@@ -116,7 +122,10 @@ impl Core {
                 let start = if shuffle { None } else { Some(0) };
                 self.start_playback(uri, start, shuffle, now_ms, fx);
             }
-            UiAction::PlayTrack { collection_uri, index } => {
+            UiAction::PlayTrack {
+                collection_uri,
+                index,
+            } => {
                 let shuffle = self.state.playback.shuffle;
                 self.start_playback(collection_uri, Some(index as u32), shuffle, now_ms, fx);
             }
@@ -144,7 +153,12 @@ impl Core {
                 fx.push(Effect::Player(PlayerCommand::Previous));
             }
             UiAction::Seek { position_ms } => {
-                let max = self.state.playback.track.as_ref().map_or(u32::MAX, |t| t.duration_ms);
+                let max = self
+                    .state
+                    .playback
+                    .track
+                    .as_ref()
+                    .map_or(u32::MAX, |t| t.duration_ms);
                 let position_ms = position_ms.min(max);
                 self.state.playback.position_ms = position_ms;
                 fx.push(Effect::Player(PlayerCommand::Seek { position_ms }));
@@ -212,7 +226,10 @@ impl Core {
                 slot.failed = false;
                 self.state.online = true;
             }
-            LibraryUpdate::Tracks { collection_uri, tracks } => {
+            LibraryUpdate::Tracks {
+                collection_uri,
+                tracks,
+            } => {
                 let slot = self.state.tracks.entry(collection_uri).or_default();
                 slot.data = Some(Arc::new(tracks));
                 slot.loading = false;
@@ -225,7 +242,10 @@ impl Core {
                 slot.failed = slot.data.is_none();
                 self.on_failure(reason);
             }
-            LibraryUpdate::TracksFailed { collection_uri, reason } => {
+            LibraryUpdate::TracksFailed {
+                collection_uri,
+                reason,
+            } => {
                 let slot = self.state.tracks.entry(collection_uri).or_default();
                 slot.loading = false;
                 slot.failed = slot.data.is_none();
@@ -284,8 +304,14 @@ impl Core {
     }
 
     fn request_tracks(&mut self, uri: &str, fx: &mut Vec<Effect>) {
-        self.state.tracks.entry(uri.to_string()).or_default().loading = true;
-        fx.push(Effect::Library(LibraryRequest::Tracks { collection_uri: uri.to_string() }));
+        self.state
+            .tracks
+            .entry(uri.to_string())
+            .or_default()
+            .loading = true;
+        fx.push(Effect::Library(LibraryRequest::Tracks {
+            collection_uri: uri.to_string(),
+        }));
     }
 
     fn start_playback(
@@ -320,7 +346,11 @@ impl Core {
         pb.status = PlayStatus::Loading;
         pb.position_ms = 0;
         pb.shuffle = shuffle;
-        fx.push(Effect::Player(PlayerCommand::Load { context_uri: uri, start_index, shuffle }));
+        fx.push(Effect::Player(PlayerCommand::Load {
+            context_uri: uri,
+            start_index,
+            shuffle,
+        }));
         self.navigate(Screen::NowPlaying);
     }
 

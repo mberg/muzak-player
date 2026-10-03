@@ -7,7 +7,9 @@ pub enum Input {
     Ui(UiAction),
     Player(PlayerUpdate),
     Library(LibraryUpdate),
-    Speaker { connected: bool },
+    Speaker {
+        connected: bool,
+    },
     AuthInvalid,
     /// Sent once a second by the runtime.
     Tick,
@@ -19,13 +21,23 @@ pub enum UiAction {
     OpenCollection(String),
     Back,
     OpenNowPlaying,
-    PlayCollection { uri: String, shuffle: bool },
-    PlayTrack { collection_uri: String, index: usize },
+    PlayCollection {
+        uri: String,
+        shuffle: bool,
+    },
+    PlayTrack {
+        collection_uri: String,
+        index: usize,
+    },
     TogglePlay,
     Next,
     Previous,
-    Seek { position_ms: u32 },
-    SetVolume { percent: u8 },
+    Seek {
+        position_ms: u32,
+    },
+    SetVolume {
+        percent: u8,
+    },
     ToggleShuffle,
     CycleRepeat,
     /// A tap on the dim/off overlay; only wakes the screen.
@@ -38,11 +50,19 @@ pub enum PlayerUpdate {
     Disconnected,
     TrackChanged(Track),
     Loading,
-    Playing { position_ms: u32 },
-    Paused { position_ms: u32 },
+    Playing {
+        position_ms: u32,
+    },
+    Paused {
+        position_ms: u32,
+    },
     Stopped,
-    Position { position_ms: u32 },
-    Volume { percent: u8 },
+    Position {
+        position_ms: u32,
+    },
+    Volume {
+        percent: u8,
+    },
     Shuffle(bool),
     Repeat(Repeat),
     /// librespot skips unavailable tracks itself; this only drives a notice.
@@ -51,10 +71,22 @@ pub enum PlayerUpdate {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LibraryUpdate {
-    Section { section: Section, items: Vec<Collection> },
-    Tracks { collection_uri: String, tracks: Vec<Track> },
-    SectionFailed { section: Section, reason: FailReason },
-    TracksFailed { collection_uri: String, reason: FailReason },
+    Section {
+        section: Section,
+        items: Vec<Collection>,
+    },
+    Tracks {
+        collection_uri: String,
+        tracks: Vec<Track>,
+    },
+    SectionFailed {
+        section: Section,
+        reason: FailReason,
+    },
+    TracksFailed {
+        collection_uri: String,
+        reason: FailReason,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,13 +106,21 @@ pub enum Effect {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlayerCommand {
-    Load { context_uri: String, start_index: Option<u32>, shuffle: bool },
+    Load {
+        context_uri: String,
+        start_index: Option<u32>,
+        shuffle: bool,
+    },
     Play,
     Pause,
     Next,
     Previous,
-    Seek { position_ms: u32 },
-    SetVolume { percent: u8 },
+    Seek {
+        position_ms: u32,
+    },
+    SetVolume {
+        percent: u8,
+    },
     SetShuffle(bool),
     SetRepeat(Repeat),
 }

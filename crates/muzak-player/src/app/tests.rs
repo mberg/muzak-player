@@ -2,7 +2,11 @@ use super::*;
 use crate::model::{Collection, CollectionKind, LIKED_URI, Section, Track};
 
 pub(crate) fn config() -> CoreConfig {
-    CoreConfig { dim_after_ms: 60_000, off_after_ms: 120_000, initial_volume: 50 }
+    CoreConfig {
+        dim_after_ms: 60_000,
+        off_after_ms: 120_000,
+        initial_volume: 50,
+    }
 }
 
 pub(crate) fn core() -> Core {
@@ -64,12 +68,18 @@ fn new_requests_initial_sections_and_shows_playlists() {
 #[test]
 fn show_section_switches_grid_and_clears_back_stack() {
     let mut c = core();
-    c.handle(ui(UiAction::OpenCollection("spotify:playlist:p1".into())), 0);
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
     let fx = c.handle(ui(UiAction::ShowSection(Section::Albums)), 0);
     assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
     assert_eq!(c.state().section, Section::Albums);
     assert!(c.state().back_stack.is_empty());
-    assert_eq!(fx, vec![Effect::Library(LibraryRequest::Section(Section::Albums))]);
+    assert_eq!(
+        fx,
+        vec![Effect::Library(LibraryRequest::Section(Section::Albums))]
+    );
 }
 
 #[test]
@@ -80,15 +90,23 @@ fn show_liked_opens_liked_detail() {
     assert_eq!(c.state().section, Section::Liked);
     assert_eq!(
         fx,
-        vec![Effect::Library(LibraryRequest::Tracks { collection_uri: LIKED_URI.into() })]
+        vec![Effect::Library(LibraryRequest::Tracks {
+            collection_uri: LIKED_URI.into()
+        })]
     );
 }
 
 #[test]
 fn open_collection_then_back() {
     let mut c = core();
-    let fx = c.handle(ui(UiAction::OpenCollection("spotify:playlist:p1".into())), 0);
-    assert_eq!(c.state().screen, Screen::Detail("spotify:playlist:p1".into()));
+    let fx = c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    assert_eq!(
+        c.state().screen,
+        Screen::Detail("spotify:playlist:p1".into())
+    );
     assert!(c.state().tracks["spotify:playlist:p1"].loading);
     assert_eq!(
         fx,
@@ -111,10 +129,19 @@ fn back_on_empty_stack_is_noop() {
 #[test]
 fn section_update_stores_data_and_marks_online() {
     let mut c = core();
-    c.handle(Input::Library(LibraryUpdate::SectionFailed { section: Section::Albums, reason: FailReason::Offline }), 0);
+    c.handle(
+        Input::Library(LibraryUpdate::SectionFailed {
+            section: Section::Albums,
+            reason: FailReason::Offline,
+        }),
+        0,
+    );
     assert!(!c.state().online);
     c.handle(
-        Input::Library(LibraryUpdate::Section { section: Section::Playlists, items: vec![playlist(1)] }),
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![playlist(1)],
+        }),
         0,
     );
     let slot = &c.state().sections[&Section::Playlists];
@@ -127,15 +154,30 @@ fn section_update_stores_data_and_marks_online() {
 fn failure_keeps_cached_data_and_only_marks_failed_without_data() {
     let mut c = core();
     c.handle(
-        Input::Library(LibraryUpdate::Section { section: Section::Playlists, items: vec![playlist(1)] }),
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![playlist(1)],
+        }),
         0,
     );
-    c.handle(Input::Library(LibraryUpdate::SectionFailed { section: Section::Playlists, reason: FailReason::Other }), 0);
+    c.handle(
+        Input::Library(LibraryUpdate::SectionFailed {
+            section: Section::Playlists,
+            reason: FailReason::Other,
+        }),
+        0,
+    );
     let slot = &c.state().sections[&Section::Playlists];
     assert!(slot.data.is_some());
     assert!(!slot.failed);
 
-    c.handle(Input::Library(LibraryUpdate::SectionFailed { section: Section::Albums, reason: FailReason::Other }), 0);
+    c.handle(
+        Input::Library(LibraryUpdate::SectionFailed {
+            section: Section::Albums,
+            reason: FailReason::Other,
+        }),
+        0,
+    );
     assert!(c.state().sections[&Section::Albums].failed);
 }
 
@@ -143,7 +185,10 @@ fn failure_keeps_cached_data_and_only_marks_failed_without_data() {
 fn auth_failure_sets_auth_needed() {
     let mut c = core();
     c.handle(
-        Input::Library(LibraryUpdate::TracksFailed { collection_uri: "x".into(), reason: FailReason::Auth }),
+        Input::Library(LibraryUpdate::TracksFailed {
+            collection_uri: "x".into(),
+            reason: FailReason::Auth,
+        }),
         0,
     );
     assert!(c.state().auth_needed);
@@ -161,15 +206,28 @@ fn tracks_update_stores_data() {
 }
 
 fn load(uri: &str, start: Option<u32>, shuffle: bool) -> Effect {
-    Effect::Player(PlayerCommand::Load { context_uri: uri.into(), start_index: start, shuffle })
+    Effect::Player(PlayerCommand::Load {
+        context_uri: uri.into(),
+        start_index: start,
+        shuffle,
+    })
 }
 
 #[test]
 fn play_collection_is_optimistic() {
     let mut c = core();
     with_tracks(&mut c, "spotify:playlist:p1", 3);
-    c.handle(ui(UiAction::OpenCollection("spotify:playlist:p1".into())), 0);
-    let fx = c.handle(ui(UiAction::PlayCollection { uri: "spotify:playlist:p1".into(), shuffle: false }), 0);
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    let fx = c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:playlist:p1".into(),
+            shuffle: false,
+        }),
+        0,
+    );
     assert_eq!(fx, vec![load("spotify:playlist:p1", Some(0), false)]);
     let pb = &c.state().playback;
     assert_eq!(pb.status, PlayStatus::Loading);
@@ -177,14 +235,23 @@ fn play_collection_is_optimistic() {
     assert_eq!(pb.context_uri.as_deref(), Some("spotify:playlist:p1"));
     assert_eq!(c.state().screen, Screen::NowPlaying);
     c.handle(ui(UiAction::Back), 0);
-    assert_eq!(c.state().screen, Screen::Detail("spotify:playlist:p1".into()));
+    assert_eq!(
+        c.state().screen,
+        Screen::Detail("spotify:playlist:p1".into())
+    );
 }
 
 #[test]
 fn play_collection_shuffled_has_no_known_first_track() {
     let mut c = core();
     with_tracks(&mut c, "spotify:playlist:p1", 3);
-    let fx = c.handle(ui(UiAction::PlayCollection { uri: "spotify:playlist:p1".into(), shuffle: true }), 0);
+    let fx = c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:playlist:p1".into(),
+            shuffle: true,
+        }),
+        0,
+    );
     assert_eq!(fx, vec![load("spotify:playlist:p1", None, true)]);
     assert_eq!(c.state().playback.track, None);
     assert!(c.state().playback.shuffle);
@@ -194,7 +261,10 @@ fn play_collection_shuffled_has_no_known_first_track() {
 #[test]
 fn double_tap_play_sends_one_load() {
     let mut c = core();
-    let play = UiAction::PlayCollection { uri: "spotify:playlist:p1".into(), shuffle: false };
+    let play = UiAction::PlayCollection {
+        uri: "spotify:playlist:p1".into(),
+        shuffle: false,
+    };
     let first = c.handle(ui(play.clone()), 10_000);
     let second = c.handle(ui(play.clone()), 10_400);
     assert_eq!(first, vec![load("spotify:playlist:p1", Some(0), false)]);
@@ -209,7 +279,13 @@ fn play_track_uses_index_and_current_shuffle() {
     let mut c = core();
     with_tracks(&mut c, "spotify:album:a1", 5);
     c.handle(Input::Player(PlayerUpdate::Shuffle(true)), 0);
-    let fx = c.handle(ui(UiAction::PlayTrack { collection_uri: "spotify:album:a1".into(), index: 3 }), 0);
+    let fx = c.handle(
+        ui(UiAction::PlayTrack {
+            collection_uri: "spotify:album:a1".into(),
+            index: 3,
+        }),
+        0,
+    );
     assert_eq!(fx, vec![load("spotify:album:a1", Some(3), true)]);
     assert_eq!(c.state().playback.track, Some(track(3)));
 }
@@ -217,8 +293,17 @@ fn play_track_uses_index_and_current_shuffle() {
 #[test]
 fn toggle_play_flips_status_optimistically() {
     let mut c = core();
-    assert!(c.handle(ui(UiAction::TogglePlay), 0).is_empty(), "nothing loaded");
-    c.handle(ui(UiAction::PlayCollection { uri: "spotify:playlist:p1".into(), shuffle: false }), 0);
+    assert!(
+        c.handle(ui(UiAction::TogglePlay), 0).is_empty(),
+        "nothing loaded"
+    );
+    c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:playlist:p1".into(),
+            shuffle: false,
+        }),
+        0,
+    );
     c.handle(Input::Player(PlayerUpdate::Playing { position_ms: 0 }), 0);
     let fx = c.handle(ui(UiAction::TogglePlay), 0);
     assert_eq!(fx, vec![Effect::Player(PlayerCommand::Pause)]);
@@ -232,17 +317,29 @@ fn toggle_play_flips_status_optimistically() {
 fn player_updates_change_playback() {
     let mut c = core();
     c.handle(Input::Player(PlayerUpdate::TrackChanged(track(7))), 0);
-    c.handle(Input::Player(PlayerUpdate::Playing { position_ms: 1_000 }), 0);
-    c.handle(Input::Player(PlayerUpdate::Position { position_ms: 5_000 }), 0);
+    c.handle(
+        Input::Player(PlayerUpdate::Playing { position_ms: 1_000 }),
+        0,
+    );
+    c.handle(
+        Input::Player(PlayerUpdate::Position { position_ms: 5_000 }),
+        0,
+    );
     c.handle(Input::Player(PlayerUpdate::Volume { percent: 120 }), 0);
-    c.handle(Input::Player(PlayerUpdate::Repeat(crate::model::Repeat::Track)), 0);
+    c.handle(
+        Input::Player(PlayerUpdate::Repeat(crate::model::Repeat::Track)),
+        0,
+    );
     let pb = &c.state().playback;
     assert_eq!(pb.track, Some(track(7)));
     assert_eq!(pb.status, PlayStatus::Playing);
     assert_eq!(pb.position_ms, 5_000);
     assert_eq!(pb.volume, 100);
     assert_eq!(pb.repeat, crate::model::Repeat::Track);
-    c.handle(Input::Player(PlayerUpdate::Paused { position_ms: 6_000 }), 0);
+    c.handle(
+        Input::Player(PlayerUpdate::Paused { position_ms: 6_000 }),
+        0,
+    );
     assert_eq!(c.state().playback.status, PlayStatus::Paused);
     c.handle(Input::Player(PlayerUpdate::Stopped), 0);
     assert_eq!(c.state().playback.status, PlayStatus::Stopped);
@@ -252,21 +349,39 @@ fn player_updates_change_playback() {
 fn controls_emit_commands() {
     let mut c = core();
     c.handle(Input::Player(PlayerUpdate::TrackChanged(track(1))), 0);
-    assert_eq!(c.handle(ui(UiAction::Next), 0), vec![Effect::Player(PlayerCommand::Next)]);
-    assert_eq!(c.handle(ui(UiAction::Previous), 0), vec![Effect::Player(PlayerCommand::Previous)]);
     assert_eq!(
-        c.handle(ui(UiAction::Seek { position_ms: 999_999 }), 0),
-        vec![Effect::Player(PlayerCommand::Seek { position_ms: 180_000 })],
+        c.handle(ui(UiAction::Next), 0),
+        vec![Effect::Player(PlayerCommand::Next)]
+    );
+    assert_eq!(
+        c.handle(ui(UiAction::Previous), 0),
+        vec![Effect::Player(PlayerCommand::Previous)]
+    );
+    assert_eq!(
+        c.handle(
+            ui(UiAction::Seek {
+                position_ms: 999_999
+            }),
+            0
+        ),
+        vec![Effect::Player(PlayerCommand::Seek {
+            position_ms: 180_000
+        })],
         "seek is clamped to the track length"
     );
     assert_eq!(
         c.handle(ui(UiAction::SetVolume { percent: 150 }), 0),
         vec![Effect::Player(PlayerCommand::SetVolume { percent: 100 })]
     );
-    assert_eq!(c.handle(ui(UiAction::ToggleShuffle), 0), vec![Effect::Player(PlayerCommand::SetShuffle(true))]);
+    assert_eq!(
+        c.handle(ui(UiAction::ToggleShuffle), 0),
+        vec![Effect::Player(PlayerCommand::SetShuffle(true))]
+    );
     assert_eq!(
         c.handle(ui(UiAction::CycleRepeat), 0),
-        vec![Effect::Player(PlayerCommand::SetRepeat(crate::model::Repeat::Context))]
+        vec![Effect::Player(PlayerCommand::SetRepeat(
+            crate::model::Repeat::Context
+        ))]
     );
 }
 
@@ -295,7 +410,13 @@ fn unavailable_shows_notice_that_expires() {
 fn play_while_offline_shows_notice_but_still_loads() {
     let mut c = core();
     c.handle(Input::Player(PlayerUpdate::Disconnected), 0);
-    let fx = c.handle(ui(UiAction::PlayCollection { uri: "spotify:playlist:p1".into(), shuffle: false }), 0);
+    let fx = c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:playlist:p1".into(),
+            shuffle: false,
+        }),
+        0,
+    );
     assert_eq!(fx, vec![load("spotify:playlist:p1", Some(0), false)]);
     assert_eq!(c.state().notice, Some(Notice::NoInternet));
 }
@@ -304,8 +425,14 @@ fn play_while_offline_shows_notice_but_still_loads() {
 fn idle_dims_then_turns_off_and_touch_wakes() {
     let mut c = core();
     assert!(c.handle(Input::Tick, 59_000).is_empty());
-    assert_eq!(c.handle(Input::Tick, 60_000), vec![Effect::Display(DisplayMode::Dim)]);
-    assert_eq!(c.handle(Input::Tick, 120_000), vec![Effect::Display(DisplayMode::Off)]);
+    assert_eq!(
+        c.handle(Input::Tick, 60_000),
+        vec![Effect::Display(DisplayMode::Dim)]
+    );
+    assert_eq!(
+        c.handle(Input::Tick, 120_000),
+        vec![Effect::Display(DisplayMode::Off)]
+    );
     assert_eq!(c.state().display, DisplayMode::Off);
     let fx = c.handle(ui(UiAction::Touch), 121_000);
     assert_eq!(fx, vec![Effect::Display(DisplayMode::Active)]);
@@ -317,7 +444,10 @@ fn playing_keeps_screen_awake_and_wakes_it() {
     let mut c = core();
     c.handle(Input::Tick, 60_000);
     assert_eq!(c.state().display, DisplayMode::Dim);
-    let fx = c.handle(Input::Player(PlayerUpdate::Playing { position_ms: 0 }), 61_000);
+    let fx = c.handle(
+        Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
+        61_000,
+    );
     assert_eq!(fx, vec![Effect::Display(DisplayMode::Active)]);
     assert!(c.handle(Input::Tick, 500_000).is_empty());
     assert_eq!(c.state().display, DisplayMode::Active);
@@ -327,7 +457,13 @@ fn playing_keeps_screen_awake_and_wakes_it() {
 #[test]
 fn reconnect_rerequests_library_and_open_detail() {
     let mut c = core();
-    c.handle(Input::Library(LibraryUpdate::SectionFailed { section: Section::Playlists, reason: FailReason::Offline }), 0);
+    c.handle(
+        Input::Library(LibraryUpdate::SectionFailed {
+            section: Section::Playlists,
+            reason: FailReason::Offline,
+        }),
+        0,
+    );
     c.handle(ui(UiAction::OpenCollection("spotify:album:a1".into())), 0);
     let fx = c.handle(Input::Player(PlayerUpdate::Connected), 0);
     assert!(c.state().online);
@@ -337,7 +473,9 @@ fn reconnect_rerequests_library_and_open_detail() {
             Effect::Library(LibraryRequest::Section(Section::Playlists)),
             Effect::Library(LibraryRequest::Section(Section::Albums)),
             Effect::Library(LibraryRequest::Section(Section::Recent)),
-            Effect::Library(LibraryRequest::Tracks { collection_uri: "spotify:album:a1".into() }),
+            Effect::Library(LibraryRequest::Tracks {
+                collection_uri: "spotify:album:a1".into()
+            }),
         ]
     );
 }

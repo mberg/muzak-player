@@ -21,7 +21,11 @@ pub struct Slot<T> {
 
 impl<T> Default for Slot<T> {
     fn default() -> Self {
-        Slot { data: None, loading: false, failed: false }
+        Slot {
+            data: None,
+            loading: false,
+            failed: false,
+        }
     }
 }
 
