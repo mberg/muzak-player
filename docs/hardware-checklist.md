@@ -8,7 +8,11 @@ These checks verify the development environment and Spotify integration work cor
 
 ### Fake-mode UI check
 
-Set `dim_after_secs = 10` and `off_after_secs = 20` in `dev/config.toml` for testing, then remove them afterwards.
+Set these lines temporarily in `dev/config.toml` for testing, then remove them afterwards:
+```toml
+dim_after_secs = 10
+off_after_secs = 20
+```
 
 Run: `cargo run -p muzak-player -- --fake`
 
@@ -64,6 +68,8 @@ Playback and data checks:
 - [ ] Playing a playlist produces audio through Mac speakers within ~1s. Title and artist match the track.
 - [ ] Pause, next, previous, seek, volume, shuffle, and repeat all respond within 0.5s.
 - [ ] Spotify app on a phone shows "Muzak Dev" device as the playing device.
+- [ ] Liked Songs plays: open Liked in the rail, press Play, audio starts.
+- [ ] Transfer playback to your phone's Spotify app, then transfer back or press Play on Muzak Dev: playback resumes on the same song.
 - [ ] Wi-Fi off: cached grids remain visible; Play shows "No internet right now". Turning Wi-Fi back on: library refreshes and playback resumes within ~1 minute.
 - [ ] Moving `credentials.json` away and restarting shows "Ask a grown-up for help" screen.
 
@@ -212,4 +218,4 @@ git add docs/hardware-checklist.md devices/<kid>.toml
 git commit -m "docs: record hardware checklist for <kid>'s device"
 ```
 
-Reference: [Phase 1 spec](https://github.com/yourusername/muzak/blob/main/docs/SPEC.md) | [Build and deploy scripts](https://github.com/yourusername/muzak/tree/main/scripts)
+Reference: [Phase 1 design spec](superpowers/specs/2026-10-03-muzak-player-design.md) | [Phase 1 plan](superpowers/plans/2026-10-03-muzak-player-phase1.md)
