@@ -53,9 +53,9 @@ impl FakeCatalog {
             .collect();
         let mut tracks = HashMap::new();
         for c in playlists.iter().chain(albums.iter()) {
-            tracks.insert(c.uri.clone(), fake_tracks(&c.name, 12));
+            tracks.insert(c.uri.clone(), fake_tracks(&c.uri, &c.name, 12));
         }
-        tracks.insert(LIKED_URI.to_string(), fake_tracks("Liked", 20));
+        tracks.insert(LIKED_URI.to_string(), fake_tracks(LIKED_URI, "Liked", 20));
         Self {
             playlists,
             albums,
@@ -68,10 +68,13 @@ impl FakeCatalog {
     }
 }
 
-fn fake_tracks(collection: &str, n: u32) -> Vec<Track> {
+fn fake_tracks(collection_uri: &str, collection: &str, n: u32) -> Vec<Track> {
     (1..=n)
         .map(|i| Track {
-            uri: format!("spotify:track:fake-{}-{i}", collection.len()),
+            uri: format!(
+                "spotify:track:fake-{}-{i}",
+                collection_uri.replace(':', "-")
+            ),
             name: format!("{collection} Song {i}"),
             artists: "The Fake Band".into(),
             album: collection.to_string(),
@@ -111,5 +114,30 @@ impl LibrarySource for FakeSource {
     async fn tracks(&self, collection_uri: &str) -> Result<Vec<Track>, FetchError> {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(self.catalog.tracks_for(collection_uri))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn track_uris_are_unique_across_the_catalog() {
+        let catalog = FakeCatalog::sample();
+        let mut seen = HashSet::new();
+        let uris = catalog
+            .playlists
+            .iter()
+            .chain(catalog.albums.iter())
+            .map(|c| c.uri.as_str())
+            .chain([LIKED_URI]);
+        for uri in uris {
+            for track in catalog.tracks_for(uri) {
+                assert!(seen.insert(track.uri.clone()), "duplicate {}", track.uri);
+            }
+        }
+        assert!(seen.len() > 100);
     }
 }
