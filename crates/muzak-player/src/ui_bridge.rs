@@ -19,7 +19,25 @@ struct Images {
     ready: HashMap<String, Image>,
     order: VecDeque<String>,
     requested: HashSet<String>,
+    /// URLs the current view shows. These are never evicted.
+    live: HashSet<String>,
     requests: UnboundedSender<String>,
+}
+
+/// Removes and returns the oldest URLs until `order` fits in `limit`, skipping live ones.
+/// When everything left is live the cache stays over the limit: evicting a cover on screen
+/// would only make the next render request it again.
+fn evict(order: &mut VecDeque<String>, live: &HashSet<String>, limit: usize) -> Vec<String> {
+    let mut evicted = Vec::new();
+    let mut i = 0;
+    while order.len() > limit && i < order.len() {
+        if live.contains(&order[i]) {
+            i += 1;
+        } else {
+            evicted.extend(order.remove(i));
+        }
+    }
+    evicted
 }
 
 impl Images {
@@ -37,11 +55,9 @@ impl Images {
     fn insert(&mut self, url: String, image: Image) {
         self.ready.insert(url.clone(), image);
         self.order.push_back(url);
-        while self.order.len() > IMAGE_CACHE_LIMIT {
-            if let Some(old) = self.order.pop_front() {
-                self.ready.remove(&old);
-                self.requested.remove(&old);
-            }
+        for old in evict(&mut self.order, &self.live, IMAGE_CACHE_LIMIT) {
+            self.ready.remove(&old);
+            self.requested.remove(&old);
         }
     }
 }
@@ -74,6 +90,7 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
             ready: HashMap::new(),
             order: VecDeque::new(),
             requested: HashSet::new(),
+            live: HashSet::new(),
             requests: image_requests,
         },
         tiles,
@@ -175,6 +192,7 @@ impl Bridge {
             return;
         };
         let v = view::build(state);
+        self.images.live = live_images(&v);
 
         w.set_screen(match v.screen {
             ScreenView::Grid => ScreenKind::Grid,
@@ -222,6 +240,18 @@ impl Bridge {
     }
 }
 
+/// Every image URL the view shows: grid tiles, the detail header and the now-playing art.
+fn live_images(v: &view::View) -> HashSet<String> {
+    v.grid
+        .iter()
+        .map(|t| &t.image_url)
+        .chain(v.detail.iter().map(|d| &d.header.image_url))
+        .chain(std::iter::once(&v.now.image_url))
+        .flatten()
+        .cloned()
+        .collect()
+}
+
 fn tile_data(images: &mut Images, t: &TileView) -> TileData {
     let image = images.get(&t.image_url);
     TileData {
@@ -261,5 +291,64 @@ fn sync<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T>) {
         if model.row_data(i).as_ref() != Some(&row) {
             model.set_row_data(i, row);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn urls(range: std::ops::Range<usize>) -> Vec<String> {
+        range
+            .map(|i| format!("https://i.scdn.co/image/{i}"))
+            .collect()
+    }
+
+    #[test]
+    fn eviction_drops_oldest_but_skips_live() {
+        let mut order: VecDeque<String> = urls(0..5).into();
+        let live: HashSet<String> = urls(0..2).into_iter().collect();
+        let evicted = evict(&mut order, &live, 3);
+        assert_eq!(evicted, urls(2..4));
+        assert_eq!(Vec::from(order), [urls(0..2), urls(4..5)].concat());
+    }
+
+    #[test]
+    fn eviction_keeps_everything_when_all_live() {
+        let mut order: VecDeque<String> = urls(0..5).into();
+        let live: HashSet<String> = urls(0..5).into_iter().collect();
+        assert!(evict(&mut order, &live, 3).is_empty());
+        assert_eq!(order.len(), 5);
+    }
+
+    // A grid with more covers than the cache holds must not reload covers in a loop.
+    #[test]
+    fn live_covers_over_the_limit_are_not_requested_again() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut images = Images {
+            ready: HashMap::new(),
+            order: VecDeque::new(),
+            requested: HashSet::new(),
+            live: HashSet::new(),
+            requests: tx,
+        };
+        let all = urls(0..IMAGE_CACHE_LIMIT + 1);
+        images.live = all.iter().cloned().collect();
+        for url in &all {
+            assert!(images.get(&Some(url.clone())).is_none());
+        }
+        for url in &all {
+            images.insert(url.clone(), Image::default());
+            // Each delivery re-renders the view.
+            for u in &all {
+                images.get(&Some(u.clone()));
+            }
+        }
+        let mut sent = 0;
+        while rx.try_recv().is_ok() {
+            sent += 1;
+        }
+        assert_eq!(sent, all.len(), "each cover requested once");
+        assert!(all.iter().all(|u| images.ready.contains_key(u)));
     }
 }

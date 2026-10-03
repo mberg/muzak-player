@@ -44,7 +44,10 @@ pub fn start(
                 )
                 .await
                 {
+                    // Without the runtime the UI would show "Loading…" forever. Exit so systemd
+                    // restarts the player and the journal shows why.
                     tracing::error!("runtime stopped: {e:#}");
+                    std::process::exit(1);
                 }
             });
         })?;
