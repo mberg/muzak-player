@@ -187,6 +187,7 @@ impl Core {
             PlayerUpdate::Connected => {
                 self.state.online = true;
                 self.refresh_after_reconnect(fx);
+                self.resume_pending_load(fx);
             }
             PlayerUpdate::Disconnected => {
                 self.state.online = false;
@@ -255,10 +256,11 @@ impl Core {
     }
 
     fn on_failure(&mut self, reason: FailReason) {
+        // A Web API 401 (after the fresh-token retry) is not proof the sign-in is gone; the
+        // player reports that with `Input::AuthInvalid`. The slot shows "Can't load this right now".
         match reason {
             FailReason::Offline => self.state.online = false,
-            FailReason::Auth => self.state.auth_needed = true,
-            FailReason::Other => {}
+            FailReason::Auth | FailReason::Other => {}
         }
     }
 
@@ -357,6 +359,22 @@ impl Core {
     fn notify(&mut self, notice: Notice, now_ms: u64) {
         self.state.notice = Some(notice);
         self.notice_until_ms = now_ms + NOTICE_MS;
+    }
+
+    /// The player drops commands queued while it was disconnected, so a play tapped offline is
+    /// sent again once it connects.
+    fn resume_pending_load(&self, fx: &mut Vec<Effect>) {
+        let pb = &self.state.playback;
+        if pb.status != PlayStatus::Loading {
+            return;
+        }
+        if let Some(uri) = &pb.context_uri {
+            fx.push(Effect::Player(PlayerCommand::Load {
+                context_uri: uri.clone(),
+                start_index: None,
+                shuffle: pb.shuffle,
+            }));
+        }
     }
 
     fn refresh_after_reconnect(&mut self, fx: &mut Vec<Effect>) {

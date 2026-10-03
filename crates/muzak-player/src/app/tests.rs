@@ -181,8 +181,9 @@ fn failure_keeps_cached_data_and_only_marks_failed_without_data() {
     assert!(c.state().sections[&Section::Albums].failed);
 }
 
+// Ruling R11: only the player's login rejection shows the sign-in screen.
 #[test]
-fn auth_failure_sets_auth_needed() {
+fn only_player_auth_invalid_sets_auth_needed() {
     let mut c = core();
     c.handle(
         Input::Library(LibraryUpdate::TracksFailed {
@@ -191,7 +192,17 @@ fn auth_failure_sets_auth_needed() {
         }),
         0,
     );
-    assert!(c.state().auth_needed);
+    assert!(!c.state().auth_needed);
+    assert!(c.state().tracks["x"].failed, "shows Can't load this");
+    c.handle(
+        Input::Library(LibraryUpdate::SectionFailed {
+            section: Section::Albums,
+            reason: FailReason::Auth,
+        }),
+        0,
+    );
+    assert!(!c.state().auth_needed);
+    assert!(c.state().online);
     let mut c = core();
     c.handle(Input::AuthInvalid, 0);
     assert!(c.state().auth_needed);
@@ -494,4 +505,32 @@ fn speaker_status_is_tracked() {
     let mut c = core();
     c.handle(Input::Speaker { connected: false }, 0);
     assert!(!c.state().speaker_connected);
+}
+
+#[test]
+fn reconnect_reissues_a_pending_load() {
+    let mut c = core();
+    c.handle(Input::Player(PlayerUpdate::Disconnected), 0);
+    c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:playlist:p1".into(),
+            shuffle: true,
+        }),
+        0,
+    );
+    assert_eq!(c.state().playback.status, PlayStatus::Loading);
+    let fx = c.handle(Input::Player(PlayerUpdate::Connected), 5_000);
+    assert!(fx.contains(&load("spotify:playlist:p1", None, true)));
+
+    // Nothing pending once playback started.
+    c.handle(
+        Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
+        6_000,
+    );
+    c.handle(Input::Player(PlayerUpdate::Disconnected), 7_000);
+    let fx = c.handle(Input::Player(PlayerUpdate::Connected), 8_000);
+    assert!(
+        !fx.iter()
+            .any(|e| matches!(e, Effect::Player(PlayerCommand::Load { .. })))
+    );
 }
