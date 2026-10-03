@@ -116,4 +116,11 @@ mod tests {
         assert!(Config::parse("device_name = \" \"\nstate_dir = \"/x\"\n").is_err());
         assert!(Config::parse("device_name = \"Leo\"\nstate_dir = \"/x\"\nvolume = 3\n").is_err());
     }
+
+    #[test]
+    fn example_device_config_parses() {
+        let text = include_str!("../../../devices/example.toml");
+        let c = Config::parse(text).unwrap();
+        assert_eq!(c.audio_device.as_deref(), Some("plughw:CARD=Headphones"));
+    }
 }
