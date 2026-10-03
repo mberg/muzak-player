@@ -89,6 +89,8 @@ async fn run(
         images,
     );
 
+    let platform = crate::platform::Platform::start(&config, inputs.clone());
+
     let started = Instant::now();
     let now_ms = || started.elapsed().as_millis() as u64;
     let core_config = CoreConfig {
@@ -97,7 +99,7 @@ async fn run(
         initial_volume: config.initial_volume,
     };
     let (mut core, effects) = Core::new(core_config, now_ms());
-    dispatch(effects, &player, &library);
+    dispatch(effects, &player, &library, &platform);
     publish(core.state().clone());
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -107,7 +109,7 @@ async fn run(
             _ = tick.tick() => Input::Tick,
         };
         let effects = core.handle(input, now_ms());
-        dispatch(effects, &player, &library);
+        dispatch(effects, &player, &library, &platform);
         publish(core.state().clone());
     }
 }
@@ -116,6 +118,7 @@ fn dispatch(
     effects: Vec<Effect>,
     player: &UnboundedSender<PlayerCommand>,
     library: &UnboundedSender<LibraryRequest>,
+    platform: &crate::platform::Platform,
 ) {
     for effect in effects {
         match effect {
@@ -125,8 +128,7 @@ fn dispatch(
             Effect::Library(request) => {
                 let _ = library.send(request);
             }
-            // Backlight control arrives in Task 12; the UI overlay already dims the screen.
-            Effect::Display(mode) => tracing::debug!("display {mode:?}"),
+            Effect::Display(mode) => platform.set_display(mode),
         }
     }
 }

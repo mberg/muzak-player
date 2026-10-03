@@ -5,6 +5,7 @@ pub mod config;
 pub mod images;
 pub mod library;
 pub mod model;
+pub mod platform;
 pub mod player;
 pub mod runtime;
 pub mod ui_bridge;
