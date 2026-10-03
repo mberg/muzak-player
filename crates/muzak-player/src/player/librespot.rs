@@ -17,6 +17,7 @@ use librespot::playback::audio_backend;
 use librespot::playback::config::{AudioFormat, Bitrate, PlayerConfig};
 use librespot::playback::mixer::{self, MixerConfig};
 use librespot::playback::player::{Player, PlayerEvent};
+use sha1::{Digest, Sha1};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::sync::watch;
 
@@ -65,6 +66,7 @@ enum Failure {
 /// io errors also map to Unauthenticated/PermissionDenied, so the error kind alone is not used.
 /// librespot-core does not export its `AuthenticationError`, so the login failure is matched by
 /// the message librespot-core 0.8.0 gives each `ErrorCode` (`connection::login_error_message`).
+/// These strings come from that function: re-check them whenever librespot is upgraded.
 fn classify(e: &SpotifyError) -> Failure {
     const FATAL: [&str; 3] = [
         "Login failed with reason: Bad credentials",
@@ -142,8 +144,28 @@ impl Tracking {
             self.last_context = Some((context_uri.clone(), *shuffle));
             self.track_uri = None;
             self.position_ms = 0;
+            // A Load activates this device; don't wait for SessionConnected to route what follows.
+            self.active = true;
         }
     }
+}
+
+/// A Connect device id that stays the same across restarts, so phones see one device.
+/// Same scheme as the librespot binary: lowercase hex SHA-1 of the device name.
+fn device_id(name: &str) -> String {
+    Sha1::digest(name.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Commands queued while disconnected are stale and dropped, but a dropped Load is still
+/// remembered so a later Play can resume it. The core resends a pending Load on Connected.
+fn drain_stale(commands: &mut UnboundedReceiver<PlayerCommand>, tracking: &mut Tracking) {
+    while let Ok(command) = commands.try_recv() {
+        tracking.note_command(&command);
+    }
+    tracking.active = false;
 }
 
 #[derive(Debug, PartialEq)]
@@ -202,9 +224,6 @@ async fn run(
     let mut backoff = MIN_BACKOFF;
     let mut tracking = Tracking::default();
     loop {
-        // Commands queued while disconnected are stale.
-        while commands.try_recv().is_ok() {}
-        tracking.active = false;
         let started = std::time::Instant::now();
         match connect_and_serve(
             &settings,
@@ -249,7 +268,11 @@ async fn connect_and_serve(
     let dir = &settings.credentials_dir;
     let cache = Cache::new(Some(dir), Some(dir), None, None)?;
     let credentials = cache.credentials().ok_or(Failure::NoCredentials)?;
-    let session = Session::new(SessionConfig::default(), Some(cache));
+    let session_config = SessionConfig {
+        device_id: device_id(&settings.device_name),
+        ..Default::default()
+    };
+    let session = Session::new(session_config, Some(cache));
 
     let mixer_builder = mixer::find(None).ok_or_else(|| Failure::Other("no mixer".into()))?;
     let mixer = mixer_builder(MixerConfig::default())?;
@@ -276,6 +299,8 @@ async fn connect_and_serve(
 
     let (spirc, spirc_task) =
         Spirc::new(connect_config, session.clone(), credentials, player, mixer).await?;
+    // Drain right before Connected so a Load queued during setup isn't sent twice.
+    drain_stale(commands, tracking);
     session_tx.send_replace(Some(session.clone()));
     let _ = inputs.send(Input::Player(PlayerUpdate::Connected));
     tokio::pin!(spirc_task);
@@ -293,6 +318,7 @@ async fn connect_and_serve(
                             }
                         }
                         Route::Resume { context_uri, shuffle, track_uri, position_ms } => {
+                            tracking.active = true;
                             if let Err(e) = resume(&spirc, &session, &context_uri, shuffle, track_uri, position_ms) {
                                 tracing::warn!("resume failed: {e}");
                             }
@@ -668,6 +694,60 @@ mod tests {
         ] {
             assert_eq!(route(&t, &c), Route::Forward);
         }
+    }
+
+    #[test]
+    fn device_id_is_stable_per_name() {
+        // Same scheme as the librespot binary: lowercase hex SHA-1 of the name.
+        assert_eq!(
+            device_id("Test"),
+            "640ab2bae07bedc4c163f679a746f7ab7fb5d1fa"
+        );
+        assert_eq!(device_id("Kid Room"), device_id("Kid Room"));
+        assert_ne!(device_id("Kid Room"), device_id("Kid Room 2"));
+    }
+
+    #[test]
+    fn load_then_immediate_pause_goes_to_spirc() {
+        let mut t = Tracking::default();
+        let load = PlayerCommand::Load {
+            context_uri: "spotify:album:a".into(),
+            start_index: None,
+            shuffle: false,
+        };
+        t.note_command(&load);
+        assert_eq!(route(&t, &load), Route::Forward);
+        t.note_command(&PlayerCommand::Pause);
+        assert_eq!(route(&t, &PlayerCommand::Pause), Route::Forward);
+    }
+
+    #[test]
+    fn stale_commands_are_dropped_but_a_load_is_remembered() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(PlayerCommand::Load {
+            context_uri: "spotify:album:b".into(),
+            start_index: Some(1),
+            shuffle: true,
+        })
+        .unwrap();
+        tx.send(PlayerCommand::Pause).unwrap();
+        let mut t = Tracking {
+            active: true,
+            ..Tracking::default()
+        };
+        drain_stale(&mut rx, &mut t);
+        assert!(rx.try_recv().is_err());
+        assert!(!t.active);
+        assert_eq!(t.last_context, Some(("spotify:album:b".into(), true)));
+        assert_eq!(
+            route(&t, &PlayerCommand::Play),
+            Route::Resume {
+                context_uri: "spotify:album:b".into(),
+                shuffle: true,
+                track_uri: None,
+                position_ms: 0,
+            }
+        );
     }
 
     #[test]
