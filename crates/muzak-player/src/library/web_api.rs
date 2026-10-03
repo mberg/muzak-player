@@ -1,0 +1,669 @@
+//! Spotify Web API client: only the endpoints the player needs, parsed defensively.
+
+use std::collections::HashSet;
+use std::future::Future;
+use std::time::Duration;
+
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+use super::{FetchError, LibrarySource};
+use crate::model::{Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection};
+
+pub const API_BASE: &str = "https://api.spotify.com/v1";
+/// Keep in sync with `crates/muzak-setup/src/main.rs`.
+pub const SCOPES: &str =
+    "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played";
+const MAX_ITEMS: usize = 500;
+const RECENT_LIMIT: usize = 20;
+
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum HttpError {
+    #[error("HTTP status {0}")]
+    Status(u16),
+    #[error("network error: {0}")]
+    Network(String),
+    #[error("invalid response: {0}")]
+    Decode(String),
+}
+
+pub trait Http: Send + Sync + 'static {
+    fn get_json(
+        &self,
+        url: &str,
+        token: &str,
+    ) -> impl Future<Output = Result<Value, HttpError>> + Send;
+}
+
+pub trait TokenSource: Send + Sync + 'static {
+    fn token(&self) -> impl Future<Output = Result<String, FetchError>> + Send;
+}
+
+pub struct ReqwestHttp {
+    client: reqwest::Client,
+}
+
+impl ReqwestHttp {
+    pub fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()?,
+        })
+    }
+}
+
+impl Http for ReqwestHttp {
+    async fn get_json(&self, url: &str, token: &str) -> Result<Value, HttpError> {
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| HttpError::Network(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(HttpError::Status(status.as_u16()));
+        }
+        response
+            .json::<Value>()
+            .await
+            .map_err(|e| HttpError::Decode(e.to_string()))
+    }
+}
+
+// ---- Response shapes (only the fields we use; everything optional where Spotify is inconsistent) ----
+
+#[derive(Debug, Deserialize)]
+struct Page<T> {
+    #[serde(default = "Vec::new")]
+    items: Vec<Option<T>>,
+    next: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ImageObj {
+    pub url: String,
+    pub width: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OwnerObj {
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtistObj {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaylistObj {
+    uri: String,
+    name: String,
+    #[serde(default)]
+    images: Option<Vec<ImageObj>>,
+    owner: Option<OwnerObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AlbumObj {
+    uri: String,
+    name: String,
+    #[serde(default)]
+    images: Option<Vec<ImageObj>>,
+    #[serde(default)]
+    artists: Vec<ArtistObj>,
+    tracks: Option<Page<TrackObj>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AlbumRef {
+    uri: Option<String>,
+    name: Option<String>,
+    #[serde(default)]
+    images: Option<Vec<ImageObj>>,
+    #[serde(default)]
+    artists: Vec<ArtistObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TrackObj {
+    uri: Option<String>,
+    name: Option<String>,
+    #[serde(default)]
+    duration_ms: u32,
+    #[serde(default)]
+    artists: Vec<ArtistObj>,
+    album: Option<AlbumRef>,
+    #[serde(default)]
+    is_local: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SavedAlbum {
+    album: AlbumObj,
+}
+
+#[derive(Debug, Deserialize)]
+struct SavedTrack {
+    track: Option<TrackObj>,
+}
+
+/// Spotify has used both `track` and `item` for playlist entries.
+#[derive(Debug, Deserialize)]
+struct PlaylistItem {
+    track: Option<TrackObj>,
+    item: Option<TrackObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecentItem {
+    track: TrackObj,
+    context: Option<ContextObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContextObj {
+    uri: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+// ---- Conversions ----
+
+fn images(images: &Option<Vec<ImageObj>>) -> &[ImageObj] {
+    images.as_deref().unwrap_or(&[])
+}
+
+/// Smallest image that is at least 250px wide, else the first one listed.
+pub(crate) fn pick_image(images: &[ImageObj]) -> Option<String> {
+    images
+        .iter()
+        .filter(|i| i.width.is_some_and(|w| w >= 250))
+        .min_by_key(|i| i.width)
+        .or_else(|| images.first())
+        .map(|i| i.url.clone())
+}
+
+fn join_artists(artists: &[ArtistObj]) -> String {
+    artists
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn playlist_collection(p: PlaylistObj) -> Collection {
+    Collection {
+        image_url: pick_image(images(&p.images)),
+        uri: p.uri,
+        kind: CollectionKind::Playlist,
+        name: p.name,
+        subtitle: p.owner.and_then(|o| o.display_name).unwrap_or_default(),
+    }
+}
+
+fn album_collection(a: &AlbumObj) -> Collection {
+    Collection {
+        uri: a.uri.clone(),
+        kind: CollectionKind::Album,
+        name: a.name.clone(),
+        subtitle: join_artists(&a.artists),
+        image_url: pick_image(images(&a.images)),
+    }
+}
+
+/// Only real Spotify tracks; local files and podcast episodes are skipped.
+fn to_track(t: TrackObj, album_fallback: Option<(&str, Option<&str>)>) -> Option<Track> {
+    let uri = t.uri?;
+    if t.is_local || !uri.starts_with("spotify:track:") {
+        return None;
+    }
+    let (album, image_url) = match &t.album {
+        Some(a) => (
+            a.name.clone().unwrap_or_default(),
+            pick_image(images(&a.images)),
+        ),
+        None => album_fallback
+            .map(|(name, image)| (name.to_string(), image.map(str::to_string)))
+            .unwrap_or_default(),
+    };
+    Some(Track {
+        uri,
+        name: t.name.unwrap_or_default(),
+        artists: join_artists(&t.artists),
+        album,
+        image_url,
+        duration_ms: t.duration_ms,
+    })
+}
+
+fn recent_collections(items: Vec<RecentItem>, known_playlists: &[Collection]) -> Vec<Collection> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for item in items {
+        let collection = match &item.context {
+            Some(ctx) if ctx.kind == "playlist" => {
+                known_playlists.iter().find(|p| p.uri == ctx.uri).cloned()
+            }
+            Some(ctx) if ctx.kind == "collection" => Some(liked_collection()),
+            _ => item.track.album.as_ref().and_then(|a| {
+                Some(Collection {
+                    uri: a.uri.clone()?,
+                    kind: CollectionKind::Album,
+                    name: a.name.clone().unwrap_or_default(),
+                    subtitle: join_artists(&a.artists),
+                    image_url: pick_image(images(&a.images)),
+                })
+            }),
+        };
+        if let Some(c) = collection {
+            if seen.insert(c.uri.clone()) {
+                out.push(c);
+                if out.len() >= RECENT_LIMIT {
+                    break;
+                }
+            }
+        }
+    }
+    out
+}
+
+fn decode<D: DeserializeOwned>(value: Value) -> Result<D, FetchError> {
+    serde_json::from_value(value)
+        .map_err(|e| FetchError::Other(format!("unexpected response: {e}")))
+}
+
+// ---- Client ----
+
+pub struct WebApi<H, T> {
+    http: H,
+    tokens: T,
+    base: String,
+}
+
+impl<H: Http, T: TokenSource> WebApi<H, T> {
+    pub fn new(http: H, tokens: T) -> Self {
+        Self::with_base(http, tokens, API_BASE)
+    }
+
+    pub fn with_base(http: H, tokens: T, base: &str) -> Self {
+        Self {
+            http,
+            tokens,
+            base: base.to_string(),
+        }
+    }
+
+    async fn get(&self, path_or_url: &str) -> Result<Value, FetchError> {
+        let url = if path_or_url.starts_with("http") {
+            path_or_url.to_string()
+        } else {
+            format!("{}{}", self.base, path_or_url)
+        };
+        let mut retried = false;
+        loop {
+            let token = self.tokens.token().await?;
+            match self.http.get_json(&url, &token).await {
+                Ok(value) => return Ok(value),
+                Err(HttpError::Status(401)) if !retried => retried = true,
+                Err(HttpError::Status(401)) => return Err(FetchError::Auth),
+                Err(HttpError::Status(404)) => return Err(FetchError::NotFound),
+                Err(HttpError::Status(code)) => {
+                    return Err(FetchError::Other(format!("HTTP {code} for {url}")));
+                }
+                Err(HttpError::Network(e)) => {
+                    tracing::warn!("network error for {url}: {e}");
+                    return Err(FetchError::Offline);
+                }
+                Err(HttpError::Decode(e)) => return Err(FetchError::Other(e)),
+            }
+        }
+    }
+
+    async fn pages<I: DeserializeOwned>(&self, first: &str) -> Result<Vec<I>, FetchError> {
+        let mut out = Vec::new();
+        let mut next = Some(first.to_string());
+        while let Some(url) = next.take() {
+            let page: Page<I> = decode(self.get(&url).await?)?;
+            out.extend(page.items.into_iter().flatten());
+            if out.len() < MAX_ITEMS {
+                next = page.next;
+            }
+        }
+        out.truncate(MAX_ITEMS);
+        Ok(out)
+    }
+
+    async fn playlists(&self) -> Result<Vec<Collection>, FetchError> {
+        let items = self.pages::<PlaylistObj>("/me/playlists?limit=50").await?;
+        Ok(items.into_iter().map(playlist_collection).collect())
+    }
+
+    async fn albums(&self) -> Result<Vec<Collection>, FetchError> {
+        let items = self.pages::<SavedAlbum>("/me/albums?limit=50").await?;
+        Ok(items.iter().map(|s| album_collection(&s.album)).collect())
+    }
+
+    async fn recent(&self) -> Result<Vec<Collection>, FetchError> {
+        let known = self.playlists().await?;
+        // Recently played pages use cursors; the first page (50 plays) is plenty.
+        let page: Page<RecentItem> =
+            decode(self.get("/me/player/recently-played?limit=50").await?)?;
+        Ok(recent_collections(
+            page.items.into_iter().flatten().collect(),
+            &known,
+        ))
+    }
+
+    async fn liked_tracks(&self) -> Result<Vec<Track>, FetchError> {
+        let items = self.pages::<SavedTrack>("/me/tracks?limit=50").await?;
+        Ok(items
+            .into_iter()
+            .filter_map(|s| s.track.and_then(|t| to_track(t, None)))
+            .collect())
+    }
+
+    async fn playlist_tracks(&self, id: &str) -> Result<Vec<Track>, FetchError> {
+        let items = match self
+            .pages::<PlaylistItem>(&format!("/playlists/{id}/items?limit=100"))
+            .await
+        {
+            Err(FetchError::NotFound) => {
+                self.pages::<PlaylistItem>(&format!("/playlists/{id}/tracks?limit=100"))
+                    .await?
+            }
+            other => other?,
+        };
+        Ok(items
+            .into_iter()
+            .filter_map(|i| i.item.or(i.track))
+            .filter_map(|t| to_track(t, None))
+            .collect())
+    }
+
+    async fn album_tracks(&self, id: &str) -> Result<Vec<Track>, FetchError> {
+        let album: AlbumObj = decode(self.get(&format!("/albums/{id}")).await?)?;
+        let image = pick_image(images(&album.images));
+        let mut raw = Vec::new();
+        let mut next = None;
+        if let Some(page) = album.tracks {
+            raw.extend(page.items.into_iter().flatten());
+            next = page.next;
+        }
+        if let Some(url) = next {
+            raw.extend(self.pages::<TrackObj>(&url).await?);
+        }
+        Ok(raw
+            .into_iter()
+            .filter_map(|t| to_track(t, Some((&album.name, image.as_deref()))))
+            .collect())
+    }
+}
+
+impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
+    async fn section(&self, section: Section) -> Result<Vec<Collection>, FetchError> {
+        match section {
+            Section::Playlists => self.playlists().await,
+            Section::Albums => self.albums().await,
+            Section::Recent => self.recent().await,
+            Section::Liked => Ok(vec![liked_collection()]),
+        }
+    }
+
+    async fn tracks(&self, collection_uri: &str) -> Result<Vec<Track>, FetchError> {
+        if collection_uri == LIKED_URI {
+            return self.liked_tracks().await;
+        }
+        let parts: Vec<&str> = collection_uri.split(':').collect();
+        match parts.as_slice() {
+            ["spotify", "playlist", id] => self.playlist_tracks(id).await,
+            ["spotify", "album", id] => self.album_tracks(id).await,
+            _ => Err(FetchError::Other(format!(
+                "unsupported collection {collection_uri}"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, VecDeque};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use serde_json::json;
+
+    use super::*;
+
+    const BASE: &str = "https://api.test/v1";
+
+    #[derive(Default)]
+    struct FakeHttp {
+        responses: Mutex<HashMap<String, VecDeque<Result<Value, HttpError>>>>,
+        calls: Mutex<Vec<(String, String)>>,
+    }
+
+    impl FakeHttp {
+        fn on(self, path: &str, response: Result<Value, HttpError>) -> Self {
+            let url = if path.starts_with("http") {
+                path.to_string()
+            } else {
+                format!("{BASE}{path}")
+            };
+            self.responses
+                .lock()
+                .unwrap()
+                .entry(url)
+                .or_default()
+                .push_back(response);
+            self
+        }
+    }
+
+    impl Http for FakeHttp {
+        async fn get_json(&self, url: &str, token: &str) -> Result<Value, HttpError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((url.to_string(), token.to_string()));
+            self.responses
+                .lock()
+                .unwrap()
+                .get_mut(url)
+                .and_then(|queue| queue.pop_front())
+                .unwrap_or(Err(HttpError::Status(404)))
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingTokens(AtomicU32);
+
+    impl TokenSource for CountingTokens {
+        async fn token(&self) -> Result<String, FetchError> {
+            Ok(format!("t{}", self.0.fetch_add(1, Ordering::SeqCst) + 1))
+        }
+    }
+
+    fn api(http: FakeHttp) -> WebApi<FakeHttp, CountingTokens> {
+        WebApi::with_base(http, CountingTokens::default(), BASE)
+    }
+
+    fn img(url: &str, width: Option<u32>) -> ImageObj {
+        ImageObj {
+            url: url.into(),
+            width,
+        }
+    }
+
+    #[test]
+    fn pick_image_prefers_smallest_at_least_250() {
+        let images = [
+            img("big", Some(640)),
+            img("mid", Some(300)),
+            img("small", Some(64)),
+        ];
+        assert_eq!(pick_image(&images).as_deref(), Some("mid"));
+        assert_eq!(pick_image(&[img("only", None)]).as_deref(), Some("only"));
+        assert_eq!(
+            pick_image(&[img("tiny", Some(64))]).as_deref(),
+            Some("tiny")
+        );
+        assert_eq!(pick_image(&[]), None);
+    }
+
+    #[tokio::test]
+    async fn playlists_follow_pagination_and_tolerate_null_images() {
+        let http = FakeHttp::default()
+            .on(
+                "/me/playlists?limit=50",
+                Ok(json!({
+                    "items": [{"uri": "spotify:playlist:a", "name": "A", "images": null, "owner": {"display_name": "Mum"}}],
+                    "next": "https://api.test/v1/me/playlists?offset=1"
+                })),
+            )
+            .on(
+                "https://api.test/v1/me/playlists?offset=1",
+                Ok(json!({
+                    "items": [null, {"uri": "spotify:playlist:b", "name": "B", "images": [{"url": "u", "width": 300}], "owner": null}],
+                    "next": null
+                })),
+            );
+        let result = api(http).section(Section::Playlists).await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].subtitle, "Mum");
+        assert_eq!(result[0].image_url, None);
+        assert_eq!(result[1].image_url.as_deref(), Some("u"));
+        assert_eq!(result[1].kind, CollectionKind::Playlist);
+    }
+
+    // Review focus 3: odd playlist entries.
+    #[tokio::test]
+    async fn playlist_tracks_skip_null_local_and_episodes() {
+        let http = FakeHttp::default().on(
+            "/playlists/p1/items?limit=100",
+            Ok(json!({
+                "items": [
+                    {"track": null},
+                    {"track": {"uri": "spotify:local:x", "name": "Local", "is_local": true, "duration_ms": 1, "artists": []}},
+                    {"item": {"uri": "spotify:episode:e", "name": "Podcast", "duration_ms": 1}},
+                    {"item": {"uri": "spotify:track:t1", "name": "Song", "duration_ms": 61000,
+                              "artists": [{"name": "A"}, {"name": "B"}],
+                              "album": {"uri": "spotify:album:al", "name": "Al", "images": [{"url": "cover", "width": 300}]}}}
+                ],
+                "next": null
+            })),
+        );
+        let tracks = api(http).tracks("spotify:playlist:p1").await.unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].artists, "A, B");
+        assert_eq!(tracks[0].album, "Al");
+        assert_eq!(tracks[0].image_url.as_deref(), Some("cover"));
+    }
+
+    #[tokio::test]
+    async fn playlist_tracks_fall_back_to_tracks_endpoint() {
+        let http = FakeHttp::default().on(
+            "/playlists/p1/tracks?limit=100",
+            Ok(json!({"items": [{"track": {"uri": "spotify:track:t1", "name": "Song", "duration_ms": 1, "artists": []}}], "next": null})),
+        );
+        let tracks = api(http).tracks("spotify:playlist:p1").await.unwrap();
+        assert_eq!(tracks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn albums_and_album_tracks() {
+        let http = FakeHttp::default()
+            .on(
+                "/me/albums?limit=50",
+                Ok(json!({"items": [{"album": {"uri": "spotify:album:a1", "name": "Moana",
+                    "images": [{"url": "m", "width": 300}], "artists": [{"name": "Various"}]}}], "next": null})),
+            )
+            .on(
+                "/albums/a1",
+                Ok(json!({"uri": "spotify:album:a1", "name": "Moana", "images": [{"url": "m", "width": 300}],
+                    "artists": [], "tracks": {"items": [{"uri": "spotify:track:t1", "name": "How Far", "duration_ms": 2, "artists": [{"name": "Auli'i"}]}],
+                    "next": "https://api.test/v1/albums/a1/tracks?offset=1"}})),
+            )
+            .on(
+                "https://api.test/v1/albums/a1/tracks?offset=1",
+                Ok(json!({"items": [{"uri": "spotify:track:t2", "name": "Shiny", "duration_ms": 3, "artists": []}], "next": null})),
+            );
+        let api = api(http);
+        let albums = api.section(Section::Albums).await.unwrap();
+        assert_eq!(albums[0].subtitle, "Various");
+        let tracks = api.tracks("spotify:album:a1").await.unwrap();
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[1].album, "Moana");
+        assert_eq!(tracks[1].image_url.as_deref(), Some("m"));
+    }
+
+    #[tokio::test]
+    async fn liked_tracks_use_me_tracks() {
+        let http = FakeHttp::default().on(
+            "/me/tracks?limit=50",
+            Ok(json!({"items": [{"track": {"uri": "spotify:track:t1", "name": "S", "duration_ms": 1, "artists": []}}], "next": null})),
+        );
+        assert_eq!(api(http).tracks(LIKED_URI).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn recent_dedupes_contexts_and_maps_liked() {
+        let album = json!({"uri": "spotify:album:a1", "name": "Al", "images": [], "artists": [{"name": "X"}]});
+        let t = |ctx: Value| json!({"track": {"uri": "spotify:track:t", "name": "S", "duration_ms": 1, "artists": [], "album": album}, "context": ctx});
+        let http = FakeHttp::default()
+            .on(
+                "/me/playlists?limit=50",
+                Ok(json!({"items": [{"uri": "spotify:playlist:p1", "name": "Mine", "images": [], "owner": null}], "next": null})),
+            )
+            .on(
+                "/me/player/recently-played?limit=50",
+                Ok(json!({"items": [
+                    t(json!({"type": "playlist", "uri": "spotify:playlist:p1"})),
+                    t(json!({"type": "playlist", "uri": "spotify:playlist:p1"})),
+                    t(json!({"type": "playlist", "uri": "spotify:playlist:unknown"})),
+                    t(json!({"type": "collection", "uri": "spotify:user:kid:collection"})),
+                    t(json!({"type": "album", "uri": "spotify:album:a1"})),
+                    t(Value::Null)
+                ], "next": null})),
+            );
+        let recent = api(http).section(Section::Recent).await.unwrap();
+        let uris: Vec<_> = recent.iter().map(|c| c.uri.as_str()).collect();
+        assert_eq!(
+            uris,
+            vec!["spotify:playlist:p1", LIKED_URI, "spotify:album:a1"]
+        );
+    }
+
+    // Review focus 4: expired access tokens.
+    #[tokio::test]
+    async fn unauthorized_retries_once_with_fresh_token() {
+        let http = FakeHttp::default()
+            .on("/me/tracks?limit=50", Err(HttpError::Status(401)))
+            .on(
+                "/me/tracks?limit=50",
+                Ok(json!({"items": [], "next": null})),
+            );
+        let api = api(http);
+        assert_eq!(api.tracks(LIKED_URI).await.unwrap(), vec![]);
+        let calls = api.http.calls.lock().unwrap().clone();
+        assert_eq!(
+            calls.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+            vec!["t1", "t2"]
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_unauthorized_is_auth_error_and_network_is_offline() {
+        let http = FakeHttp::default()
+            .on("/me/tracks?limit=50", Err(HttpError::Status(401)))
+            .on("/me/tracks?limit=50", Err(HttpError::Status(401)))
+            .on("/me/albums?limit=50", Err(HttpError::Network("dns".into())));
+        let api = api(http);
+        assert_eq!(api.tracks(LIKED_URI).await, Err(FetchError::Auth));
+        assert_eq!(api.section(Section::Albums).await, Err(FetchError::Offline));
+    }
+}
