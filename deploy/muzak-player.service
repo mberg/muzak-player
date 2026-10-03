@@ -1,7 +1,7 @@
 [Unit]
 Description=Muzak player
-After=network-online.target sound.target bluetooth.target
-Wants=network-online.target
+After=network-online.target sound.target bluetooth.target bluealsa.service
+Wants=network-online.target bluealsa.service
 
 [Service]
 User=muzak
@@ -10,6 +10,7 @@ SupplementaryGroups=video input audio render bluetooth
 Environment=SLINT_BACKEND=linuxkms-femtovg
 Environment=RUST_LOG=info,librespot=warn
 ExecStart=/usr/local/bin/muzak-player --config /etc/muzak/config.toml
+UMask=0077
 Restart=always
 RestartSec=2
 

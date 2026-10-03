@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/deploy.sh <ssh-host> <config.toml> [secrets-dir]
+# Assumes passwordless sudo on the Pi (the Pi OS default user).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 HOST=${1:?usage: scripts/deploy.sh <ssh-host> <config.toml> [secrets-dir]}
@@ -14,8 +15,8 @@ ssh "$HOST" 'sudo install -m 755 /tmp/muzak-player /usr/local/bin/muzak-player \
     && sudo install -m 644 /tmp/muzak-config.toml /etc/muzak/config.toml \
     && rm /tmp/muzak-player /tmp/muzak-config.toml'
 if [ -n "$SECRETS" ]; then
-    scp "$SECRETS/librespot/credentials.json" "$HOST":/tmp/muzak-credentials.json
-    ssh "$HOST" 'sudo install -m 600 -o muzak -g muzak /tmp/muzak-credentials.json /var/lib/muzak/librespot/credentials.json \
-        && rm /tmp/muzak-credentials.json'
+    CRED="$SECRETS/librespot/credentials.json"
+    [ -f "$CRED" ] || { echo "Missing $CRED" >&2; exit 1; }
+    ssh "$HOST" 'sudo install -m 600 -o muzak -g muzak /dev/stdin /var/lib/muzak/librespot/credentials.json' < "$CRED"
 fi
 ssh "$HOST" 'sudo systemctl restart muzak-player && sleep 3 && systemctl --no-pager --lines=20 status muzak-player'

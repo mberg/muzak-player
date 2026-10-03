@@ -6,10 +6,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 apt-get update
 apt-get install -y --no-install-recommends \
     libasound2t64 libinput10 libudev1 libxkbcommon0 libgbm1 libegl1 libgles2 libdrm2 libfontconfig1 \
-    bluez bluez-alsa-utils
+    libegl-mesa0 libgl1-mesa-dri \
+    bluez bluez-alsa-utils libasound2-plugin-bluez
 
-id muzak >/dev/null 2>&1 || useradd --system --create-home --groups video,input,audio,render,bluetooth muzak
-install -d -o muzak -g muzak /var/lib/muzak /var/lib/muzak/librespot
+id muzak >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin --groups video,input,audio,render,bluetooth muzak
+install -d -m 700 -o muzak -g muzak /var/lib/muzak /var/lib/muzak/librespot
 install -d /etc/muzak
 
 CONFIG=/boot/firmware/config.txt
