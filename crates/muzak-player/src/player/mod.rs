@@ -8,6 +8,7 @@ pub fn volume_to_percent(volume: u16) -> u8 {
 }
 
 pub mod fake;
+pub mod librespot;
 
 #[cfg(test)]
 mod tests {

@@ -71,7 +71,17 @@ async fn run(
         );
         (spawn_fake_player(catalog, inputs.clone()), library)
     } else {
-        anyhow::bail!("real Spotify playback is wired up in Task 11; run with --fake");
+        let (session_tx, session_rx) = tokio::sync::watch::channel(None);
+        let player = crate::player::librespot::spawn(
+            crate::player::librespot::PlayerSettings::from_config(&config),
+            session_tx,
+            inputs.clone(),
+        );
+        let source = Arc::new(crate::library::web_api::WebApi::new(
+            crate::library::web_api::ReqwestHttp::new()?,
+            crate::library::session_tokens::SessionTokens::new(session_rx),
+        ));
+        (player, spawn_library(source, cache, inputs.clone()))
     };
     spawn_image_loader(
         Arc::new(ImageLoader::new(config.images_dir(), 300)?),
