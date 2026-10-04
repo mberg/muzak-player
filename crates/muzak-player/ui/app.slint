@@ -77,6 +77,7 @@ export component AppWindow inherits Window {
     callback clear-search();
     callback open-keyboard();
     callback close-keyboard();
+    callback close-search();
     callback open-artist(string);
     callback play-artist(string);
     callback play-song(string);
@@ -87,6 +88,8 @@ export component AppWindow inherits Window {
         x: 0;
         y: 0;
         height: root.height;
+        // Search uses the whole screen.
+        visible: root.screen != ScreenKind.search;
         selected: root.section;
         account: root.account;
         select(i) => { root.show-section(i); }
@@ -116,9 +119,9 @@ export component AppWindow inherits Window {
         play-track(i) => { root.play-track(root.detail.uri, i); }
     }
     SearchScreen {
-        x: Theme.rail-width;
+        x: 0;
         y: 0;
-        width: root.width - Theme.rail-width;
+        width: root.width;
         height: root.content-height;
         visible: root.screen == ScreenKind.search;
         query: root.search-query;
@@ -132,6 +135,7 @@ export component AppWindow inherits Window {
         play-song(uri) => { root.play-song(uri); }
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
+        close => { root.close-search(); }
     }
     ArtistScreen {
         x: Theme.rail-width;
@@ -156,9 +160,9 @@ export component AppWindow inherits Window {
         done => { root.close-keyboard(); }
     }
     if root.mini-visible: MiniPlayer {
-        x: Theme.rail-width;
+        x: root.screen == ScreenKind.search ? 0 : Theme.rail-width;
         y: root.height - Theme.mini-height;
-        width: root.width - Theme.rail-width;
+        width: root.width - self.x;
         title: root.track-title;
         artists: root.track-artists;
         art: root.track-art;

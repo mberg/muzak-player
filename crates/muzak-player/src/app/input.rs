@@ -50,6 +50,8 @@ pub enum UiAction {
     ClearSearch,
     OpenKeyboard,
     CloseKeyboard,
+    /// Leave search and go back to the section that was open before.
+    CloseSearch,
     OpenArtist(String),
     PlayArtist(String),
     /// Play one song picked from search results, by track URI.

@@ -200,6 +200,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_close_keyboard(move || s(UiAction::CloseKeyboard));
     let s = send.clone();
+    window.on_close_search(move || s(UiAction::CloseSearch));
+    let s = send.clone();
     window.on_open_artist(move |uri| s(UiAction::OpenArtist(uri.to_string())));
     let s = send.clone();
     window.on_play_artist(move |uri| s(UiAction::PlayArtist(uri.to_string())));

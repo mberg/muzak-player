@@ -3,6 +3,7 @@ import { Theme } from "../theme.slint";
 import { SearchRowData, LoadState } from "../types.slint";
 import { SearchRow } from "../components/search_row.slint";
 import { StateMessage } from "../components/state_message.slint";
+import { IconButton } from "../components/icon_button.slint";
 
 export component SearchScreen inherits Rectangle {
     in property <string> query;
@@ -17,13 +18,21 @@ export component SearchScreen inherits Rectangle {
     callback play-song(string);
     callback clear();
     callback open-keyboard();
+    callback close();
     property <length> bar: 76px;
     property <length> results-height: root.height - root.bar - (root.keyboard ? root.keyboard-height : 0px);
     background: Theme.bg;
+    // Closes search and returns to the previous section.
+    IconButton {
+        x: parent.width - self.width - 10px;
+        y: 6px;
+        icon: @image-url("../icons/close.svg");
+        clicked => { root.close(); }
+    }
     Rectangle {
         x: 16px;
         y: 12px;
-        width: parent.width - 32px;
+        width: parent.width - 32px - Theme.touch;
         height: 52px;
         border-radius: 26px;
         background: Theme.surface;

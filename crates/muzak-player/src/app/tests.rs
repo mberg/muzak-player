@@ -720,3 +720,16 @@ fn forbidden_track_list_is_marked_forbidden_not_failed() {
     let slot = &c.state().tracks["spotify:playlist:p9"];
     assert!(slot.forbidden && !slot.failed);
 }
+
+#[test]
+fn closing_search_returns_to_the_previous_section() {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Albums)), 0);
+    c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+    c.handle(ui(UiAction::OpenArtist("spotify:artist:r1".into())), 0);
+    c.handle(ui(UiAction::Back), 0);
+    c.handle(ui(UiAction::CloseSearch), 0);
+    assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
+    assert_eq!(c.state().section, Section::Albums);
+    assert!(!c.state().keyboard_open);
+}

@@ -42,6 +42,8 @@ pub struct Core {
     last_activity_ms: u64,
     notice_until_ms: u64,
     last_load: Option<((String, Start, bool), u64)>,
+    /// Where closing search returns to.
+    before_search: Section,
 }
 
 impl Core {
@@ -77,6 +79,7 @@ impl Core {
             last_activity_ms: now_ms,
             notice_until_ms: 0,
             last_load: None,
+            before_search: Section::Playlists,
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -171,6 +174,9 @@ impl Core {
     fn on_ui(&mut self, action: UiAction, now_ms: u64, fx: &mut Vec<Effect>) {
         match action {
             UiAction::ShowSection(Section::Search) => {
+                if self.state.section != Section::Search {
+                    self.before_search = self.state.section;
+                }
                 self.state.section = Section::Search;
                 self.state.back_stack.clear();
                 self.state.screen = Screen::Search;
@@ -287,6 +293,10 @@ impl Core {
                 self.state.keyboard_open = self.state.screen == Screen::Search;
             }
             UiAction::CloseKeyboard => self.state.keyboard_open = false,
+            UiAction::CloseSearch => {
+                let previous = self.before_search;
+                self.on_ui(UiAction::ShowSection(previous), now_ms, fx);
+            }
             UiAction::OpenArtist(uri) => {
                 self.navigate(Screen::Artist(uri.clone()));
                 self.state
