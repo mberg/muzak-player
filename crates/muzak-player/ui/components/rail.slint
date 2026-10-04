@@ -5,7 +5,7 @@ component RailItem inherits Rectangle {
     in property <string> label;
     in property <bool> active;
     callback clicked();
-    height: 92px;
+    height: 84px;
     background: root.active ? Theme.surface-hi : transparent;
     Rectangle {
         x: 0;
@@ -48,6 +48,7 @@ export component Rail inherits Rectangle {
         RailItem { icon: @image-url("../icons/album.svg"); label: "Albums"; active: root.selected == 1; clicked => { root.select(1); } }
         RailItem { icon: @image-url("../icons/heart.svg"); label: "Liked"; active: root.selected == 2; clicked => { root.select(2); } }
         RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 3; clicked => { root.select(3); } }
+        RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
     }
     // Which Spotify account this device is signed in to. Kept small and dim on purpose.
     Text {

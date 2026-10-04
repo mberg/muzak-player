@@ -400,16 +400,15 @@ fn apply(spirc: &Spirc, session: &Session, command: PlayerCommand) -> Result<(),
         PlayerCommand::Load {
             context_uri,
             start_index,
+            start_uri,
             shuffle,
         } => {
             let uri = context_uri_for(&context_uri, &session.username());
             spirc.activate()?;
-            spirc.load(load_request(
-                uri,
-                shuffle,
-                start_index.map(PlayingTrack::Index),
-                0,
-            ))
+            let playing_track = start_uri
+                .map(PlayingTrack::Uri)
+                .or(start_index.map(PlayingTrack::Index));
+            spirc.load(load_request(uri, shuffle, playing_track, 0))
         }
         PlayerCommand::Play => spirc.play(),
         PlayerCommand::Pause => spirc.pause(),
@@ -485,6 +484,7 @@ fn track_from_item(item: &AudioItem) -> Track {
         album,
         image_url,
         duration_ms: item.duration_ms,
+        album_uri: None,
     }
 }
 
@@ -672,6 +672,7 @@ mod tests {
         let load = PlayerCommand::Load {
             context_uri: "x".into(),
             start_index: None,
+            start_uri: None,
             shuffle: false,
         };
         assert_eq!(route(&t, &load), Route::Forward);
@@ -713,6 +714,7 @@ mod tests {
         let load = PlayerCommand::Load {
             context_uri: "spotify:album:a".into(),
             start_index: None,
+            start_uri: None,
             shuffle: false,
         };
         t.note_command(&load);
@@ -727,6 +729,7 @@ mod tests {
         tx.send(PlayerCommand::Load {
             context_uri: "spotify:album:b".into(),
             start_index: Some(1),
+            start_uri: None,
             shuffle: true,
         })
         .unwrap();
@@ -767,6 +770,7 @@ mod tests {
         t.note_command(&PlayerCommand::Load {
             context_uri: "spotify:album:b".into(),
             start_index: Some(2),
+            start_uri: None,
             shuffle: true,
         });
         assert_eq!(t.last_context, Some(("spotify:album:b".into(), true)));

@@ -1,0 +1,76 @@
+import { Theme } from "../theme.slint";
+import { TileData, LoadState } from "../types.slint";
+import { Tile } from "../components/tile.slint";
+import { IconButton } from "../components/icon_button.slint";
+import { PillButton } from "../components/pill_button.slint";
+import { StateMessage } from "../components/state_message.slint";
+
+// An artist's albums. Spotify does not give this app an artist's top songs.
+export component ArtistScreen inherits Rectangle {
+    in property <TileData> header;
+    in property <[TileData]> albums;
+    in property <LoadState> state;
+    callback back();
+    callback play();
+    callback open(string);
+    property <int> columns: 4;
+    property <length> pad: 16px;
+    property <length> top: 84px;
+    property <length> tile-w: (root.width - 2 * root.pad) / root.columns;
+    property <length> art: root.tile-w - 12px;
+    property <length> tile-h: root.art + 72px;
+    background: Theme.bg;
+    HorizontalLayout {
+        x: root.pad;
+        y: 10px;
+        width: root.width - 2 * root.pad;
+        height: Theme.touch;
+        spacing: 12px;
+        IconButton {
+            icon: @image-url("../icons/back.svg");
+            clicked => { root.back(); }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.header.title;
+            color: Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 800;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        VerticalLayout {
+            alignment: center;
+            PillButton {
+                label: "Play";
+                icon: @image-url("../icons/play.svg");
+                primary: true;
+                clicked => { root.play(); }
+            }
+        }
+    }
+    Flickable {
+        x: 0;
+        y: root.top;
+        width: root.width;
+        height: root.height - root.top;
+        content-height: Math.ceil(root.albums.length / root.columns) * root.tile-h + root.pad;
+        for album[i] in root.albums: Tile {
+            x: root.pad + Math.mod(i, root.columns) * root.tile-w;
+            y: Math.floor(i / root.columns) * root.tile-h;
+            width: root.tile-w;
+            height: root.tile-h;
+            art-size: root.art;
+            data: album;
+            clicked => { root.open(album.uri); }
+        }
+    }
+    if root.state != LoadState.ready: StateMessage {
+        x: 0;
+        y: root.top;
+        width: root.width;
+        height: root.height - root.top;
+        state: root.state;
+        empty-text: "No albums here";
+    }
+}

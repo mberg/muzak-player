@@ -117,12 +117,21 @@ async fn run(
     publish(core.state().clone());
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
+    // Only runs while the search screen is open, so a search goes out soon after typing stops.
+    let mut search_tick = tokio::time::interval(Duration::from_millis(150));
+    search_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let input = tokio::select! {
             Some(input) = inputs_rx.recv() => input,
             _ = tick.tick() => Input::Tick,
+            _ = search_tick.tick(), if core.wants_search_tick() => Input::SearchTick,
         };
+        let quiet = input == Input::SearchTick;
         let effects = core.handle(input, now_ms());
+        // A search tick that sent nothing changed nothing; skip re-rendering.
+        if quiet && effects.is_empty() {
+            continue;
+        }
         dispatch(effects, &player, &library, &platform);
         publish(core.state().clone());
     }
@@ -176,7 +185,7 @@ mod tests {
         )
         .unwrap();
 
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(10);
         let wait_for = |pred: &dyn Fn(&AppState) -> bool| loop {
             let state = state_rx
                 .recv_timeout(Duration::from_secs(5))
@@ -199,5 +208,20 @@ mod tests {
             }))
             .unwrap();
         wait_for(&|s| s.playback.status == PlayStatus::Playing && s.playback.track.is_some());
+
+        // Search: typing, a pause, then catalog results arrive without another input.
+        inputs
+            .send(Input::Ui(UiAction::ShowSection(Section::Search)))
+            .unwrap();
+        inputs
+            .send(Input::Ui(UiAction::KeyPressed("dance".into())))
+            .unwrap();
+        wait_for(&|s| {
+            s.search
+                .results
+                .data
+                .as_ref()
+                .is_some_and(|r| !r.playlists.is_empty())
+        });
     }
 }

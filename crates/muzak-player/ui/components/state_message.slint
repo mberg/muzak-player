@@ -4,11 +4,16 @@ import { LoadState } from "../types.slint";
 export component StateMessage inherits Rectangle {
     in property <LoadState> state;
     in property <string> empty-text: "Nothing here yet";
+    in property <string> failed-text: "Can't load this right now";
     Text {
+        width: parent.width - 48px;
         text: root.state == LoadState.loading ? "Loading…"
-            : root.state == LoadState.failed ? "Can't load this right now"
+            : root.state == LoadState.failed ? root.failed-text
+            : root.state == LoadState.forbidden ? "Spotify won't list these songs here, but Play works."
             : root.empty-text;
         color: Theme.text-dim;
         font-size: Theme.font-body;
+        horizontal-alignment: center;
+        wrap: word-wrap;
     }
 }

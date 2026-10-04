@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{Account, Collection, CollectionKind, LIKED_URI, Section, Track};
+use crate::model::{Account, Collection, CollectionKind, LIKED_URI, SearchResults, Section, Track};
 
 pub(crate) fn config() -> CoreConfig {
     CoreConfig {
@@ -31,6 +31,7 @@ pub(crate) fn track(n: u32) -> Track {
         album: "Album".into(),
         image_url: None,
         duration_ms: 180_000,
+        album_uri: Some("spotify:album:a1".into()),
     }
 }
 
@@ -221,6 +222,7 @@ fn load(uri: &str, start: Option<u32>, shuffle: bool) -> Effect {
     Effect::Player(PlayerCommand::Load {
         context_uri: uri.into(),
         start_index: start,
+        start_uri: None,
         shuffle,
     })
 }
@@ -548,4 +550,186 @@ fn reconnect_reissues_a_pending_load() {
         !fx.iter()
             .any(|e| matches!(e, Effect::Player(PlayerCommand::Load { .. })))
     );
+}
+
+// ---- Search and artists ----
+
+fn searching() -> Core {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+    c
+}
+
+fn type_text(c: &mut Core, text: &str, at_ms: u64) {
+    c.handle(ui(UiAction::KeyPressed(text.into())), at_ms);
+}
+
+fn search_requests(fx: &[Effect]) -> Vec<String> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::Library(LibraryRequest::Search(q)) => Some(q.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn search_section_opens_with_keyboard() {
+    let c = searching();
+    assert_eq!(c.state().screen, Screen::Search);
+    assert_eq!(c.state().section, Section::Search);
+    assert!(c.state().keyboard_open);
+    assert!(c.wants_search_tick());
+}
+
+#[test]
+fn search_waits_for_a_pause_in_typing_and_sends_once() {
+    let mut c = searching();
+    type_text(&mut c, "a", 1_000);
+    type_text(&mut c, "b", 1_100);
+    assert!(search_requests(&c.handle(Input::SearchTick, 1_499)).is_empty());
+    assert_eq!(search_requests(&c.handle(Input::SearchTick, 1_500)), ["ab"]);
+    assert!(search_requests(&c.handle(Input::SearchTick, 2_000)).is_empty());
+    assert!(c.state().search.results.loading);
+}
+
+#[test]
+fn query_is_trimmed_and_whitespace_only_sends_nothing() {
+    let mut c = searching();
+    type_text(&mut c, " ", 0);
+    assert!(search_requests(&c.handle(Input::SearchTick, 1_000)).is_empty());
+    type_text(&mut c, "abba ", 1_000);
+    assert_eq!(
+        search_requests(&c.handle(Input::SearchTick, 2_000)),
+        ["abba"]
+    );
+}
+
+#[test]
+fn clearing_drops_results_without_a_request() {
+    let mut c = searching();
+    type_text(&mut c, "ab", 0);
+    c.handle(Input::SearchTick, 1_000);
+    let fx = c.handle(ui(UiAction::ClearSearch), 1_100);
+    assert!(search_requests(&fx).is_empty());
+    assert_eq!(c.state().search.query, "");
+    assert_eq!(c.state().search.results, Slot::default());
+}
+
+#[test]
+fn stale_results_are_dropped_and_current_ones_kept() {
+    let mut c = searching();
+    type_text(&mut c, "ab", 0);
+    c.handle(Input::SearchTick, 1_000);
+    let results = |name: &str| {
+        Input::Library(LibraryUpdate::SearchResults {
+            query: name.into(),
+            results: SearchResults {
+                playlists: vec![playlist(1)],
+                ..Default::default()
+            },
+        })
+    };
+    c.handle(results("a"), 1_000);
+    assert!(c.state().search.results.data.is_none());
+    c.handle(results("ab"), 1_000);
+    assert!(c.state().search.results.data.is_some());
+    assert!(!c.state().search.results.loading);
+}
+
+#[test]
+fn typing_is_ignored_off_the_search_screen() {
+    let mut c = core();
+    type_text(&mut c, "x", 0);
+    assert_eq!(c.state().search.query, "");
+}
+
+#[test]
+fn leaving_search_closes_the_keyboard() {
+    let mut c = searching();
+    c.handle(ui(UiAction::OpenCollection("spotify:album:a1".into())), 0);
+    assert!(!c.state().keyboard_open);
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().screen, Screen::Search);
+}
+
+#[test]
+fn open_artist_requests_albums_and_back_returns_to_search() {
+    let mut c = searching();
+    let fx = c.handle(ui(UiAction::OpenArtist("spotify:artist:r1".into())), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:r1".into()));
+    assert!(fx.contains(&Effect::Library(LibraryRequest::ArtistAlbums {
+        artist_uri: "spotify:artist:r1".into()
+    })));
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().screen, Screen::Search);
+}
+
+#[test]
+fn play_song_plays_it_within_its_album() {
+    let mut c = searching();
+    type_text(&mut c, "song", 0);
+    c.handle(Input::SearchTick, 1_000);
+    c.handle(
+        Input::Library(LibraryUpdate::SearchResults {
+            query: "song".into(),
+            results: SearchResults {
+                tracks: vec![track(7)],
+                ..Default::default()
+            },
+        }),
+        1_000,
+    );
+    let fx = c.handle(ui(UiAction::PlaySong("spotify:track:t7".into())), 2_000);
+    assert!(fx.contains(&Effect::Player(PlayerCommand::Load {
+        context_uri: "spotify:album:a1".into(),
+        start_index: None,
+        start_uri: Some("spotify:track:t7".into()),
+        shuffle: false,
+    })));
+    assert_eq!(c.state().playback.track, Some(track(7)));
+    assert_eq!(c.state().screen, Screen::NowPlaying);
+}
+
+#[test]
+fn play_song_without_an_album_plays_the_track_itself() {
+    let mut c = searching();
+    let mut lonely = track(8);
+    lonely.album_uri = None;
+    c.state.search.results.data = Some(Arc::new(SearchResults {
+        tracks: vec![lonely],
+        ..Default::default()
+    }));
+    let fx = c.handle(ui(UiAction::PlaySong("spotify:track:t8".into())), 0);
+    assert!(fx.iter().any(|e| matches!(
+        e,
+        Effect::Player(PlayerCommand::Load { context_uri, .. }) if context_uri == "spotify:track:t8"
+    )));
+}
+
+#[test]
+fn forbidden_track_list_is_marked_forbidden_not_failed() {
+    let mut c = core();
+    c.handle(
+        Input::Library(LibraryUpdate::TracksFailed {
+            collection_uri: "spotify:playlist:p9".into(),
+            reason: FailReason::Forbidden,
+        }),
+        0,
+    );
+    let slot = &c.state().tracks["spotify:playlist:p9"];
+    assert!(slot.forbidden && !slot.failed);
+}
+
+#[test]
+fn closing_search_returns_to_the_previous_section() {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Albums)), 0);
+    c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+    c.handle(ui(UiAction::OpenArtist("spotify:artist:r1".into())), 0);
+    c.handle(ui(UiAction::Back), 0);
+    c.handle(ui(UiAction::CloseSearch), 0);
+    assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
+    assert_eq!(c.state().section, Section::Albums);
+    assert!(!c.state().keyboard_open);
 }

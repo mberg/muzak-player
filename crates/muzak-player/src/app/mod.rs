@@ -8,12 +8,15 @@ use std::sync::Arc;
 pub use input::*;
 pub use state::*;
 
-use crate::model::{LIKED_URI, Section};
+use crate::model::{LIKED_URI, Section, Track};
 
 /// How long a notice stays on screen.
 const NOTICE_MS: u64 = 4_000;
 /// Identical play requests closer together than this are treated as one.
 const DOUBLE_TAP_MS: u64 = 1_000;
+/// A search goes out once typing has paused this long.
+const SEARCH_PAUSE_MS: u64 = 400;
+const MAX_QUERY_CHARS: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct CoreConfig {
@@ -22,13 +25,25 @@ pub struct CoreConfig {
     pub initial_volume: u8,
 }
 
+/// Where a newly loaded context starts playing.
+#[derive(Debug, Clone, PartialEq)]
+enum Start {
+    /// Let shuffle pick.
+    Shuffled,
+    Index(u32),
+    /// A specific song, e.g. one picked from search results.
+    Track(Track),
+}
+
 /// The app's state machine. Pure: no I/O, time is passed in.
 pub struct Core {
     state: AppState,
     cfg: CoreConfig,
     last_activity_ms: u64,
     notice_until_ms: u64,
-    last_load: Option<((String, Option<u32>, bool), u64)>,
+    last_load: Option<((String, Start, bool), u64)>,
+    /// Where closing search returns to.
+    before_search: Section,
 }
 
 impl Core {
@@ -54,6 +69,9 @@ impl Core {
             auth_needed: false,
             speaker_connected: true,
             account: None,
+            search: Default::default(),
+            keyboard_open: false,
+            artist_albums: Default::default(),
         };
         let mut core = Core {
             state,
@@ -61,6 +79,7 @@ impl Core {
             last_activity_ms: now_ms,
             notice_until_ms: 0,
             last_load: None,
+            before_search: Section::Playlists,
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -86,13 +105,83 @@ impl Core {
             Input::Library(update) => self.on_library(update),
             Input::Speaker { connected } => self.state.speaker_connected = connected,
             Input::AuthInvalid => self.state.auth_needed = true,
-            Input::Tick => self.on_tick(now_ms, &mut fx),
+            Input::Tick => {
+                self.on_tick(now_ms, &mut fx);
+                self.maybe_search(now_ms, &mut fx);
+            }
+            Input::SearchTick => self.maybe_search(now_ms, &mut fx),
+        }
+        if self.state.screen != Screen::Search {
+            self.state.keyboard_open = false;
         }
         fx
     }
 
+    /// The runtime sends `Input::SearchTick` only while this is true.
+    pub fn wants_search_tick(&self) -> bool {
+        self.state.screen == Screen::Search
+    }
+
+    fn maybe_search(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let search = &mut self.state.search;
+        if search.query == search.sent || now_ms.saturating_sub(search.edited_ms) < SEARCH_PAUSE_MS
+        {
+            return;
+        }
+        search.sent = search.query.clone();
+        let query = search.query.trim().to_string();
+        if query.is_empty() {
+            search.results = Slot::default();
+            return;
+        }
+        search.results.loading = true;
+        fx.push(Effect::Library(LibraryRequest::Search(query)));
+    }
+
+    fn edit_query(&mut self, now_ms: u64, change: impl FnOnce(&mut String)) {
+        if self.state.screen != Screen::Search {
+            return;
+        }
+        let search = &mut self.state.search;
+        change(&mut search.query);
+        if let Some((cut, _)) = search.query.char_indices().nth(MAX_QUERY_CHARS) {
+            search.query.truncate(cut);
+        }
+        search.edited_ms = now_ms;
+    }
+
+    /// Finds a song by URI in search results or any loaded track list.
+    fn find_track(&self, uri: &str) -> Option<Track> {
+        let from_search = self
+            .state
+            .search
+            .results
+            .data
+            .iter()
+            .flat_map(|r| r.tracks.iter());
+        let from_lists = self
+            .state
+            .tracks
+            .values()
+            .filter_map(|slot| slot.data.as_ref())
+            .flat_map(|tracks| tracks.iter());
+        from_search
+            .chain(from_lists)
+            .find(|t| t.uri == uri)
+            .cloned()
+    }
+
     fn on_ui(&mut self, action: UiAction, now_ms: u64, fx: &mut Vec<Effect>) {
         match action {
+            UiAction::ShowSection(Section::Search) => {
+                if self.state.section != Section::Search {
+                    self.before_search = self.state.section;
+                }
+                self.state.section = Section::Search;
+                self.state.back_stack.clear();
+                self.state.screen = Screen::Search;
+                self.state.keyboard_open = true;
+            }
             UiAction::ShowSection(Section::Liked) => {
                 self.state.section = Section::Liked;
                 self.state.back_stack.clear();
@@ -121,7 +210,11 @@ impl Core {
                 }
             }
             UiAction::PlayCollection { uri, shuffle } => {
-                let start = if shuffle { None } else { Some(0) };
+                let start = if shuffle {
+                    Start::Shuffled
+                } else {
+                    Start::Index(0)
+                };
                 self.start_playback(uri, start, shuffle, now_ms, fx);
             }
             UiAction::PlayTrack {
@@ -129,7 +222,13 @@ impl Core {
                 index,
             } => {
                 let shuffle = self.state.playback.shuffle;
-                self.start_playback(collection_uri, Some(index as u32), shuffle, now_ms, fx);
+                self.start_playback(
+                    collection_uri,
+                    Start::Index(index as u32),
+                    shuffle,
+                    now_ms,
+                    fx,
+                );
             }
             UiAction::TogglePlay => {
                 let pb = &mut self.state.playback;
@@ -181,6 +280,47 @@ impl Core {
                 fx.push(Effect::Player(PlayerCommand::SetRepeat(repeat)));
             }
             UiAction::Touch => {}
+            UiAction::KeyPressed(text) => self.edit_query(now_ms, |q| q.push_str(&text)),
+            UiAction::Backspace => self.edit_query(now_ms, |q| {
+                q.pop();
+            }),
+            UiAction::ClearSearch => {
+                self.edit_query(now_ms, String::clear);
+                // Clearing is deliberate, so there is no reason to wait.
+                self.maybe_search(u64::MAX, fx);
+            }
+            UiAction::OpenKeyboard => {
+                self.state.keyboard_open = self.state.screen == Screen::Search;
+            }
+            UiAction::CloseKeyboard => self.state.keyboard_open = false,
+            UiAction::SetSearchFilter(filter) => self.state.search.filter = filter,
+            UiAction::CloseSearch => {
+                let previous = self.before_search;
+                self.on_ui(UiAction::ShowSection(previous), now_ms, fx);
+            }
+            UiAction::OpenArtist(uri) => {
+                self.navigate(Screen::Artist(uri.clone()));
+                self.state
+                    .artist_albums
+                    .entry(uri.clone())
+                    .or_default()
+                    .loading = true;
+                fx.push(Effect::Library(LibraryRequest::ArtistAlbums {
+                    artist_uri: uri,
+                }));
+            }
+            UiAction::PlayArtist(uri) => {
+                self.start_playback(uri, Start::Shuffled, false, now_ms, fx);
+            }
+            UiAction::PlaySong(uri) => {
+                let Some(track) = self.find_track(&uri) else {
+                    return;
+                };
+                // Play it in its album so music continues afterwards.
+                let context = track.album_uri.clone().unwrap_or_else(|| track.uri.clone());
+                let shuffle = self.state.playback.shuffle;
+                self.start_playback(context, Start::Track(track), shuffle, now_ms, fx);
+            }
         }
     }
 
@@ -251,6 +391,41 @@ impl Core {
             } => {
                 let slot = self.state.tracks.entry(collection_uri).or_default();
                 slot.loading = false;
+                if reason == FailReason::Forbidden {
+                    slot.forbidden = slot.data.is_none();
+                } else {
+                    slot.failed = slot.data.is_none();
+                }
+                self.on_failure(reason);
+            }
+            LibraryUpdate::SearchResults { query, results } => {
+                if query == self.state.search.sent.trim() {
+                    let slot = &mut self.state.search.results;
+                    slot.data = Some(Arc::new(results));
+                    slot.loading = false;
+                    slot.failed = false;
+                    self.state.online = true;
+                }
+            }
+            LibraryUpdate::SearchFailed { query, reason } => {
+                if query == self.state.search.sent.trim() {
+                    let slot = &mut self.state.search.results;
+                    slot.data = None;
+                    slot.loading = false;
+                    slot.failed = true;
+                    self.on_failure(reason);
+                }
+            }
+            LibraryUpdate::ArtistAlbums { artist_uri, albums } => {
+                let slot = self.state.artist_albums.entry(artist_uri).or_default();
+                slot.data = Some(Arc::new(albums));
+                slot.loading = false;
+                slot.failed = false;
+                self.state.online = true;
+            }
+            LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
+                let slot = self.state.artist_albums.entry(artist_uri).or_default();
+                slot.loading = false;
                 slot.failed = slot.data.is_none();
                 self.on_failure(reason);
             }
@@ -263,7 +438,7 @@ impl Core {
         // player reports that with `Input::AuthInvalid`. The slot shows "Can't load this right now".
         match reason {
             FailReason::Offline => self.state.online = false,
-            FailReason::Auth | FailReason::Other => {}
+            FailReason::Auth | FailReason::Forbidden | FailReason::Other => {}
         }
     }
 
@@ -322,12 +497,12 @@ impl Core {
     fn start_playback(
         &mut self,
         uri: String,
-        start_index: Option<u32>,
+        start: Start,
         shuffle: bool,
         now_ms: u64,
         fx: &mut Vec<Effect>,
     ) {
-        let key = (uri.clone(), start_index, shuffle);
+        let key = (uri.clone(), start.clone(), shuffle);
         if let Some((last_key, at)) = &self.last_load {
             if *last_key == key && now_ms.saturating_sub(*at) < DOUBLE_TAP_MS {
                 return;
@@ -337,14 +512,20 @@ impl Core {
         if !self.state.online {
             self.notify(Notice::NoInternet, now_ms);
         }
-        let first = start_index.and_then(|index| {
-            self.state
-                .tracks
-                .get(&uri)
-                .and_then(|slot| slot.data.as_ref())
-                .and_then(|tracks| tracks.get(index as usize))
-                .cloned()
-        });
+        let (start_index, start_uri, first) = match start {
+            Start::Shuffled => (None, None, None),
+            Start::Index(index) => (
+                Some(index),
+                None,
+                self.state
+                    .tracks
+                    .get(&uri)
+                    .and_then(|slot| slot.data.as_ref())
+                    .and_then(|tracks| tracks.get(index as usize))
+                    .cloned(),
+            ),
+            Start::Track(track) => (None, Some(track.uri.clone()), Some(track)),
+        };
         let pb = &mut self.state.playback;
         pb.context_uri = Some(uri.clone());
         pb.track = first;
@@ -354,6 +535,7 @@ impl Core {
         fx.push(Effect::Player(PlayerCommand::Load {
             context_uri: uri,
             start_index,
+            start_uri,
             shuffle,
         }));
         self.navigate(Screen::NowPlaying);
@@ -375,6 +557,7 @@ impl Core {
             fx.push(Effect::Player(PlayerCommand::Load {
                 context_uri: uri.clone(),
                 start_index: None,
+                start_uri: pb.track.as_ref().map(|t| t.uri.clone()),
                 shuffle: pb.shuffle,
             }));
         }

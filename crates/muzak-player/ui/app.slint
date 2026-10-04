@@ -1,7 +1,7 @@
 import "fonts/Nunito-Bold.ttf";
 import "fonts/Nunito-ExtraBold.ttf";
 import { Theme } from "theme.slint";
-import { TileData, TrackData, ScreenKind, LoadState } from "types.slint";
+import { TileData, TrackData, ScreenKind, LoadState, SearchRowData } from "types.slint";
 import { Rail } from "components/rail.slint";
 import { MiniPlayer } from "components/mini_player.slint";
 import { Banner } from "components/banner.slint";
@@ -10,8 +10,11 @@ import { DetailScreen } from "screens/detail.slint";
 import { NowPlayingScreen } from "screens/now_playing.slint";
 import { IdleOverlay } from "screens/idle.slint";
 import { AuthNeededScreen } from "screens/auth_needed.slint";
+import { SearchScreen } from "screens/search.slint";
+import { ArtistScreen } from "screens/artist.slint";
+import { Keyboard } from "components/keyboard.slint";
 
-export { TileData, TrackData, ScreenKind, LoadState }
+export { TileData, TrackData, ScreenKind, LoadState, SearchRowData }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -46,6 +49,15 @@ export component AppWindow inherits Window {
     in property <string> clock;
     in property <bool> auth-needed;
     in property <string> account;
+    in property <string> search-query;
+    in property <bool> keyboard-open;
+    in property <[SearchRowData]> search-rows;
+    in property <LoadState> search-state;
+    in property <string> search-note;
+    in property <int> search-filter;
+    in property <TileData> artist;
+    in property <[TileData]> artist-albums;
+    in property <LoadState> artist-state;
 
     callback show-section(int);
     callback open-collection(string);
@@ -61,6 +73,16 @@ export component AppWindow inherits Window {
     callback toggle-shuffle();
     callback cycle-repeat();
     callback touched();
+    callback key-pressed(string);
+    callback backspace();
+    callback clear-search();
+    callback open-keyboard();
+    callback close-keyboard();
+    callback close-search();
+    callback set-search-filter(int);
+    callback open-artist(string);
+    callback play-artist(string);
+    callback play-song(string);
 
     property <length> content-height: root.mini-visible ? root.height - Theme.mini-height : root.height;
 
@@ -68,6 +90,8 @@ export component AppWindow inherits Window {
         x: 0;
         y: 0;
         height: root.height;
+        // Search uses the whole screen.
+        visible: root.screen != ScreenKind.search;
         selected: root.section;
         account: root.account;
         select(i) => { root.show-section(i); }
@@ -96,10 +120,53 @@ export component AppWindow inherits Window {
         play(shuffle) => { root.play-collection(root.detail.uri, shuffle); }
         play-track(i) => { root.play-track(root.detail.uri, i); }
     }
-    if root.mini-visible: MiniPlayer {
+    SearchScreen {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.search;
+        query: root.search-query;
+        keyboard: root.keyboard-open;
+        keyboard-height: kb.height;
+        rows: root.search-rows;
+        state: root.search-state;
+        note: root.search-note;
+        open(uri) => { root.open-collection(uri); }
+        open-artist(uri) => { root.open-artist(uri); }
+        play-song(uri) => { root.play-song(uri); }
+        clear => { root.clear-search(); }
+        open-keyboard => { root.open-keyboard(); }
+        close => { root.close-search(); }
+        filter: root.search-filter;
+        set-filter(i) => { root.set-search-filter(i); }
+    }
+    ArtistScreen {
         x: Theme.rail-width;
-        y: root.height - Theme.mini-height;
+        y: 0;
         width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.artist;
+        header: root.artist;
+        albums: root.artist-albums;
+        state: root.artist-state;
+        back => { root.back(); }
+        play => { root.play-artist(root.artist.uri); }
+        open(uri) => { root.open-collection(uri); }
+    }
+    kb := Keyboard {
+        x: 0;
+        y: root.height - self.height;
+        width: root.width;
+        visible: root.keyboard-open && root.screen == ScreenKind.search;
+        key(text) => { root.key-pressed(text); }
+        backspace => { root.backspace(); }
+        done => { root.close-keyboard(); }
+    }
+    if root.mini-visible: MiniPlayer {
+        x: root.screen == ScreenKind.search ? 0 : Theme.rail-width;
+        y: root.height - Theme.mini-height;
+        width: root.width - self.x;
         title: root.track-title;
         artists: root.track-artists;
         art: root.track-art;

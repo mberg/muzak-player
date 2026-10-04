@@ -97,6 +97,41 @@ async fn serve<S: LibrarySource>(
                 }
             }
         }
+        LibraryRequest::Search(query) => match source.search(&query).await {
+            // Search results are not cached: they go stale quickly and are cheap to refetch.
+            Ok(results) => send(LibraryUpdate::SearchResults { query, results }),
+            Err(e) => {
+                tracing::warn!("search for {query:?} failed: {e}");
+                send(LibraryUpdate::SearchFailed {
+                    query,
+                    reason: e.reason(),
+                });
+            }
+        },
+        LibraryRequest::ArtistAlbums { artist_uri } => {
+            let key = tracks_key(&artist_uri);
+            if let Some(albums) = cache.read::<Vec<Collection>>(&key) {
+                send(LibraryUpdate::ArtistAlbums {
+                    artist_uri: artist_uri.clone(),
+                    albums,
+                });
+            }
+            match source.artist_albums(&artist_uri).await {
+                Ok(albums) => {
+                    if let Err(e) = cache.write(&key, &albums) {
+                        tracing::warn!("cache write failed for {key}: {e}");
+                    }
+                    send(LibraryUpdate::ArtistAlbums { artist_uri, albums });
+                }
+                Err(e) => {
+                    tracing::warn!("loading albums for {artist_uri} failed: {e}");
+                    send(LibraryUpdate::ArtistAlbumsFailed {
+                        artist_uri,
+                        reason: e.reason(),
+                    });
+                }
+            }
+        }
         LibraryRequest::Account => {
             if let Some(account) = cache.read::<Account>(ACCOUNT_KEY) {
                 send(LibraryUpdate::Account(account));
@@ -124,7 +159,7 @@ mod tests {
     use super::*;
     use crate::app::FailReason;
     use crate::library::FetchError;
-    use crate::model::{Collection, CollectionKind, Section, Track};
+    use crate::model::{Collection, CollectionKind, SearchResults, Section, Track};
 
     struct StubSource {
         calls: AtomicU32,
@@ -154,6 +189,35 @@ mod tests {
         async fn tracks(&self, _uri: &str) -> Result<Vec<Track>, FetchError> {
             Ok(vec![])
         }
+        async fn search(&self, query: &str) -> Result<SearchResults, FetchError> {
+            Ok(SearchResults {
+                playlists: vec![collection(query)],
+                ..Default::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn search_answers_with_its_query_and_is_not_cached() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Arc::new(DiskCache::new(dir.path()).unwrap());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let source = Arc::new(StubSource {
+            calls: AtomicU32::new(0),
+            fail: false,
+        });
+        let requests = spawn_library(source, cache, tx);
+        requests
+            .send(LibraryRequest::Search("abba".into()))
+            .unwrap();
+        match next_update(&mut rx).await {
+            LibraryUpdate::SearchResults { query, results } => {
+                assert_eq!(query, "abba");
+                assert_eq!(results.playlists[0].name, "abba");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     async fn next_update(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Input>) -> LibraryUpdate {

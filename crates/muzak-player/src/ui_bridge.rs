@@ -10,8 +10,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::app::{AppState, DisplayMode, Input, UiAction};
 use crate::model::Section;
-use crate::view::{self, LoadStatus, ScreenView, TileView, TrackRowView};
-use crate::{AppWindow, LoadState, ScreenKind, TileData, TrackData};
+use crate::view::{self, LoadStatus, RowKind, ScreenView, SearchRowView, TileView, TrackRowView};
+use crate::{AppWindow, LoadState, ScreenKind, SearchRowData, TileData, TrackData};
 
 const IMAGE_CACHE_LIMIT: usize = 80;
 
@@ -67,6 +67,8 @@ struct Bridge {
     images: Images,
     tiles: Rc<VecModel<TileData>>,
     tracks: Rc<VecModel<TrackData>>,
+    search_rows: Rc<VecModel<SearchRowData>>,
+    artist_albums: Rc<VecModel<TileData>>,
     last: Option<AppState>,
 }
 
@@ -84,6 +86,10 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
     let tracks = Rc::new(VecModel::<TrackData>::default());
     window.set_tiles(ModelRc::from(tiles.clone()));
     window.set_detail_tracks(ModelRc::from(tracks.clone()));
+    let search_rows = Rc::new(VecModel::<SearchRowData>::default());
+    let artist_albums = Rc::new(VecModel::<TileData>::default());
+    window.set_search_rows(ModelRc::from(search_rows.clone()));
+    window.set_artist_albums(ModelRc::from(artist_albums.clone()));
     let bridge = Bridge {
         window: window.as_weak(),
         images: Images {
@@ -95,6 +101,8 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
         },
         tiles,
         tracks,
+        search_rows,
+        artist_albums,
         last: None,
     };
     BRIDGE.with(|cell| *cell.borrow_mut() = Some(bridge));
@@ -179,8 +187,32 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     window.on_toggle_shuffle(move || s(UiAction::ToggleShuffle));
     let s = send.clone();
     window.on_cycle_repeat(move || s(UiAction::CycleRepeat));
-    let s = send;
+    let s = send.clone();
     window.on_touched(move || s(UiAction::Touch));
+    let s = send.clone();
+    window.on_key_pressed(move |text| s(UiAction::KeyPressed(text.to_string())));
+    let s = send.clone();
+    window.on_backspace(move || s(UiAction::Backspace));
+    let s = send.clone();
+    window.on_clear_search(move || s(UiAction::ClearSearch));
+    let s = send.clone();
+    window.on_open_keyboard(move || s(UiAction::OpenKeyboard));
+    let s = send.clone();
+    window.on_close_keyboard(move || s(UiAction::CloseKeyboard));
+    let s = send.clone();
+    window.on_set_search_filter(move |i| {
+        s(UiAction::SetSearchFilter(
+            crate::app::SearchFilter::from_index(i),
+        ))
+    });
+    let s = send.clone();
+    window.on_close_search(move || s(UiAction::CloseSearch));
+    let s = send.clone();
+    window.on_open_artist(move |uri| s(UiAction::OpenArtist(uri.to_string())));
+    let s = send.clone();
+    window.on_play_artist(move |uri| s(UiAction::PlayArtist(uri.to_string())));
+    let s = send;
+    window.on_play_song(move |uri| s(UiAction::PlaySong(uri.to_string())));
 }
 
 impl Bridge {
@@ -198,6 +230,8 @@ impl Bridge {
             ScreenView::Grid => ScreenKind::Grid,
             ScreenView::Detail => ScreenKind::Detail,
             ScreenView::NowPlaying => ScreenKind::NowPlaying,
+            ScreenView::Search => ScreenKind::Search,
+            ScreenView::Artist => ScreenKind::Artist,
         });
         w.set_section(v.section.index());
         w.set_grid_title(v.grid_title.as_str().into());
@@ -237,6 +271,33 @@ impl Bridge {
         });
         w.set_clock(chrono::Local::now().format("%-I:%M").to_string().into());
         w.set_auth_needed(v.auth_needed);
+
+        // Search rows and artist albums are built only while shown, so their covers are
+        // requested only then.
+        w.set_keyboard_open(v.search.keyboard);
+        w.set_search_query(v.search.query.as_str().into());
+        w.set_search_state(load_state(v.search.status));
+        w.set_search_note(v.search.note.as_str().into());
+        w.set_search_filter(v.search.filter.index());
+        if v.screen == ScreenView::Search {
+            let rows = v
+                .search
+                .rows
+                .iter()
+                .map(|r| search_row_data(&mut self.images, r))
+                .collect();
+            sync(&self.search_rows, rows);
+        }
+        if let Some(artist) = v.artist.as_ref().filter(|_| v.screen == ScreenView::Artist) {
+            w.set_artist(tile_data(&mut self.images, &artist.header));
+            let albums = artist
+                .albums
+                .iter()
+                .map(|t| tile_data(&mut self.images, t))
+                .collect();
+            sync(&self.artist_albums, albums);
+            w.set_artist_state(load_state(artist.status));
+        }
         w.set_account(v.account.as_str().into());
     }
 }
@@ -248,9 +309,40 @@ fn live_images(v: &view::View) -> HashSet<String> {
         .map(|t| &t.image_url)
         .chain(v.detail.iter().map(|d| &d.header.image_url))
         .chain(std::iter::once(&v.now.image_url))
+        .chain(
+            v.search
+                .rows
+                .iter()
+                .filter(|_| v.screen == ScreenView::Search)
+                .map(|r| &r.image_url),
+        )
+        .chain(
+            v.artist
+                .iter()
+                .filter(|_| v.screen == ScreenView::Artist)
+                .flat_map(|a| a.albums.iter().map(|t| &t.image_url)),
+        )
         .flatten()
         .cloned()
         .collect()
+}
+
+fn search_row_data(images: &mut Images, r: &SearchRowView) -> SearchRowData {
+    let image = images.get(&r.image_url);
+    SearchRowData {
+        kind: match r.kind {
+            RowKind::Header => 0,
+            RowKind::Song => 1,
+            RowKind::Album => 2,
+            RowKind::Artist => 3,
+            RowKind::Playlist => 4,
+        },
+        title: r.title.as_str().into(),
+        subtitle: r.subtitle.as_str().into(),
+        has_image: image.is_some(),
+        image: image.unwrap_or_default(),
+        uri: r.uri.as_str().into(),
+    }
 }
 
 fn tile_data(images: &mut Images, t: &TileView) -> TileData {
@@ -278,6 +370,7 @@ fn load_state(status: LoadStatus) -> LoadState {
         LoadStatus::Loading => LoadState::Loading,
         LoadStatus::Empty => LoadState::Empty,
         LoadStatus::Failed => LoadState::Failed,
+        LoadStatus::Forbidden => LoadState::Forbidden,
         LoadStatus::Ready => LoadState::Ready,
     }
 }
