@@ -5,7 +5,6 @@ import { IconButton } from "../components/icon_button.slint";
 import { PillButton } from "../components/pill_button.slint";
 import { StateMessage } from "../components/state_message.slint";
 import { CollectionList } from "../components/collection_list.slint";
-import { BackLink } from "../components/back_link.slint";
 
 // An artist's albums. Spotify does not give this app an artist's top songs.
 export component ArtistScreen inherits Rectangle {
@@ -23,23 +22,22 @@ export component ArtistScreen inherits Rectangle {
     in property <string> back-label;
     property <int> columns: 4;
     property <length> pad: 16px;
-    property <length> top: root.back-label == "" ? 84px : 112px;
+    property <length> top: 84px;
     property <length> tile-w: (root.width - 2 * root.pad) / root.columns;
     property <length> art: root.tile-w - 12px;
     property <length> tile-h: root.art + 72px;
     background: Theme.bg;
-    if root.back-label != "": BackLink {
-        x: root.pad - 6px;
-        y: 6px;
-        label: root.back-label;
-        clicked => { root.back(); }
-    }
     HorizontalLayout {
         x: root.pad;
-        y: root.back-label == "" ? 10px : 38px;
+        y: 10px;
         width: root.width - 2 * root.pad;
         height: Theme.touch;
         spacing: 12px;
+        // Back up to the Artists list, inline so it takes no extra row.
+        if root.back-label != "": IconButton {
+            icon: @image-url("../icons/back.svg");
+            clicked => { root.back(); }
+        }
         Text {
             horizontal-stretch: 1;
             text: root.header.title;
