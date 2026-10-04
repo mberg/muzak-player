@@ -20,6 +20,9 @@ export component SearchScreen inherits Rectangle {
     callback clear();
     callback open-keyboard();
     callback close();
+    // Voice control is set up: show the microphone, which listens without the wake word.
+    in property <bool> voice;
+    callback listen();
     // 0 all, 1 songs, 2 artists, 3 albums, 4 playlists.
     in property <int> filter;
     callback set-filter(int);
@@ -66,6 +69,27 @@ export component SearchScreen inherits Rectangle {
                 font-weight: root.query == "" ? 400 : 800;
                 vertical-alignment: center;
                 overflow: elide;
+            }
+            if root.voice: Rectangle {
+                width: 44px;
+                accessible-role: button;
+                accessible-label: "Ask by voice";
+                accessible-action-default => { root.listen(); }
+                mic-touch := TouchArea {
+                    clicked => { root.listen(); }
+                }
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: mic-touch.pressed ? Theme.accent.darker(0.15) : Theme.accent;
+                    Image {
+                        source: @image-url("../icons/mic.svg");
+                        width: 22px;
+                        height: 22px;
+                        colorize: Theme.accent-text;
+                    }
+                }
             }
             if root.query != "": Rectangle {
                 width: 44px;

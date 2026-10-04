@@ -23,6 +23,7 @@ pub enum Input {
     /// Sonos rooms found on the network.
     SonosRooms(Vec<crate::settings::SonosRoom>),
     Books(BooksUpdate),
+    Voice(VoiceUpdate),
 }
 
 /// Work for the audiobooks service.
@@ -58,6 +59,80 @@ pub enum BooksUpdate {
     },
     SignInFailed(String),
     SignedOut,
+}
+
+/// What the voice service tells the core.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VoiceUpdate {
+    /// The wake word was heard and recording started.
+    Woke,
+    /// Recording finished; Gemini is working out what was asked.
+    Thinking,
+    Command(VoiceCommand),
+    /// Nothing the player can do was asked, or nothing was heard.
+    NotUnderstood,
+    /// Asking failed: no internet, no key, or a server problem.
+    Failed(String),
+}
+
+/// One thing a voice request asks for. Each runs through the same code as a tap.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VoiceCommand {
+    /// A playlist, album or artist from the library list Gemini was given, by URI.
+    Play(String),
+    /// Search Spotify and play the first result of this kind.
+    Search {
+        query: String,
+        kind: SearchKind,
+    },
+    Pause,
+    Resume,
+    Next,
+    Previous,
+    Louder,
+    Quieter,
+    SetVolume(u8),
+    /// Minutes; 0 turns the sleep timer off.
+    SleepTimer(u32),
+    /// Heart the playing song: add it to Liked Songs.
+    LikeSong,
+    /// Save the playing song's album to the library.
+    SaveAlbum,
+    /// Add the playing song to one of the listener's own playlists, by URI, with the name the
+    /// listener said, which must match it.
+    AddToPlaylist {
+        uri: String,
+        heard: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchKind {
+    Song,
+    Album,
+    Artist,
+    Playlist,
+}
+
+/// What Gemini is told about the player with each request.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VoiceContext {
+    /// "Graceland by Paul Simon", if something is loaded.
+    pub now_playing: Option<String>,
+    pub playing: bool,
+    pub volume: u8,
+    /// Playlists, albums and artists in the library.
+    pub items: Vec<VoiceItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceItem {
+    pub uri: String,
+    /// "playlist", "album", "artist" or "liked".
+    pub kind: &'static str,
+    pub name: String,
+    /// Owner of a playlist, artists of an album.
+    pub by: String,
 }
 
 /// Work for the play-history store.
@@ -196,6 +271,8 @@ pub enum UiAction {
     SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.
     RenameDevice,
+    /// The microphone button: listen for a request without the wake word.
+    Listen,
     FindSpeakers,
     ConnectSpeaker(String),
     /// Play through this Sonos room (by uuid) instead of this device.
@@ -308,6 +385,10 @@ pub enum Effect {
     /// Look for Sonos rooms on the network.
     ScanSonos,
     Books(BooksRequest),
+    /// What the voice service passes to Gemini with the next request.
+    VoiceContext(VoiceContext),
+    /// Start listening without the wake word.
+    VoiceListen,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,0 +1,53 @@
+import { Theme } from "../theme.slint";
+
+// Shows that the player is listening to a voice request, or working out what was asked.
+export component VoicePill inherits Rectangle {
+    in property <string> text;
+    // True while recording; false while waiting for the answer.
+    in property <bool> listening;
+    height: 64px;
+    width: label.preferred-width + 104px;
+    border-radius: 32px;
+    background: Theme.surface;
+    border-width: 2px;
+    border-color: Theme.accent;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000090;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    // A ring that breathes while listening and spins slowly while working.
+    ring := Rectangle {
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: root.listening ? Theme.accent : Theme.surface-hi;
+        opacity: root.listening ? 0.55 + 0.45 * sin(animation-tick() / 600ms * 180deg) : 1;
+        Image {
+            source: @image-url("../icons/mic.svg");
+            width: 26px;
+            height: 26px;
+            colorize: root.listening ? Theme.accent-text : Theme.text;
+        }
+    }
+    if !root.listening: Rectangle {
+        x: ring.x;
+        y: ring.y;
+        width: ring.width;
+        height: ring.height;
+        border-radius: 22px;
+        border-width: 3px;
+        border-color: Theme.accent;
+        opacity: 0.4 + 0.4 * sin(animation-tick() / 400ms * 180deg);
+    }
+    label := Text {
+        x: 68px;
+        text: root.text;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        font-weight: 800;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+}

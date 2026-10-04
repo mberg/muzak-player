@@ -181,9 +181,39 @@ async fn run(
         bluetooth: bluetooth.is_some(),
         books_user,
         books_config_url: config.audiobookshelf_url.clone(),
+        voice: config.voice_model_dir.is_some(),
     };
     let history =
         crate::history::spawn_history(config.state_dir.join("history.db"), inputs.clone());
+    let voice_context = crate::voice::service::SharedContext::default();
+    let listen_now = crate::voice::service::ListenNow::default();
+    if let Some(model_dir) = &config.voice_model_dir {
+        crate::voice::service::spawn_voice(
+            crate::voice::service::VoiceSettings {
+                model_dir: model_dir.clone(),
+                phrase: config
+                    .wake_phrase
+                    .clone()
+                    .unwrap_or_else(|| crate::voice::wake::DEFAULT_PHRASE.into()),
+                threshold: config
+                    .wake_threshold
+                    .unwrap_or(crate::voice::wake::DEFAULT_THRESHOLD),
+                microphone: config.microphone.clone(),
+                gemini_key: config
+                    .gemini_api_key
+                    .clone()
+                    .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+                    .filter(|k| !k.trim().is_empty()),
+                vertex_key_file: config.vertex_key_file.clone(),
+                vertex_location: config.vertex_location.clone(),
+                gemini_model: config.gemini_model.clone(),
+            },
+            inputs.clone(),
+            voice_context.clone(),
+            listen_now.clone(),
+            tokio::runtime::Handle::current(),
+        );
+    }
     let outputs = Outputs {
         inputs: inputs.clone(),
         fake,
@@ -191,6 +221,8 @@ async fn run(
         library,
         history,
         books,
+        voice_context,
+        listen_now,
         bluetooth,
         state_dir: config.state_dir.clone(),
     };
@@ -228,6 +260,8 @@ struct Outputs {
     library: UnboundedSender<LibraryRequest>,
     history: UnboundedSender<crate::app::HistoryCommand>,
     books: UnboundedSender<crate::app::BooksRequest>,
+    voice_context: crate::voice::service::SharedContext,
+    listen_now: crate::voice::service::ListenNow,
     bluetooth: Option<UnboundedSender<crate::app::BtCommand>>,
     state_dir: std::path::PathBuf,
 }
@@ -244,6 +278,14 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
             Effect::Display(mode) => platform.set_display(mode),
             Effect::Books(request) => {
                 let _ = outputs.books.send(request);
+            }
+            Effect::VoiceListen => {
+                outputs
+                    .listen_now
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            Effect::VoiceContext(context) => {
+                *outputs.voice_context.lock().unwrap() = context;
             }
             Effect::ScanSonos => {
                 let inputs = outputs.inputs.clone();

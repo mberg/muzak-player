@@ -1,0 +1,13 @@
+# Throwaway test of on-device speech recognition; not part of the player.
+[package]
+name = "voice-spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+sherpa-onnx = "1.13.8"
+hound = "3"
+
+# Standalone: not a member of the player's workspace.
+[workspace]

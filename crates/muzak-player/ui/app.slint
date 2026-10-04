@@ -5,6 +5,7 @@ import { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowDa
 import { Rail } from "components/rail.slint";
 import { MiniPlayer } from "components/mini_player.slint";
 import { Banner } from "components/banner.slint";
+import { VoicePill } from "components/voice_pill.slint";
 import { GridScreen } from "screens/grid.slint";
 import { DetailScreen } from "screens/detail.slint";
 import { NowPlayingScreen } from "screens/now_playing.slint";
@@ -51,6 +52,11 @@ export component AppWindow inherits Window {
     in property <bool> shuffle;
     in property <int> repeat;
     in property <string> banner;
+    // "Listening…" or "Working on it…" during a voice request; empty otherwise.
+    in property <string> voice-status;
+    in property <bool> voice-listening;
+    in property <bool> voice-enabled;
+    callback listen();
     in property <int> display-mode;
     in property <string> clock;
     in property <bool> show-clock;
@@ -262,6 +268,8 @@ export component AppWindow inherits Window {
         add-song(uri) => { root.open-picker(uri); }
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
+        voice: root.voice-enabled;
+        listen => { root.listen(); }
         close => { root.close-search(); }
         filter: root.search-filter;
         set-filter(i) => { root.set-search-filter(i); }
@@ -440,10 +448,16 @@ export component AppWindow inherits Window {
         confirm => { root.confirm-delete-playlist(); }
         cancel => { root.cancel-delete(); }
     }
-    if root.banner != "": Banner {
+    if root.banner != "" && root.voice-status == "": Banner {
         x: (root.width - self.width) / 2;
         y: 12px;
         text: root.banner;
+    }
+    if root.voice-status != "": VoicePill {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - 16px;
+        text: root.voice-status;
+        listening: root.voice-listening;
     }
     if root.auth-needed: AuthNeededScreen {
         x: 0;
