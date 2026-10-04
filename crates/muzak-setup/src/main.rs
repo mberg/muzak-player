@@ -1,4 +1,4 @@
-//! Mac-side setup: sign a kid's Spotify account in and check Web API access.
+//! Mac-side setup: sign a Spotify account in and check Web API access.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -74,7 +74,7 @@ fn cache(state_dir: &Path) -> anyhow::Result<(PathBuf, Cache)> {
 async fn auth(state_dir: &Path) -> anyhow::Result<()> {
     let session_config = SessionConfig::default();
     let client_id = session_config.client_id.clone();
-    println!("Opening the Spotify sign-in page. Sign in with the kid's account.");
+    println!("Opening the Spotify sign-in page. Sign in with the account this device should use.");
     let token = tokio::task::spawn_blocking(move || {
         OAuthClientBuilder::new(&client_id, REDIRECT_URI, vec!["streaming"])
             .open_in_browser()
@@ -110,7 +110,7 @@ struct WebAuth {
 
 async fn auth_web(state_dir: &Path, client_id: &str) -> anyhow::Result<()> {
     let id = client_id.to_string();
-    println!("Opening the Spotify sign-in page. Sign in with the kid's account.");
+    println!("Opening the Spotify sign-in page. Sign in with the account this device should use.");
     let token = tokio::task::spawn_blocking(move || {
         OAuthClientBuilder::new(&id, REDIRECT_URI, SCOPES.split(',').collect())
             .open_in_browser()
@@ -132,7 +132,49 @@ async fn auth_web(state_dir: &Path, client_id: &str) -> anyhow::Result<()> {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("restricting {}", path.display()))?;
     println!("Saved {}", path.display());
+
+    let (id, name) = account(&token.access_token).await?;
+    println!("Library account: {name} ({id})");
+    if let Some(playback) = playback_account(state_dir)
+        && playback != id
+    {
+        println!(
+            "WARNING: playback is signed in as {playback}, but the library is {id}. \
+             Run `auth` and `auth-web` with the same Spotify account."
+        );
+    }
     Ok(())
+}
+
+/// The Spotify ID and display name behind a Web API access token.
+async fn account(access_token: &str) -> anyhow::Result<(String, String)> {
+    let me: serde_json::Value = reqwest::Client::new()
+        .get(format!("{API}/me"))
+        .bearer_auth(access_token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id = me["id"].as_str().unwrap_or("?").to_string();
+    let name = me["display_name"]
+        .as_str()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or(&id)
+        .to_string();
+    Ok((id, name))
+}
+
+/// The username saved by `auth` for playback, if any.
+fn playback_account(state_dir: &Path) -> Option<String> {
+    let dir = state_dir.join("librespot");
+    if !dir.join("credentials.json").is_file() {
+        return None;
+    }
+    Cache::new(Some(&dir), None, None, None)
+        .ok()?
+        .credentials()?
+        .username
 }
 
 /// A Web API access token from the developer app when `web-auth.json` exists, else from the
@@ -175,6 +217,21 @@ async fn access_token(state_dir: &Path) -> anyhow::Result<(String, &'static str)
 async fn probe(state_dir: &Path) -> anyhow::Result<()> {
     let (access_token, source) = access_token(state_dir).await?;
     let client = reqwest::Client::new();
+
+    let (library_id, library_name) = account(&access_token).await?;
+    let playback = playback_account(state_dir);
+    println!("Library account:  {library_name} ({library_id})");
+    println!(
+        "Playback account: {}",
+        playback.as_deref().unwrap_or("none (run `auth`)")
+    );
+    let mismatch = playback.as_ref().is_some_and(|p| *p != library_id);
+    if mismatch {
+        println!(
+            "WARNING: the library and playback are signed in to different accounts. \
+             Run `auth` and `auth-web` with the same Spotify account."
+        );
+    }
 
     let get = |path: String| {
         let request = client
@@ -234,6 +291,9 @@ async fn probe(state_dir: &Path) -> anyhow::Result<()> {
         any_playlist_ok |= any_ok;
     }
     if !playlists.is_empty() && !any_playlist_ok {
+        failures += 1;
+    }
+    if mismatch {
         failures += 1;
     }
     if failures > 0 {

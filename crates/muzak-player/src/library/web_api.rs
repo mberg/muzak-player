@@ -9,7 +9,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::{FetchError, LibrarySource};
-use crate::model::{Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection};
+use crate::model::{
+    Account, Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection,
+};
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
 /// Keep in sync with `crates/muzak-setup/src/main.rs`.
@@ -109,6 +111,12 @@ struct PlaylistObj {
     #[serde(default)]
     images: Option<Vec<ImageObj>>,
     owner: Option<OwnerObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MeObj {
+    id: String,
+    display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -420,6 +428,15 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
         }
     }
 
+    async fn account(&self) -> Result<Account, FetchError> {
+        let me: MeObj = decode(self.get("/me").await?)?;
+        let name = me
+            .display_name
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| me.id.clone());
+        Ok(Account { id: me.id, name })
+    }
+
     async fn tracks(&self, collection_uri: &str) -> Result<Vec<Track>, FetchError> {
         if collection_uri == LIKED_URI {
             return self.liked_tracks().await;
@@ -618,6 +635,20 @@ mod tests {
             Ok(json!({"items": [{"track": {"uri": "spotify:track:t1", "name": "S", "duration_ms": 1, "artists": []}}], "next": null})),
         );
         assert_eq!(api(http).tracks(LIKED_URI).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn account_uses_display_name_or_falls_back_to_id() {
+        let http = FakeHttp::default()
+            .on("/me", Ok(json!({"id": "1255644", "display_name": "Sam"})))
+            .on("/me", Ok(json!({"id": "1255644", "display_name": null})));
+        let api = api(http);
+        assert_eq!(api.account().await.unwrap().name, "Sam");
+        let fallback = api.account().await.unwrap();
+        assert_eq!(
+            (fallback.id.as_str(), fallback.name.as_str()),
+            ("1255644", "1255644")
+        );
     }
 
     #[tokio::test]

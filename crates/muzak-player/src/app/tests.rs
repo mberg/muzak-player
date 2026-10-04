@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{Collection, CollectionKind, LIKED_URI, Section, Track};
+use crate::model::{Account, Collection, CollectionKind, LIKED_URI, Section, Track};
 
 pub(crate) fn config() -> CoreConfig {
     CoreConfig {
@@ -58,6 +58,7 @@ fn new_requests_initial_sections_and_shows_playlists() {
             Effect::Library(LibraryRequest::Section(Section::Playlists)),
             Effect::Library(LibraryRequest::Section(Section::Albums)),
             Effect::Library(LibraryRequest::Section(Section::Recent)),
+            Effect::Library(LibraryRequest::Account),
             Effect::Display(DisplayMode::Active),
         ]
     );
@@ -487,8 +488,22 @@ fn reconnect_rerequests_library_and_open_detail() {
             Effect::Library(LibraryRequest::Tracks {
                 collection_uri: "spotify:album:a1".into()
             }),
+            Effect::Library(LibraryRequest::Account),
         ]
     );
+}
+
+#[test]
+fn account_is_stored_and_not_rerequested_on_reconnect() {
+    let mut c = core();
+    let account = Account {
+        id: "1255644".into(),
+        name: "Sam".into(),
+    };
+    c.handle(Input::Library(LibraryUpdate::Account(account.clone())), 0);
+    assert_eq!(c.state().account, Some(account));
+    let fx = c.handle(Input::Player(PlayerUpdate::Connected), 0);
+    assert!(!fx.contains(&Effect::Library(LibraryRequest::Account)));
 }
 
 #[test]

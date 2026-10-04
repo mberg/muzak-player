@@ -237,6 +237,7 @@ impl Bridge {
         });
         w.set_clock(chrono::Local::now().format("%-I:%M").to_string().into());
         w.set_auth_needed(v.auth_needed);
+        w.set_account(v.account.as_str().into());
     }
 }
 

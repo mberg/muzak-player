@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::{FetchError, LibrarySource};
-use crate::model::{Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection};
+use crate::model::{
+    Account, Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection,
+};
 
 pub struct FakeCatalog {
     pub playlists: Vec<Collection>,
@@ -114,6 +116,13 @@ impl LibrarySource for FakeSource {
     async fn tracks(&self, collection_uri: &str) -> Result<Vec<Track>, FetchError> {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(self.catalog.tracks_for(collection_uri))
+    }
+
+    async fn account(&self) -> Result<Account, FetchError> {
+        Ok(Account {
+            id: "fake".into(),
+            name: "Fake Account".into(),
+        })
     }
 }
 

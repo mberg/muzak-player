@@ -1,5 +1,5 @@
 use crate::app::state::DisplayMode;
-use crate::model::{Collection, Repeat, Section, Track};
+use crate::model::{Account, Collection, Repeat, Section, Track};
 
 /// Everything the core reacts to.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,6 +87,7 @@ pub enum LibraryUpdate {
         collection_uri: String,
         reason: FailReason,
     },
+    Account(Account),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,4 +130,5 @@ pub enum PlayerCommand {
 pub enum LibraryRequest {
     Section(Section),
     Tracks { collection_uri: String },
+    Account,
 }

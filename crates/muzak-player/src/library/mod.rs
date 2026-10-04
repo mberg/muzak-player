@@ -8,7 +8,7 @@ pub mod web_api;
 use std::future::Future;
 
 use crate::app::FailReason;
-use crate::model::{Collection, Section, Track};
+use crate::model::{Account, Collection, Section, Track};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FetchError {
@@ -42,4 +42,8 @@ pub trait LibrarySource: Send + Sync + 'static {
         &self,
         collection_uri: &str,
     ) -> impl Future<Output = Result<Vec<Track>, FetchError>> + Send;
+    /// The signed-in account, shown in the rail.
+    fn account(&self) -> impl Future<Output = Result<Account, FetchError>> + Send {
+        async { Err(FetchError::NotFound) }
+    }
 }
