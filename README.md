@@ -147,7 +147,7 @@ Check, with the real account:
 
 ### 5. Playlists
 
-Editing and liking need three more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
+Editing, liking and following artists need five more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
 
 ```bash
 cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
