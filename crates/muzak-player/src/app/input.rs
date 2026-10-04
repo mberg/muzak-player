@@ -201,6 +201,10 @@ pub enum LibraryUpdate {
         track_uri: String,
         liked: bool,
     },
+    ArtistFound {
+        album_uri: String,
+        artist: Collection,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,5 +276,10 @@ pub enum LibraryRequest {
     },
     IsLiked {
         track_uri: String,
+    },
+    /// Look up the artist of an album that was cached without one.
+    FindArtist {
+        album_uri: String,
+        name: String,
     },
 }

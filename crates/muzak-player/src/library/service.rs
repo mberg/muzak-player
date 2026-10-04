@@ -163,6 +163,11 @@ async fn serve<S: LibrarySource>(
                 }
             }
         }
+        LibraryRequest::FindArtist { album_uri, name } => match source.find_artist(&name).await {
+            Ok(Some(artist)) => send(LibraryUpdate::ArtistFound { album_uri, artist }),
+            Ok(None) => tracing::warn!("no artist found named {name:?}"),
+            Err(e) => tracing::warn!("finding artist {name:?} failed: {e}"),
+        },
         LibraryRequest::IsLiked { track_uri } => match source.is_liked(&track_uri).await {
             Ok(liked) => send(LibraryUpdate::Liked { track_uri, liked }),
             // Only the heart depends on this; it stays unknown.

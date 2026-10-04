@@ -80,6 +80,22 @@ pub trait LibrarySource: Send + Sync + 'static {
         let _ = track_uri;
         async { Err(FetchError::NotFound) }
     }
+    /// The artist with this name, found by search; for albums cached without their artist.
+    fn find_artist(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<Collection>, FetchError>> + Send {
+        async move {
+            let found = self.search(name).await?;
+            let wanted = name.to_lowercase();
+            Ok(found
+                .artists
+                .iter()
+                .find(|a| a.name.to_lowercase() == wanted)
+                .or(found.artists.first())
+                .cloned())
+        }
+    }
     /// The signed-in account, shown in the rail.
     fn account(&self) -> impl Future<Output = Result<Account, FetchError>> + Send {
         async { Err(FetchError::NotFound) }

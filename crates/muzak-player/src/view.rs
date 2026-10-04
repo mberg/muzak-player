@@ -607,7 +607,8 @@ fn detail(state: &AppState) -> Option<DetailView> {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
         summary,
-        artist_link: find_collection(state, &uri).is_some_and(|c| c.artist_uri.is_some()),
+        artist_link: uri.starts_with("spotify:album:")
+            && find_collection(state, &uri).is_some_and(|c| !c.subtitle.is_empty()),
         saveable: uri.starts_with("spotify:album:"),
         saved: state.liked.get(&uri).copied().unwrap_or_else(|| {
             section_items(state, Section::Albums)

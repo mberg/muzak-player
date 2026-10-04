@@ -1048,6 +1048,14 @@ impl Core {
                     return;
                 };
                 let Some(artist_uri) = album.artist_uri.clone() else {
+                    // Cached before albums recorded their artist: find them by name.
+                    let name = album.subtitle.split(", ").next().unwrap_or_default();
+                    if !name.is_empty() {
+                        fx.push(Effect::Library(LibraryRequest::FindArtist {
+                            album_uri,
+                            name: name.to_string(),
+                        }));
+                    }
                     return;
                 };
                 // Already came from this artist's page: step back rather than stack it again.
@@ -1202,6 +1210,25 @@ impl Core {
             LibraryUpdate::EditDone { id, outcome } => self.edit_done(id, outcome, fx),
             LibraryUpdate::Liked { track_uri, liked } => {
                 self.state.liked.insert(track_uri, liked);
+            }
+            LibraryUpdate::ArtistFound { album_uri, artist } => {
+                // Remember it on the album so the next tap goes straight there.
+                for slot in self.state.sections.values_mut() {
+                    if let Some(items) = slot.data.as_mut() {
+                        for c in Arc::make_mut(items)
+                            .iter_mut()
+                            .filter(|c| c.uri == album_uri)
+                        {
+                            c.artist_uri = Some(artist.uri.clone());
+                        }
+                    }
+                }
+                let uri = artist.uri.clone();
+                self.remember_artist(&uri, artist.name.clone());
+                // Only follow through if the album is still on screen.
+                if self.state.screen == Screen::Detail(album_uri) {
+                    self.on_ui(UiAction::OpenArtist(uri), now_ms, fx);
+                }
             }
             LibraryUpdate::EditFailed { id, reason } => self.edit_failed(id, reason, now_ms, fx),
             LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {

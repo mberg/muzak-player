@@ -1398,3 +1398,44 @@ fn album_artist_opens_the_artist_or_steps_back_to_them() {
     assert_eq!(c.state().screen, Screen::Artist("spotify:artist:ps".into()));
     assert_eq!(c.state().back_stack.len(), depth - 1);
 }
+
+#[test]
+fn an_album_cached_without_its_artist_finds_them_by_name() {
+    let mut c = core();
+    let album = Collection {
+        uri: "spotify:album:old".into(),
+        kind: CollectionKind::Album,
+        name: "Graceland".into(),
+        subtitle: "Paul Simon, Ladysmith".into(),
+        ..Default::default()
+    };
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Albums,
+            items: vec![album.clone()],
+        }),
+        0,
+    );
+    c.handle(ui(UiAction::OpenCollection(album.uri.clone())), 0);
+    let fx = c.handle(ui(UiAction::OpenAlbumArtist(album.uri.clone())), 0);
+    assert!(fx.contains(&Effect::Library(LibraryRequest::FindArtist {
+        album_uri: album.uri.clone(),
+        name: "Paul Simon".into()
+    })));
+    let artist = Collection {
+        uri: "spotify:artist:ps".into(),
+        kind: CollectionKind::Artist,
+        name: "Paul Simon".into(),
+        ..Default::default()
+    };
+    c.handle(
+        Input::Library(LibraryUpdate::ArtistFound {
+            album_uri: album.uri.clone(),
+            artist,
+        }),
+        0,
+    );
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:ps".into()));
+    let albums = c.state().sections[&Section::Albums].data.clone().unwrap();
+    assert_eq!(albums[0].artist_uri.as_deref(), Some("spotify:artist:ps"));
+}
