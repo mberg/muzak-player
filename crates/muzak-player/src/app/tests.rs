@@ -1049,3 +1049,39 @@ fn keys_go_to_the_name_field_not_search_while_it_is_open() {
     assert_eq!(c.state().search.query, "");
     assert_eq!(c.state().text_entry.as_ref().unwrap().text, "x");
 }
+
+#[test]
+fn heart_likes_the_playing_song_and_undoes_on_failure() {
+    let mut c = editor();
+    with_tracks(&mut c, LIKED_URI, 2);
+    let fx = c.handle(Input::Player(PlayerUpdate::TrackChanged(track(5))), 0);
+    assert!(fx.contains(&Effect::Library(LibraryRequest::IsLiked {
+        track_uri: "spotify:track:t5".into()
+    })));
+    c.handle(
+        Input::Library(LibraryUpdate::Liked {
+            track_uri: "spotify:track:t5".into(),
+            liked: false,
+        }),
+        0,
+    );
+    let fx = c.handle(ui(UiAction::ToggleLike), 0);
+    let (id, edit) = edit_of(&fx);
+    assert_eq!(
+        edit,
+        PlaylistEdit::Like {
+            track_uri: "spotify:track:t5".into()
+        }
+    );
+    assert!(c.state().liked["spotify:track:t5"]);
+    assert_eq!(track_names(&c, LIKED_URI)[0], "Song 5");
+    c.handle(
+        Input::Library(LibraryUpdate::EditFailed {
+            id,
+            reason: FailReason::Other,
+        }),
+        0,
+    );
+    assert!(!c.state().liked["spotify:track:t5"]);
+    assert_eq!(track_names(&c, LIKED_URI), ["Song 0", "Song 1"]);
+}

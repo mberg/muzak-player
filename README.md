@@ -147,7 +147,7 @@ Check, with the real account:
 
 ### 5. Playlists
 
-Editing needs two more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
+Editing and liking need three more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
 
 ```bash
 cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
@@ -159,6 +159,7 @@ Check:
 - [ ] The plus button on a track row, on Now Playing, and on a search song opens "Add to playlist" with only your own playlists.
 - [ ] Picking one shows "Added to <name>". Adding the same song again shows "Already in <name>".
 - [ ] "New playlist" opens a name field with the keyboard. Save creates it at the top of Playlists with the song in it.
+- [ ] On Now Playing, the heart next to the plus fills in when the song is in Liked Songs. Tapping it likes or unlikes the song, and Liked Songs updates.
 - [ ] Your own playlists show a pencil next to Back. Someone else's don't.
 - [ ] In edit mode, the minus button removes a song, and dragging the handle on the left moves it.
 - [ ] Rename changes the name everywhere. Delete asks first, then removes the playlist and returns to Playlists.

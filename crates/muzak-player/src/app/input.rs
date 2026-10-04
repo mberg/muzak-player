@@ -79,6 +79,8 @@ pub enum UiAction {
     AskDelete,
     ConfirmDelete,
     CancelDelete,
+    /// Like or unlike the playing song.
+    ToggleLike,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,6 +151,10 @@ pub enum LibraryUpdate {
         id: u64,
         reason: FailReason,
     },
+    Liked {
+        track_uri: String,
+        liked: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,5 +212,8 @@ pub enum LibraryRequest {
     Edit {
         id: u64,
         edit: PlaylistEdit,
+    },
+    IsLiked {
+        track_uri: String,
     },
 }

@@ -128,6 +128,13 @@ pub enum PlaylistEdit {
     Delete {
         playlist_uri: String,
     },
+    /// Save a song to Liked Songs.
+    Like {
+        track_uri: String,
+    },
+    Unlike {
+        track_uri: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

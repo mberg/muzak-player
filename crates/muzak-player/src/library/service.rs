@@ -147,6 +147,11 @@ async fn serve<S: LibrarySource>(
                 }
             }
         }
+        LibraryRequest::IsLiked { track_uri } => match source.is_liked(&track_uri).await {
+            Ok(liked) => send(LibraryUpdate::Liked { track_uri, liked }),
+            // Only the heart depends on this; it stays unknown.
+            Err(e) => tracing::warn!("checking whether {track_uri} is liked failed: {e}"),
+        },
         LibraryRequest::Account => {
             if let Some(account) = cache.read::<Account>(ACCOUNT_KEY) {
                 send(LibraryUpdate::Account(account));

@@ -27,6 +27,8 @@ struct Undo {
     sections: Vec<(Section, Option<Slot<Vec<Collection>>>)>,
     /// URI of the placeholder shown while a new playlist is being created.
     placeholder: Option<String>,
+    /// A song's liked state before a like or unlike.
+    liked: Option<(String, Option<bool>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +91,7 @@ impl Core {
             text_entry: None,
             editing: None,
             confirm_delete: None,
+            liked: HashMap::new(),
         };
         let mut core = Core {
             state,
@@ -240,6 +243,7 @@ impl Core {
                 .map(|s| (*s, self.state.sections.get(s).cloned()))
                 .collect(),
             placeholder: None,
+            liked: None,
         };
         self.undo.insert(id, undo);
         fx.push(Effect::Library(LibraryRequest::Edit { id, edit }));
@@ -292,6 +296,12 @@ impl Core {
             match slot {
                 Some(slot) => self.state.sections.insert(*section, slot.clone()),
                 None => self.state.sections.remove(section),
+            };
+        }
+        if let Some((uri, before)) = &undo.liked {
+            match before {
+                Some(liked) => self.state.liked.insert(uri.clone(), *liked),
+                None => self.state.liked.remove(uri),
             };
         }
         if reason == FailReason::Offline {
@@ -448,6 +458,37 @@ impl Core {
         if let Some(list) = self.tracks_mut(&uri) {
             let track = list.remove(from);
             list.insert(to, track);
+        }
+    }
+
+    fn toggle_like(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(track) = self.state.playback.track.clone() else {
+            return;
+        };
+        let before = self.state.liked.get(&track.uri).copied();
+        let liked = !before.unwrap_or(false);
+        let edit = if liked {
+            PlaylistEdit::Like {
+                track_uri: track.uri.clone(),
+            }
+        } else {
+            PlaylistEdit::Unlike {
+                track_uri: track.uri.clone(),
+            }
+        };
+        let Some(id) = self.begin_edit(edit, &[LIKED_URI], &[], now_ms, fx) else {
+            return;
+        };
+        if let Some(undo) = self.undo.get_mut(&id) {
+            undo.liked = Some((track.uri.clone(), before));
+        }
+        self.state.liked.insert(track.uri.clone(), liked);
+        if let Some(list) = self.tracks_mut(LIKED_URI) {
+            if liked {
+                list.insert(0, track);
+            } else {
+                list.retain(|t| t.uri != track.uri);
+            }
         }
     }
 
@@ -669,6 +710,7 @@ impl Core {
             UiAction::AskDelete => self.state.confirm_delete = self.state.editing.clone(),
             UiAction::CancelDelete => self.state.confirm_delete = None,
             UiAction::ConfirmDelete => self.delete_playlist(now_ms, fx),
+            UiAction::ToggleLike => self.toggle_like(now_ms, fx),
             UiAction::ClearSearch => {
                 self.edit_query(now_ms, String::clear);
                 // Clearing is deliberate, so there is no reason to wait.
@@ -723,6 +765,11 @@ impl Core {
                 }
             }
             PlayerUpdate::TrackChanged(track) => {
+                if !self.state.liked.contains_key(&track.uri) {
+                    fx.push(Effect::Library(LibraryRequest::IsLiked {
+                        track_uri: track.uri.clone(),
+                    }));
+                }
                 self.state.playback.track = Some(track);
                 self.state.playback.position_ms = 0;
             }
@@ -809,6 +856,9 @@ impl Core {
                 self.state.online = true;
             }
             LibraryUpdate::EditDone { id, outcome } => self.edit_done(id, outcome, fx),
+            LibraryUpdate::Liked { track_uri, liked } => {
+                self.state.liked.insert(track_uri, liked);
+            }
             LibraryUpdate::EditFailed { id, reason } => self.edit_failed(id, reason, now_ms, fx),
             LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
                 let slot = self.state.artist_albums.entry(artist_uri).or_default();

@@ -71,6 +71,11 @@ pub trait LibrarySource: Send + Sync + 'static {
         let _ = edit;
         async { Err(FetchError::NotFound) }
     }
+    /// Whether a song is in the user's Liked Songs.
+    fn is_liked(&self, track_uri: &str) -> impl Future<Output = Result<bool, FetchError>> + Send {
+        let _ = track_uri;
+        async { Err(FetchError::NotFound) }
+    }
     /// The signed-in account, shown in the rail.
     fn account(&self) -> impl Future<Output = Result<Account, FetchError>> + Send {
         async { Err(FetchError::NotFound) }

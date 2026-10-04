@@ -16,7 +16,7 @@ use crate::model::{
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
 /// Keep in sync with `crates/muzak-setup/src/main.rs`.
-pub const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public";
+pub const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify";
 const MAX_ITEMS: usize = 500;
 const RECENT_LIMIT: usize = 20;
 const SEARCH_LIMIT: usize = 20;
@@ -703,6 +703,16 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
                 .await?;
                 Ok(EditOutcome::Done)
             }
+            PlaylistEdit::Like { track_uri } => {
+                let path = format!("/me/library?uris={}", encode_query(&track_uri));
+                self.send(Method::Put, &path, None).await?;
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Unlike { track_uri } => {
+                let path = format!("/me/library?uris={}", encode_query(&track_uri));
+                self.send(Method::Delete, &path, None).await?;
+                Ok(EditOutcome::Done)
+            }
             PlaylistEdit::Delete { playlist_uri } => {
                 let id = playlist_id(&playlist_uri)?;
                 let library = format!("/me/library?uris={}", encode_query(&playlist_uri));
@@ -719,6 +729,12 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
                 Ok(EditOutcome::Done)
             }
         }
+    }
+
+    async fn is_liked(&self, track_uri: &str) -> Result<bool, FetchError> {
+        let path = format!("/me/library/contains?uris={}", encode_query(track_uri));
+        let found: Vec<bool> = decode(self.get(&path).await?)?;
+        Ok(found.first().copied().unwrap_or(false))
     }
 
     async fn account(&self) -> Result<Account, FetchError> {
@@ -1126,6 +1142,34 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(api.http.sent().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn like_unlike_and_check_use_the_library() {
+        let uris = "uris=spotify%3Atrack%3At1";
+        let http = FakeHttp::default()
+            .on_send(Method::Put, &format!("/me/library?{uris}"), Ok(Value::Null))
+            .on_send(
+                Method::Delete,
+                &format!("/me/library?{uris}"),
+                Ok(Value::Null),
+            )
+            .on(&format!("/me/library/contains?{uris}"), Ok(json!([true])));
+        let api = api(http);
+        let track_uri = "spotify:track:t1".to_string();
+        api.apply(PlaylistEdit::Like {
+            track_uri: track_uri.clone(),
+        })
+        .await
+        .unwrap();
+        api.apply(PlaylistEdit::Unlike {
+            track_uri: track_uri.clone(),
+        })
+        .await
+        .unwrap();
+        assert!(api.is_liked(&track_uri).await.unwrap());
+        let methods: Vec<Method> = api.http.sent().iter().map(|s| s.0).collect();
+        assert_eq!(methods, [Method::Put, Method::Delete]);
     }
 
     #[tokio::test]

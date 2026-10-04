@@ -65,6 +65,7 @@ export component AppWindow inherits Window {
     in property <bool> detail-editing;
     in property <bool> detail-can-add;
     in property <string> now-track-uri;
+    in property <bool> now-liked;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
     in property <bool> name-open;
@@ -97,6 +98,7 @@ export component AppWindow inherits Window {
     callback play-artist(string);
     callback play-song(string);
     callback keyboard-done();
+    callback toggle-like();
     callback open-picker(string);
     callback close-picker();
     callback pick-playlist(string);
@@ -233,6 +235,8 @@ export component AppWindow inherits Window {
         cycle-repeat => { root.cycle-repeat(); }
         can-add: root.now-track-uri != "";
         add => { root.open-picker(root.now-track-uri); }
+        liked: root.now-liked;
+        toggle-like => { root.toggle-like(); }
     }
     if root.picker-open: PlaylistPicker {
         x: 0;

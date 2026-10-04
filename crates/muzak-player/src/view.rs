@@ -113,6 +113,8 @@ pub struct TextEntryView {
 pub struct NowView {
     /// The playing song, for adding it to a playlist; empty when unknown.
     pub track_uri: String,
+    /// The playing song is in Liked Songs.
+    pub liked: bool,
     pub title: String,
     pub artists: String,
     pub image_url: Option<String>,
@@ -505,6 +507,12 @@ fn now(state: &AppState) -> NowView {
     };
     NowView {
         track_uri: pb.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default(),
+        liked: pb
+            .track
+            .as_ref()
+            .and_then(|t| state.liked.get(&t.uri))
+            .copied()
+            .unwrap_or(false),
         title,
         artists,
         image_url,

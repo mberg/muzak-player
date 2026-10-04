@@ -24,6 +24,8 @@ export component NowPlayingScreen inherits Rectangle {
     callback toggle-shuffle();
     callback cycle-repeat();
     callback add();
+    callback toggle-like();
+    in property <bool> liked;
     // Whether there is a song to add to a playlist.
     in property <bool> can-add;
     background: Theme.bg;
@@ -145,6 +147,13 @@ export component NowPlayingScreen inherits Rectangle {
                 }
             }
         }
+    }
+    if root.can-add: IconButton {
+        x: root.width - 2 * self.width - 20px;
+        y: 16px;
+        icon: root.liked ? @image-url("../icons/heart.svg") : @image-url("../icons/heart-outline.svg");
+        active: root.liked;
+        clicked => { root.toggle-like(); }
     }
     if root.can-add: IconButton {
         x: root.width - self.width - 16px;

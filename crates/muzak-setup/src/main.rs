@@ -13,7 +13,7 @@ use librespot::oauth::OAuthClientBuilder;
 
 const REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
 /// Keep in sync with `crates/muzak-player/src/library/web_api.rs`.
-const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public";
+const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify";
 const API: &str = "https://api.spotify.com/v1";
 
 #[derive(Parser)]

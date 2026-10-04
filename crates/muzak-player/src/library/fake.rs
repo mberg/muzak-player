@@ -186,6 +186,20 @@ impl FakeCatalog {
                 }
                 Ok(EditOutcome::Done)
             }
+            PlaylistEdit::Like { track_uri } => {
+                let track = Self::find_track(&data, &track_uri).ok_or(FetchError::NotFound)?;
+                let liked = data.tracks.entry(LIKED_URI.to_string()).or_default();
+                if liked.iter().all(|t| t.uri != track_uri) {
+                    liked.insert(0, track);
+                }
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Unlike { track_uri } => {
+                if let Some(liked) = data.tracks.get_mut(LIKED_URI) {
+                    liked.retain(|t| t.uri != track_uri);
+                }
+                Ok(EditOutcome::Done)
+            }
             PlaylistEdit::Delete { playlist_uri } => {
                 data.playlists.retain(|p| p.uri != playlist_uri);
                 Ok(EditOutcome::Done)
@@ -290,6 +304,14 @@ impl LibrarySource for FakeSource {
     async fn apply(&self, edit: PlaylistEdit) -> Result<EditOutcome, FetchError> {
         tokio::time::sleep(Duration::from_millis(200)).await;
         self.catalog.apply(edit)
+    }
+
+    async fn is_liked(&self, track_uri: &str) -> Result<bool, FetchError> {
+        Ok(self
+            .catalog
+            .tracks_for(LIKED_URI)
+            .iter()
+            .any(|t| t.uri == track_uri))
     }
 
     async fn account(&self) -> Result<Account, FetchError> {

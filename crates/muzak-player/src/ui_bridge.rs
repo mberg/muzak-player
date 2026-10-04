@@ -218,6 +218,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_play_song(move |uri| s(UiAction::PlaySong(uri.to_string())));
     let s = send.clone();
+    window.on_toggle_like(move || s(UiAction::ToggleLike));
+    let s = send.clone();
     window.on_keyboard_done(move || s(UiAction::KeyboardDone));
     let s = send.clone();
     window.on_open_picker(move |uri| s(UiAction::OpenPicker(uri.to_string())));
@@ -316,6 +318,7 @@ impl Bridge {
         // requested only then.
         w.set_keyboard_open(v.keyboard);
         w.set_now_track_uri(v.now.track_uri.as_str().into());
+        w.set_now_liked(v.now.liked);
         w.set_picker_open(v.picker.is_some());
         if let Some(picker) = &v.picker {
             let rows = picker
