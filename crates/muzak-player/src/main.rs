@@ -8,7 +8,7 @@ use slint::ComponentHandle;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
-#[command(about = "Muzak touchscreen Spotify player")]
+#[command(version, about = "Muzak touchscreen Spotify player")]
 struct Args {
     /// Path to the device config.
     #[arg(long, default_value = "dev/config.toml")]

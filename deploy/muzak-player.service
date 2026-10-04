@@ -1,7 +1,9 @@
 [Unit]
 Description=Muzak player
-After=network-online.target sound.target bluetooth.target bluealsa.service
-Wants=network-online.target bluealsa.service
+# Start as soon as sound is ready, without waiting for Wi-Fi: the player shows the saved
+# library straight away and connects to Spotify once the network is up.
+After=sound.target bluetooth.target bluealsa.service
+Wants=bluealsa.service
 
 [Service]
 User=muzak
