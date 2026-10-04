@@ -1,239 +1,144 @@
 # Muzak Player
 
-A music-only Spotify player with a touchscreen. It runs on a Raspberry Pi 3 A+ with a 7" display. It plays the account's own playlists, albums and liked songs, searches Spotify, and does nothing else.
+A music player with a touchscreen, built on a Raspberry Pi. It plays your Spotify playlists, albums and liked songs, searches Spotify, and does nothing else: no apps, no feeds, no ads.
 
-- `crates/muzak-player`: the touchscreen app, built with Rust and Slint. It uses librespot for playback and the Spotify Web API for the library.
-- `crates/muzak-setup`: a Mac tool that signs a Spotify account in and checks Web API access.
-- `scripts/`: build the Pi binary, provision a Pi, and deploy to it.
-- `docs/`: the [design spec](docs/superpowers/specs/2026-10-03-muzak-player-design.md), the [phase 1 plan](docs/superpowers/plans/2026-10-03-muzak-player-phase1.md), the [hardware checklist](docs/hardware-checklist.md) and [known follow-ups](docs/phase1-followups.md).
+- **Spotify:** your library, search, playlist editing and hearting songs, with recently played kept on the player.
+- **Speakers:** the headphone jack, a Bluetooth speaker, or a Sonos room.
+- **Audiobooks:** browse an [Audiobookshelf](https://www.audiobookshelf.org/) server at home.
+- **Voice control:** say "ziggy, play Road Trip" or "ziggy, heart this". Voice is optional and needs a USB microphone.
+- **Bedtime:** a sleep timer that fades the music out, and a screen that dims and turns itself off.
 
-Status: phase 1 works on the Mac with a real Spotify account (library and playback, using Contingency A for the library). It has not yet been tested on a Pi. This README walks through that testing.
+## What you need
 
-## Testing on the Mac
+- A Raspberry Pi 3 A+ or newer, with the official 7" touchscreen, a power supply and a microSD card (8 GB or more).
+- Speakers or headphones: the Pi's headphone jack, a Bluetooth speaker, or a Sonos system.
+- A Spotify Premium account for each person.
+- A Mac or Linux computer to run setup from, on the same Wi-Fi as the Pi.
+- Optional: a USB microphone for voice control, and a Google Cloud project or Gemini API key for it.
 
-### 0. Prerequisites
+## Get started
 
-- Xcode command line tools: `xcode-select --install`
-- Rust 1.97.1. The repo has a `.tool-versions` file, so with asdf run `asdf install`. Without asdf, use `rustup toolchain install 1.97.1`.
-  - If `cargo` is still "command not found" after `asdf install`, the asdf shims are not on your PATH. Add `export PATH="$HOME/.asdf/shims:$PATH"` to `~/.zshrc` and open a new terminal.
-- A Spotify Premium account to test with. It can be your own or another member of your Family plan.
-- Docker Desktop, needed only to build for the Pi.
+### 1. Install the setup tool
 
-Get the code:
-
-```bash
-git clone https://github.com/mberg/muzak-player.git
-cd muzak-player
-cargo test --workspace       # expect 82 passed
-```
-
-The first build takes a few minutes. Later builds are quick.
-
-### 1. UI with fake music (no Spotify needed)
+On your computer, run:
 
 ```bash
-cargo run -p muzak-player -- --fake
+curl -fsSL https://raw.githubusercontent.com/mberg/muzak-player/main/install.sh | sh
 ```
 
-An 800×480 window opens with a made-up library. A mouse click is a tap, and dragging scrolls.
+This installs `muzak` into `~/.local/bin`. If the installer says that folder isn't on your PATH, follow the line it prints.
 
-To check the idle screens quickly, first add these two lines to `dev/config.toml`, and remove them afterwards:
+### 2. Prepare the SD card
 
-```toml
-dim_after_secs = 10
-off_after_secs = 20
-```
+1. Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+2. Choose your Pi model, then **Raspberry Pi OS Lite (64-bit)**.
+3. Open the settings (the gear, or "Edit settings") and set:
+   - a hostname, such as `muzak-kitchen`;
+   - a username and password;
+   - your Wi-Fi network;
+   - **SSH**, using your public key. Without a key, setup can't reach the Pi.
+4. Write the card, put it in the Pi, connect the display, and power the Pi on.
 
-Check:
-
-- [ ] "Loading…" shows briefly, then the four album tiles: Albums is the home screen. Long names end in "…" (see Playlists).
-- [ ] The left rail (Playlists, Albums, Liked, Recent) switches the content. Liked opens a track list directly.
-- [ ] Tapping a tile opens its track list. Play opens Now Playing.
-- [ ] Shuffle starts on the last song.
-- [ ] The progress bar moves every second, and dragging it seeks.
-- [ ] Next, previous and the volume slider work.
-- [ ] Back returns to the track list.
-- [ ] The mini player shows at the bottom, and tapping it reopens Now Playing.
-- [ ] Shuffle and repeat highlight when on. The third tap on repeat shows a "1" badge.
-- [ ] Idle, with playback paused:
-  - after 10s, a clock appears;
-  - after 20s, the screen goes black;
-  - a tap wakes it.
-- [ ] Nothing is clipped or off-center at 800×480.
-
-To take a screenshot of the window:
+### 3. Run setup
 
 ```bash
-screencapture -l$(osascript -e 'tell app "System Events" to id of window 1 of process "muzak-player"') /tmp/muzak.png
+muzak setup
 ```
 
-### 2. Sign in to Spotify
+Setup asks one thing at a time:
+
+1. **The Pi's address**, such as `muzak-kitchen.local`. It checks it can connect.
+2. **The player's name.** Spotify shows this name when you pick where to play.
+3. **Spotify.**
+   - The first time, it walks you through creating a free Spotify developer app. One app serves every player and every person.
+   - Then a browser opens twice to sign in, once for playback and once for the library, and setup checks it all works.
+4. **Extras.** An Audiobookshelf address and voice control, both optional.
+5. **Install.** It prepares the Pi, installs the newest player and copies your settings across. The first time takes a few minutes and restarts the Pi.
+
+When setup finishes, the player is on the screen.
+
+### 4. On the touchscreen
+
+- **Settings → Speaker** pairs a Bluetooth speaker or picks a Sonos room. Put a Bluetooth speaker in pairing mode first.
+- **Settings → Audiobooks** signs in to Audiobookshelf. Each player can use its own Audiobookshelf user.
+- **Settings → Colours** and **Sleep timer** take effect at once.
+
+## Looking after a player
+
+Run these from your computer:
+
+| Command | What it does |
+|---|---|
+| `muzak config muzak-kitchen.local` | Change settings from a menu: the name, volume, screen timeouts, Audiobookshelf and voice. Saving restarts the player. |
+| `muzak update muzak-kitchen.local` | Install the newest player and restart it. |
+| `muzak status muzak-kitchen.local` | Check the player is running, and which version it is. |
+| `muzak logs muzak-kitchen.local` | Watch what the player is doing, for when something's wrong. |
+| `muzak signin muzak-kitchen.local` | Sign a different Spotify account in on that player. |
+
+`muzak setup` can be run again on the same Pi at any time. It keeps the Spotify sign-in unless you choose to sign in again.
+
+Choices made on the touchscreen take priority over the config. For example, a name changed in Settings stays until you change it there again.
+
+## How it starts
+
+The player runs as a system service, so it starts by itself whenever the Pi powers on. If it ever stops, it restarts. There's no desktop: the Pi boots straight into the player.
+
+Setup trims the boot:
+- there's no splash screen or boot delay, and no console login;
+- background package jobs are off;
+- **the player doesn't wait for Wi-Fi.** It shows your saved library straight away and connects to Spotify once the network is up.
+
+## Voice control
+
+Voice needs a USB microphone and access to Google's Gemini. Setup offers two ways:
+
+- **A Google Cloud service account key file (Vertex AI).** Use this if you have Google Cloud credits. In a Google Cloud project, turn on Vertex AI and create a service account with the "Vertex AI User" role. Then create a JSON key for it and give setup the file.
+- **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/).
+
+How it works:
+1. **Wake word.** "Ziggy" is heard on the Pi itself. No audio leaves the Pi until then.
+2. **Gemini.** The request is sent to Gemini, which picks one action.
+3. **Action.** The player carries it out exactly as if you'd tapped it.
+
+The microphone button in Search does the same without the wake word.
+
+You can ask to play anything in your library or on Spotify, pause, skip, change the volume, set the sleep timer, heart the song, save its album, or add it to one of your playlists.
+
+To change the wake word or its sensitivity, run `muzak config`.
+
+## Troubleshooting
+
+- **Setup can't connect to the Pi.** Check that `ssh muzak-kitchen.local` works. The hostname and SSH key must match what you set in Imager. If your username on the Pi differs from your computer's, use `pi@muzak-kitchen.local`.
+- **Spotify says some requests were refused.** Add the account's email under "User Management" in the Spotify developer app, then run `muzak signin`.
+- **The screen is blank.** Run `muzak status`, then `muzak logs` to see why.
+
+## For developers
+
+The code:
+- `crates/muzak-player` is the touchscreen app, in Rust with [Slint](https://slint.dev). It uses librespot for playback and the Spotify Web API for the library.
+- `crates/muzak-setup` builds the `muzak` tool.
+- `deploy/` holds what's installed on the Pi.
+- `docs/` holds the design specs and the [manual test checklists](docs/testing.md).
+
+To build and test, you need Rust 1.97.1 (`asdf install` reads `.tool-versions`) and Xcode command line tools on a Mac:
 
 ```bash
-cargo run -p muzak-setup -- auth --state-dir secrets/dev
+cargo test --workspace
+cargo run -p muzak-player -- --fake      # the UI with a made-up library, no Spotify needed
 ```
 
-A browser opens. Sign in with the Spotify account you want to test with. This saves `secrets/dev/librespot/credentials.json`. The `secrets/` folder is git-ignored.
-
-Then check that the Web API accepts the session's tokens:
+Docker Desktop is needed only to build the Pi player:
 
 ```bash
-cargo run -p muzak-setup -- probe --state-dir secrets/dev
+scripts/build-pi.sh                                                   # builds target/pi/release/muzak-player
+cargo run -p muzak-setup --bin muzak -- update muzak-kitchen.local \
+    --player-binary target/pi/release/muzak-player                    # tries it on a Pi
 ```
 
-- [ ] Each line shows `HTTP 200`. At least one of the two "playlist items" lines must be 200.
-- [ ] The last line reads `All endpoints work with librespot tokens.`
-- [ ] The first lines name the library and playback accounts, and they match. To check which account a device uses later, look at the small label at the bottom of the left rail.
-
-**If probe fails** with a 403 from Spotify's token service ("Invalid request") or 401/403 on the endpoints, Spotify is refusing to give the librespot session a Web API token. Playback still works, but the library has to come through your own Spotify developer app instead. This is "Contingency A" in the plan:
-
-1. Create an app at https://developer.spotify.com/dashboard:
-   - Redirect URI: `http://127.0.0.1:8898/login`
-   - Tick the "Web API" box.
-   - Under "User Management", add the email of each Spotify account that will use the player or the probe below returns 403.
-   One developer app serves every device and every person: you do not need one per device. Its users are capped in development mode, so check the limit on the dashboard.
-2. Copy the app's Client ID, sign in again through the app, then probe again:
-   ```bash
-   cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
-   cargo run -p muzak-setup -- probe --state-dir secrets/dev
-   ```
-   This saves `secrets/dev/web-auth.json`. The probe uses it automatically and should end with `All endpoints work with developer-app tokens.`
-3. In step 3 below, also copy `web-auth.json` into `dev/state/`. The player uses it when it is there.
-
-For the Pi, run `auth-web` with `--state-dir secrets/<name>` as well. `scripts/deploy.sh` copies `web-auth.json` to the Pi when it exists.
-
-### 3. Real playback on the Mac
+**Releasing.** Raise `version` in `Cargo.toml`, then push a tag:
 
 ```bash
-mkdir -p dev/state/librespot
-cp secrets/dev/librespot/credentials.json dev/state/librespot/
-cp secrets/dev/web-auth.json dev/state/ 2>/dev/null   # only after Contingency A
-cargo run -p muzak-player
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
-For more detailed logs, run `RUST_LOG=debug cargo run -p muzak-player`.
-
-Check:
-
-- [ ] Your real playlists and albums show, with cover art. Recent and Liked fill in.
-- [ ] Playing a playlist starts audio on the Mac within about 1 second. The title and artist are correct.
-- [ ] Pause, next, previous, seek, volume, shuffle and repeat respond within about half a second.
-- [ ] The Spotify app on your phone lists "Muzak Dev" as the playing device.
-- [ ] Liked: open it from the rail and press Play. Audio starts.
-- [ ] In the Spotify app on your phone, move playback to the phone. Muzak shows Paused. Press Play in Muzak and it resumes the same song.
-- [ ] Turn Wi-Fi off:
-  - the grids stay visible;
-  - Play shows "No internet right now".
-- [ ] Turn Wi-Fi back on. The library refreshes and Play works again within about a minute.
-- [ ] Sign-in failure:
-  1. Quit the app.
-  2. Move `dev/state/librespot/credentials.json` away.
-  3. Start the app again. It shows "Spotify sign-in needed".
-  4. Put the file back.
-
-### 4. Search
-
-Check, with the real account:
-
-- [ ] Search in the rail opens the search screen with the keyboard up. The mini player hides while the keyboard is open.
-- [ ] Typing shows matches from your own playlists, albums and liked songs at once, under "In your library".
-- [ ] About half a second after you stop typing, "On Spotify" results appear: songs, artists, albums and playlists.
-- [ ] The Mac keyboard types into the search box too. Return or Escape closes the keyboard; tapping the box opens it again.
-- [ ] Tapping a song plays it, and its album carries on afterwards.
-- [ ] Tapping an album or playlist opens its track list. Back returns to the results.
-- [ ] Tapping an artist opens their albums. Play plays the artist.
-- [ ] A playlist owned by someone else says Spotify won't list its songs, and Play still works.
-- [ ] With Wi-Fi off, library matches still show, with a "No internet right now" note.
-
-### 5. Playlists
-
-Editing, liking and following artists need five more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
-
-```bash
-cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
-cp secrets/dev/web-auth.json dev/state/
-```
-
-Check:
-
-- [ ] The plus button on a track row, on Now Playing, and on a search song opens "Add to playlist" with only your own playlists.
-- [ ] Picking one shows "Added to <name>". Adding the same song again shows "Already in <name>".
-- [ ] "New playlist" opens a name field with the keyboard. Save creates it at the top of Playlists with the song in it.
-- [ ] On Now Playing, the heart next to the plus fills in when the song is in Liked Songs. Tapping it likes or unlikes the song, and Liked Songs updates.
-- [ ] Your own playlists show a pencil next to Back. Someone else's don't.
-- [ ] In edit mode, the minus button removes a song, and dragging the handle on the left moves it.
-- [ ] Rename changes the name everywhere. Delete asks first, then removes the playlist and returns to Playlists.
-- [ ] The Spotify app on your phone shows each change.
-- [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
-
-### Recent and play history
-
-- [ ] Every song played on this player is logged in `dev/state/history.db` (SQLite), with how long it actually played.
-- [ ] Recent → "Albums & playlists" shows where recent songs were played from, newest first; songs skipped within 30 seconds don't count.
-- [ ] Recent → "Songs" lists recent songs with when they played ("12 min ago", "Yesterday"); tapping one plays it from where it was heard, with no Spotify search.
-- [ ] A player with no history yet shows Spotify's recently-played list until it has some.
-
-### Sleep timer
-
-- [ ] On the playing-song screen, tapping the moon at the end of the volume row starts the sleep timer straight away: 30 minutes unless Settings says 60.
-- [ ] The moon turns gold and shows the minutes left. About 3 seconds after the last touch the screen fades over 5 seconds to dim (no clock), then goes dark after a minute. A tap wakes it instantly.
-- [ ] In the last 5 seconds the music fades out, then pauses; the next Play is at the old volume.
-- [ ] Tapping the moon while it runs turns it off.
-- [ ] Settings → Sleep timer switches between 30 and 60 minutes without restarting the player.
-- [ ] Settings → Colours switches between Midnight (default), Ocean, Forest and Daylight at once, and the choice survives a restart.
-
-### Sonos (at home, with Sonos speakers on the same network)
-
-- [ ] Settings → Speaker → Find speakers lists your Sonos rooms (with `--fake`: Kitchen, Living Room, Office).
-- [ ] Tapping a room restarts the player; Settings shows "Sonos: <room>". The Spotify account linked in the Sonos app plays.
-- [ ] Playing an album, playlist, song, Liked Songs or an artist starts it in that room. Play, pause, skip, seek, volume, shuffle and repeat work.
-- [ ] Changing the song or volume from the Sonos app or a phone shows on the player within a second (events, not polling).
-- [ ] "Play on this player" switches back.
-
-### 6. Settings
-
-The gear at the bottom of the left rail opens Settings.
-
-- [ ] It shows your Spotify account name and ID.
-- [ ] The pencil next to the device name opens the keyboard. Saving says "Restarting the player…", the player restarts, and Spotify on your phone shows the new name.
-- [ ] On the Mac, the Speaker section says speakers are paired on the Raspberry Pi. With `--fake`, "Find speakers" lists three pretend speakers; picking "Boombox" restarts on it, and "Old Speaker" fails with a message.
-- [ ] Your choices are kept in `dev/state/settings.json`. Delete that file to go back to the config file's values.
-
-## Testing on the Pi
-
-Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/hardware-checklist.md). In short:
-
-1. **Flash the SD card.** Use Raspberry Pi Imager with Raspberry Pi OS Lite (64-bit). Set the hostname to `muzak-<name>`, and set a user, Wi-Fi and your SSH key. Attach the display ribbon cable while the Pi is unplugged.
-2. **Provision:** `scripts/provision.sh muzak-<name>.local`, then reboot the Pi.
-3. **Sign the account in** on the Mac:
-   ```bash
-   cargo run -p muzak-setup -- auth --state-dir secrets/<name>
-   cargo run -p muzak-setup -- probe --state-dir secrets/<name>
-   ```
-4. **Configure:** `cp devices/example.toml devices/<name>.toml`, then set `device_name` in that file.
-5. **Build and deploy:**
-   ```bash
-   scripts/build-pi.sh
-   scripts/deploy.sh muzak-<name>.local devices/<name>.toml secrets/<name>
-   ```
-6. **Pick the speaker** in Settings on the touchscreen if you use Bluetooth: Find speakers, then tap it. Put the speaker in pairing mode first.
-7. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
-
-To read logs on the Pi:
-
-```bash
-ssh muzak-<name>.local journalctl -u muzak-player -n 50
-```
-
-## Known issues
-
-- If Wi-Fi drops just as the next song loads, the playlist restarts from the first track when the connection returns. See [docs/phase1-followups.md](docs/phase1-followups.md).
-
-## Reporting problems
-
-For each failed check, note:
-
-- which step failed;
-- what you saw;
-- the terminal output, or the `journalctl` output on the Pi;
-- a screenshot, if it's a UI problem.
+The release workflow builds the Pi player and `muzak` for Macs and Linux, then publishes them as a GitHub release. `install.sh`, `muzak setup` and `muzak update` all use the newest release.

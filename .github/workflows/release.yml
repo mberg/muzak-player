@@ -1,0 +1,83 @@
+# Builds the Pi player and the `muzak` setup tool, and publishes them as a GitHub release.
+# Run it by pushing a version tag: git tag v0.2.0 && git push origin v0.2.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, e.g. v0.2.0 (created if it doesn't exist)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  player:
+    name: Pi player (linux arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Debian Trixie, like Raspberry Pi OS
+        run: |
+          docker build -t muzak-build -f deploy/Dockerfile.build deploy
+          docker run --rm -v "$PWD":/src -e CARGO_TARGET_DIR=/src/target/pi \
+            muzak-build cargo build --release -p muzak-player
+          sudo chown -R "$(id -u):$(id -g)" target
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar czf dist/muzak-player-linux-arm64.tar.gz -C target/pi/release muzak-player
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player
+          path: dist/*
+
+  setup-tool:
+    name: muzak (${{ matrix.name }})
+    strategy:
+      matrix:
+        include:
+          - { os: macos-14, target: aarch64-apple-darwin, name: macos-arm64 }
+          - { os: macos-14, target: x86_64-apple-darwin, name: macos-x86_64 }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, name: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release -p muzak-setup --bin muzak --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar czf dist/muzak-${{ matrix.name }}.tar.gz -C target/${{ matrix.target }}/release muzak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: muzak-${{ matrix.name }}
+          path: dist/*
+
+  release:
+    needs: [player, setup-tool]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "Muzak $TAG" --generate-notes
