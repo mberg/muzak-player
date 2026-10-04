@@ -6,6 +6,7 @@ Two approaches:
 
 - `asr`: streaming transcription with the English zipformer model, then matching the words on the device. Anything that isn't a clean match would go to Gemini.
 - `kws`: keyword spotting with the 3.3M keyword model.
+- `moonshine.py`: Moonshine transcription, scored with the same matching rules by `score`.
 
 ## On a Mac
 
@@ -13,6 +14,16 @@ Two approaches:
 ./get-models.sh
 ./make-clips.sh
 cargo run --release --bin asr -- models/sherpa-onnx-streaming-zipformer-en-2023-06-26 wavs
+```
+
+Add `HOTWORDS=3` to bias towards the library names. That needs `bpe.vocab` next to the model; `python3 make-vocab.py` writes it.
+
+For Moonshine:
+
+```sh
+pip install moonshine-voice
+python moonshine.py small_streaming keyterms > moonshine.tsv
+cargo run --release --bin score < moonshine.tsv
 ```
 
 ## On the Pi 3 A+

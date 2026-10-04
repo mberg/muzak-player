@@ -10,7 +10,7 @@ Say a wake word, then ask for music or a book. Everyday commands are understood 
   - **On the device.** Fixed commands and "play" plus the name of something you own are handled on the Pi, offline and fast.
   - **Gemini.** Anything the Pi can't match cleanly goes to Gemini Flash on a paid key. Paid requests aren't used to train Google's models.
 - **Safety rule.** Never act on a guess. A command the Pi isn't sure of goes to Gemini. A name Gemini returns is only played if it matches your library or a real Spotify search result.
-- **Fallback.** If sherpa-onnx doesn't fit on the Pi 3 A+, try Moonshine next.
+- **Engine.** sherpa-onnx streaming transcription, with your library names as hotwords. It beat Moonshine on CPU and memory at the same accuracy in the spike. Moonshine is the fallback.
 
 Assumed until said otherwise:
 
@@ -33,20 +33,29 @@ Audio leaves the device only in step 4, and only after the wake word.
 
 ## Spike results
 
-The spike in `spikes/voice` ran sherpa-onnx on 120 test clips. Fifteen requests were each spoken by four built-in Mac voices, once clean and once with rumbly background noise. Ten requests were commands and five should go to Gemini, such as "play Paul Simon's first album".
+The spike in `spikes/voice` ran sherpa-onnx and Moonshine on 120 test clips. Fifteen requests were each spoken by four built-in Mac voices, once clean and once with rumbly background noise. Ten requests were commands and five should go to Gemini, such as "play Paul Simon's first album". Every transcription engine used the same matching rules.
 
-| Approach | Commands handled on the Pi | Wrongly acted on | Speed on one Mac core | Peak memory |
+| Engine | Commands handled on the Pi | Wrongly acted on | CPU time for the whole set | Peak memory |
 |---|---|---|---|---|
-| Keyword spotting, 3.3M model | 64 of 80 at best | 8 of 40 | about 1% of real time | not measured |
-| Transcription, 20M model | 3 of 80 | 0 | about 1% | not measured |
-| Transcription, 2023-06-26 model, plus matching on the device | **59 of 80** | **0** | about 4% | about 230 MB |
+| sherpa-onnx keyword spotting, 3.3M model | 64 of 80 at best | 8 of 40 | about 3 s | not measured |
+| sherpa-onnx transcription, 20M model | 3 of 80 | 0 | about 4 s | not measured |
+| sherpa-onnx transcription, 2023-06-26 model | 59 of 80 | 0 | 12 s | 230 MB |
+| **sherpa-onnx, same model, with library names as hotwords** | **62 of 80** | **0** | **13 s** | **230 MB** |
+| Moonshine tiny streaming | 50 of 80 | 0 | 23 s | 330 MB |
+| Moonshine tiny streaming, with key terms | 52 of 80 | 0 | 23 s | 325 MB |
+| Moonshine small streaming | 58 of 80 | 0 | 48 s | 750 MB |
+| Moonshine small streaming, with key terms | 62 of 80 | 0 | 48 s | 730 MB |
+
+The clips total about 320 seconds of audio. CPU time is summed over all cores on an Apple Silicon Mac. sherpa-onnx ran on one thread. Moonshine used its defaults, which spread work across cores, and ran through Python, which adds some memory.
 
 What this shows:
 
 - **Keyword spotting is the wrong tool for commands.** It fires on the first phrase it hears. "Play Paul Simon's first album" triggers "play Paul Simon", and "Paul" triggers "pause". It may still suit the wake word, which is a single phrase.
 - **The small 20M model drops about the first second of speech**, so short commands vanish.
 - **Transcription plus matching never acted wrongly.** Its 21 misses were misheard names and words, and all of them would go to Gemini.
-- **Synthetic voices aren't people.** Real voices, children's voices and real music in the room will change these numbers.
+- **Biasing towards your library names helps both engines.** sherpa-onnx's hotwords took it from 59 to 62. Moonshine's key terms took its small model from 58 to 62.
+- **sherpa-onnx is the better fit for the Pi 3 A+.** With hotwords it matches Moonshine's best accuracy, using about a quarter of the CPU time and a third of the memory. Moonshine's tiny model is smaller, but it is less accurate and still needs more of both.
+- **Synthetic voices aren't people.** Real voices and real music in the room will change these numbers.
 
 Also confirmed:
 
@@ -60,7 +69,7 @@ The Pi 3 A+ has 512 MB of memory, and Spotify playback and the screen already us
 Phase 0 measures this on a real Pi before anything else is built. If it doesn't fit, the options in order are:
 
 1. A smaller or quantised sherpa-onnx streaming model, re-tested for dropped speech.
-2. Moonshine v2. It has a C API, so we'd write a small Rust wrapper.
+2. Moonshine tiny streaming with key terms. It has a C API, so we'd write a small Rust wrapper. It was less accurate and used more memory in the spike, so it's a fallback only if a sherpa-onnx model won't run.
 3. Gemini only. There's no on-device path, so every request takes about a second and needs the internet.
 
 ## Wake word
