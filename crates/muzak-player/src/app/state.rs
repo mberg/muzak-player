@@ -106,6 +106,8 @@ pub enum Notice {
     TrackUnavailable,
     /// Spotify refused a playlist change; the screen has been put back.
     CouldntSave,
+    /// Spotify is rate-limiting the app; the change was put back.
+    SpotifyBusy,
     /// A song was added to the named playlist.
     AddedTo(String),
     /// The song is already in the named playlist, so nothing was added.

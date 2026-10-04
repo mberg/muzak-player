@@ -826,7 +826,7 @@ fn adding_a_song_shows_at_once_and_reloads_after_success() {
         }),
         0,
     );
-    assert!(fx.contains(&Effect::Library(LibraryRequest::Tracks {
+    assert!(fx.contains(&Effect::Library(LibraryRequest::ReloadTracks {
         collection_uri: "spotify:playlist:p1".into()
     })));
 }

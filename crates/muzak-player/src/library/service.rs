@@ -11,8 +11,9 @@ use crate::app::{Input, LibraryRequest, LibraryUpdate};
 use crate::model::{Account, Collection, Track};
 
 const ACCOUNT_KEY: &str = "account";
-/// A cached section younger than this is not fetched again, except after an edit.
-const SECTION_FRESH: std::time::Duration = std::time::Duration::from_secs(120);
+/// A cached section or track list younger than this is not fetched again, except after
+/// an edit. Spotify rate-limits developer apps hard, and library data rarely changes.
+const CACHE_FRESH: std::time::Duration = std::time::Duration::from_secs(600);
 
 pub fn spawn_library<S: LibrarySource>(
     source: Arc<S>,
@@ -52,7 +53,10 @@ async fn serve<S: LibrarySource>(
     let send = |update| {
         let _ = inputs.send(Input::Library(update));
     };
-    let force = matches!(request, LibraryRequest::Reload(_));
+    let force = matches!(
+        request,
+        LibraryRequest::Reload(_) | LibraryRequest::ReloadTracks { .. }
+    );
     match request {
         LibraryRequest::Section(section) | LibraryRequest::Reload(section) => {
             let key = section.cache_key();
@@ -60,7 +64,7 @@ async fn serve<S: LibrarySource>(
                 send(LibraryUpdate::Section { section, items });
                 // A restart soon after a fetch (Settings restarts the player) reuses the
                 // cache rather than asking Spotify again, which rate-limits heavily.
-                if !force && cache.age(key).is_some_and(|age| age < SECTION_FRESH) {
+                if !force && cache.age(key).is_some_and(|age| age < CACHE_FRESH) {
                     return;
                 }
             }
@@ -80,13 +84,17 @@ async fn serve<S: LibrarySource>(
                 }
             }
         }
-        LibraryRequest::Tracks { collection_uri } => {
+        LibraryRequest::Tracks { collection_uri }
+        | LibraryRequest::ReloadTracks { collection_uri } => {
             let key = tracks_key(&collection_uri);
             if let Some(tracks) = cache.read::<Vec<Track>>(&key) {
                 send(LibraryUpdate::Tracks {
                     collection_uri: collection_uri.clone(),
                     tracks,
                 });
+                if !force && cache.age(&key).is_some_and(|age| age < CACHE_FRESH) {
+                    return;
+                }
             }
             match source.tracks(&collection_uri).await {
                 Ok(tracks) => {

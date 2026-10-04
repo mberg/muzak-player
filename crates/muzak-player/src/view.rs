@@ -683,6 +683,9 @@ fn banner(state: &AppState) -> Option<String> {
         Some(Notice::NoInternet) => Some("No internet right now".into()),
         Some(Notice::TrackUnavailable) => Some("That song can't play, skipping".into()),
         Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
+        Some(Notice::SpotifyBusy) => {
+            Some("Spotify is limiting changes right now. Try again later.".into())
+        }
         Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
         Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
         Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),

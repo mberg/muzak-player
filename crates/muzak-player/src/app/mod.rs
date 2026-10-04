@@ -275,7 +275,10 @@ impl Core {
     fn reload(&mut self, undo: &Undo, fx: &mut Vec<Effect>) {
         for (uri, _) in &undo.tracks {
             if !uri.starts_with("muzak:") {
-                self.request_tracks(uri, fx);
+                self.state.tracks.entry(uri.clone()).or_default().loading = true;
+                fx.push(Effect::Library(LibraryRequest::ReloadTracks {
+                    collection_uri: uri.clone(),
+                }));
             }
         }
         for (section, _) in &undo.sections {
@@ -331,11 +334,13 @@ impl Core {
                 None => self.state.liked.remove(uri),
             };
         }
-        if reason == FailReason::Offline {
-            self.state.online = false;
-            self.notify(Notice::NoInternet, now_ms);
-        } else {
-            self.notify(Notice::CouldntSave, now_ms);
+        match reason {
+            FailReason::Offline => {
+                self.state.online = false;
+                self.notify(Notice::NoInternet, now_ms);
+            }
+            FailReason::RateLimited => self.notify(Notice::SpotifyBusy, now_ms),
+            _ => self.notify(Notice::CouldntSave, now_ms),
         }
         self.reload(&undo, fx);
     }
@@ -1214,7 +1219,10 @@ impl Core {
         // player reports that with `Input::AuthInvalid`. The slot shows "Can't load this right now".
         match reason {
             FailReason::Offline => self.state.online = false,
-            FailReason::Auth | FailReason::Forbidden | FailReason::Other => {}
+            FailReason::Auth
+            | FailReason::Forbidden
+            | FailReason::RateLimited
+            | FailReason::Other => {}
         }
     }
 

@@ -5,6 +5,9 @@ export component PillButton inherits Rectangle {
     in property <image> icon;
     in property <bool> primary: false;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
     height: Theme.touch;
     min-width: 120px;
     border-radius: root.height / 2;

@@ -42,6 +42,22 @@ fn ui_clicks() {
             .await;
         assert_eq!(opened.get(), 1, "tapping the artist name opens the artist");
 
+        // Play sits at the bottom of the album column.
+        let play = visible_by_label(&window, "Play");
+        let bottom = play.absolute_position().y + play.size().height;
+        assert!(
+            bottom > 480.0 - 40.0,
+            "Play should be at the bottom, ends at y={bottom}"
+        );
+        let plays = Rc::new(Cell::new(0));
+        let p = plays.clone();
+        window.on_play_collection(move |_, shuffle| {
+            assert!(!shuffle);
+            p.set(p.get() + 1);
+        });
+        play.single_click(PointerEventButton::Left).await;
+        assert_eq!(plays.get(), 1, "Play plays the album");
+
         slint::quit_event_loop().unwrap();
     })
     .unwrap();

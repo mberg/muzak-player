@@ -106,6 +106,8 @@ async fn run(
             inputs.clone(),
         );
         let http = crate::library::web_api::ReqwestHttp::new()?;
+        // Endpoints Spotify told us to leave alone, remembered across restarts.
+        let block_file = config.cache_dir().join("rate-limits.json");
         let web_auth = config
             .state_dir
             .join(crate::library::refresh_tokens::FILE_NAME);
@@ -113,11 +115,17 @@ async fn run(
             // Contingency A: library requests use the parent's own developer app.
             tracing::info!("using developer-app tokens from {}", web_auth.display());
             let tokens = crate::library::refresh_tokens::RefreshTokens::load(&web_auth)?;
-            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            let source = Arc::new(
+                crate::library::web_api::WebApi::new(http, tokens)
+                    .with_block_file(block_file.clone()),
+            );
             spawn_library(source, cache, inputs.clone())
         } else {
             let tokens = crate::library::session_tokens::SessionTokens::new(session_rx);
-            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            let source = Arc::new(
+                crate::library::web_api::WebApi::new(http, tokens)
+                    .with_block_file(block_file.clone()),
+            );
             spawn_library(source, cache, inputs.clone())
         };
         (player, library)

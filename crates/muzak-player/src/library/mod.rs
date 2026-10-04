@@ -22,6 +22,9 @@ pub enum FetchError {
     /// Spotify refused this resource to the app (HTTP 403).
     #[error("forbidden")]
     Forbidden,
+    /// Spotify asked us to stop for a while (HTTP 429 with a long Retry-After).
+    #[error("rate limited")]
+    RateLimited,
     #[error("{0}")]
     Other(String),
 }
@@ -32,6 +35,7 @@ impl FetchError {
             FetchError::Offline => FailReason::Offline,
             FetchError::Auth => FailReason::Auth,
             FetchError::Forbidden => FailReason::Forbidden,
+            FetchError::RateLimited => FailReason::RateLimited,
             FetchError::NotFound | FetchError::Other(_) => FailReason::Other,
         }
     }

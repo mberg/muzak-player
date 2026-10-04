@@ -1,8 +1,9 @@
 //! Spotify Web API client: only the endpoints the player needs, parsed defensively.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -472,7 +473,75 @@ pub struct WebApi<H, T> {
     /// The playlist list, shared by the Playlists and Recent sections for a short while so
     /// a refresh fetches it once. Locked during the fetch so concurrent callers wait for it.
     playlists_memo: tokio::sync::Mutex<Option<(std::time::Instant, Vec<Collection>)>>,
+    blocks: std::sync::Mutex<Blocks>,
+    /// Requests sent since start, and when counting started.
+    requests: std::sync::Mutex<(u64, std::time::Instant)>,
 }
+
+/// Endpoints Spotify told us to stay away from, and until when. Kept on disk so a restart
+/// doesn't ask again: every refused request risks a longer ban.
+#[derive(Default)]
+struct Blocks {
+    until: HashMap<String, SystemTime>,
+    file: Option<std::path::PathBuf>,
+}
+
+impl Blocks {
+    fn load(file: std::path::PathBuf) -> Self {
+        let until = std::fs::read(&file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<HashMap<String, u64>>(&bytes).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(family, secs)| (family, UNIX_EPOCH + Duration::from_secs(secs)))
+            .filter(|(_, until)| *until > SystemTime::now())
+            .collect();
+        Self {
+            until,
+            file: Some(file),
+        }
+    }
+
+    fn blocked(&self, family: &str) -> Option<Duration> {
+        self.until
+            .get(family)
+            .and_then(|until| until.duration_since(SystemTime::now()).ok())
+    }
+
+    fn block(&mut self, family: String, secs: u64) {
+        self.until
+            .insert(family, SystemTime::now() + Duration::from_secs(secs));
+        let Some(file) = &self.file else { return };
+        let saved: HashMap<&String, u64> = self
+            .until
+            .iter()
+            .filter_map(|(f, t)| Some((f, t.duration_since(UNIX_EPOCH).ok()?.as_secs())))
+            .collect();
+        if let Err(e) = serde_json::to_vec(&saved)
+            .map_err(std::io::Error::other)
+            .and_then(|json| std::fs::write(file, json))
+        {
+            tracing::warn!("saving rate-limit blocks failed: {e}");
+        }
+    }
+}
+
+/// Groups URLs by endpoint so one block covers it: the path without the query, with
+/// Spotify IDs replaced, e.g. "/playlists/{id}/items".
+fn endpoint_family(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    let path = path.split("/v1").nth(1).unwrap_or(path);
+    path.split('/')
+        .map(|segment| {
+            let is_id = segment.len() == 22 && segment.chars().all(|c| c.is_ascii_alphanumeric());
+            if is_id { "{id}" } else { segment }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Requests are counted and logged every this many, to spot overuse early.
+const REQUEST_LOG_EVERY: u64 = 50;
 
 /// How long one fetch of the playlist list serves both sections.
 const PLAYLISTS_MEMO: Duration = Duration::from_secs(30);
@@ -490,6 +559,23 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
             tokens,
             base: base.to_string(),
             playlists_memo: tokio::sync::Mutex::new(None),
+            blocks: std::sync::Mutex::new(Blocks::default()),
+            requests: std::sync::Mutex::new((0, std::time::Instant::now())),
+        }
+    }
+
+    /// Remembers rate-limit blocks in `file` across restarts.
+    pub fn with_block_file(self, file: std::path::PathBuf) -> Self {
+        *self.blocks.lock().unwrap() = Blocks::load(file);
+        self
+    }
+
+    fn count_request(&self) {
+        let mut requests = self.requests.lock().unwrap();
+        requests.0 += 1;
+        if requests.0.is_multiple_of(REQUEST_LOG_EVERY) {
+            let minutes = requests.1.elapsed().as_secs() / 60;
+            tracing::info!("{} Spotify API requests in {minutes} min", requests.0);
         }
     }
 
@@ -517,9 +603,15 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
         } else {
             format!("{}{}", self.base, path_or_url)
         };
+        let family = endpoint_family(&url);
+        if let Some(left) = self.blocks.lock().unwrap().blocked(&family) {
+            tracing::debug!("not asking {family}: blocked for {}s more", left.as_secs());
+            return Err(FetchError::RateLimited);
+        }
         let mut retried = false;
         let mut waited = false;
         loop {
+            self.count_request();
             let token = self.tokens.token().await?;
             let result = match method {
                 Method::Get => self.http.get_json(&url, &token).await,
@@ -540,16 +632,19 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
                 Err(HttpError::RateLimited(secs)) if !waited => {
                     let secs = secs.unwrap_or(2);
                     if secs > MAX_RETRY_AFTER_SECS {
-                        return Err(FetchError::Other(format!(
-                            "rate limited for {secs}s: {url}"
-                        )));
+                        tracing::warn!(
+                            "rate limited for {secs}s: {family}; not asking again until then"
+                        );
+                        self.blocks.lock().unwrap().block(family, secs);
+                        return Err(FetchError::RateLimited);
                     }
                     tracing::info!("rate limited; retrying {url} in {secs}s");
                     waited = true;
                     tokio::time::sleep(Duration::from_secs(secs)).await;
                 }
                 Err(HttpError::RateLimited(_)) => {
-                    return Err(FetchError::Other(format!("rate limited: {url}")));
+                    tracing::warn!("still rate limited: {family}");
+                    return Err(FetchError::RateLimited);
                 }
                 Err(HttpError::Status(403)) => return Err(FetchError::Forbidden),
                 Err(HttpError::Status(404)) => return Err(FetchError::NotFound),
@@ -994,6 +1089,10 @@ mod tests {
         WebApi::with_base(http, CountingTokens::default(), BASE)
     }
 
+    fn api_after_restart(http: FakeHttp) -> WebApi<FakeHttp, CountingTokens> {
+        api(http)
+    }
+
     fn img(url: &str, width: Option<u32>) -> ImageObj {
         ImageObj {
             url: url.into(),
@@ -1389,6 +1488,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(api.http.sent().len(), 2);
+    }
+
+    #[test]
+    fn endpoint_families_hide_ids_and_queries() {
+        assert_eq!(
+            endpoint_family(
+                "https://api.spotify.com/v1/playlists/7Fr4Jx8s7WNaKHYDgh048x/items?limit=100"
+            ),
+            "/playlists/{id}/items"
+        );
+        assert_eq!(
+            endpoint_family("https://api.spotify.com/v1/me/playlists?limit=50"),
+            "/me/playlists"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_long_block_stops_further_requests_and_survives_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("blocks.json");
+        let http = FakeHttp::default().on(
+            "/me/albums?limit=50",
+            Err(HttpError::RateLimited(Some(80_000))),
+        );
+        let api = api(http).with_block_file(file.clone());
+        assert_eq!(
+            api.section(Section::Albums).await,
+            Err(FetchError::RateLimited)
+        );
+        assert_eq!(
+            api.section(Section::Albums).await,
+            Err(FetchError::RateLimited)
+        );
+        assert_eq!(
+            api.http.calls.lock().unwrap().len(),
+            1,
+            "asked Spotify once"
+        );
+
+        // A fresh client (a restart) reads the block and doesn't ask either.
+        let again = api_after_restart(FakeHttp::default()).with_block_file(file);
+        assert_eq!(
+            again.section(Section::Albums).await,
+            Err(FetchError::RateLimited)
+        );
+        assert!(again.http.calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

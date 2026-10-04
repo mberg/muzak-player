@@ -209,6 +209,8 @@ pub enum FailReason {
     Auth,
     /// Spotify refuses this to the app; playing it may still work.
     Forbidden,
+    /// Spotify asked the app to stop for a while.
+    RateLimited,
     Other,
 }
 
@@ -256,6 +258,10 @@ pub enum LibraryRequest {
     Search(String),
     /// A section fetched even if the cache is fresh, after an edit changed it.
     Reload(Section),
+    /// A track list fetched even if the cache is fresh, after an edit changed it.
+    ReloadTracks {
+        collection_uri: String,
+    },
     ArtistAlbums {
         artist_uri: String,
     },
