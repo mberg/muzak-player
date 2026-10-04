@@ -21,6 +21,8 @@ const MAX_ITEMS: usize = 500;
 const RECENT_LIMIT: usize = 20;
 /// Spotify answers "Invalid limit" above 10 per type (checked 2026-10-03).
 const SEARCH_LIMIT: usize = 10;
+/// An artist page shows up to this many albums, fetched 10 at a time.
+const MAX_ARTIST_ALBUMS: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum HttpError {
@@ -709,22 +711,23 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
     }
 
     async fn artist_albums(&self, artist_uri: &str) -> Result<Vec<Collection>, FetchError> {
-        let Some(id) = artist_uri.strip_prefix("spotify:artist:") else {
-            return Err(FetchError::Other(format!("not an artist: {artist_uri}")));
-        };
-        // One page is plenty for a touchscreen grid.
-        let page: Page<AlbumObj> = decode(
-            self.get(&format!(
-                "/artists/{id}/albums?include_groups=album,single,compilation&limit=50"
-            ))
-            .await?,
-        )?;
+        let id = artist_id(artist_uri)?;
+        // Spotify answers "Invalid limit" above 10 here (checked 2026-10-03), so page.
+        let mut raw: Vec<AlbumObj> = Vec::new();
+        let mut next = Some(format!(
+            "/artists/{id}/albums?include_groups=album,single,compilation&limit=10"
+        ));
+        while let Some(url) = next.take() {
+            let page: Page<AlbumObj> = decode(self.get(&url).await?)?;
+            raw.extend(page.items.into_iter().flatten());
+            if raw.len() < MAX_ARTIST_ALBUMS {
+                next = page.next;
+            }
+        }
         // Spotify lists regional editions of the same album separately.
         let mut names = HashSet::new();
-        Ok(page
-            .items
+        Ok(raw
             .into_iter()
-            .flatten()
             .filter(|a| names.insert(a.name.to_lowercase()))
             .map(|a| album_collection(&a))
             .collect())
@@ -1143,14 +1146,20 @@ mod tests {
 
     #[tokio::test]
     async fn artist_albums_drop_duplicate_names() {
-        let http = FakeHttp::default().on(
-            "/artists/r1/albums?include_groups=album,single,compilation&limit=50",
-            Ok(json!({"items": [
-                {"uri": "spotify:album:a1", "name": "Abbey Road", "artists": []},
-                {"uri": "spotify:album:a2", "name": "Abbey Road", "artists": []},
-                {"uri": "spotify:album:a3", "name": "Help!", "artists": []}
-            ], "next": null})),
-        );
+        let http = FakeHttp::default()
+            .on(
+                "/artists/r1/albums?include_groups=album,single,compilation&limit=10",
+                Ok(json!({"items": [
+                    {"uri": "spotify:album:a1", "name": "Abbey Road", "artists": []},
+                    {"uri": "spotify:album:a2", "name": "Abbey Road", "artists": []}
+                ], "next": "https://api.test/v1/artists/r1/albums?offset=10&limit=10"})),
+            )
+            .on(
+                "https://api.test/v1/artists/r1/albums?offset=10&limit=10",
+                Ok(json!({"items": [
+                    {"uri": "spotify:album:a3", "name": "Help!", "artists": []}
+                ], "next": null})),
+            );
         let albums = api(http).artist_albums("spotify:artist:r1").await.unwrap();
         let names: Vec<_> = albums.iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, ["Abbey Road", "Help!"]);
