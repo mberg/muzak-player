@@ -23,6 +23,22 @@ pub struct Slot<T> {
     pub failed: bool,
     /// True when Spotify refused the fetch (HTTP 403) and there is no data to show.
     pub forbidden: bool,
+    /// True when Spotify is rate-limiting this request and there is no data to show.
+    pub limited: bool,
+}
+
+impl<T> Slot<T> {
+    /// Records a failed fetch; it only shows when there's nothing cached to show instead.
+    pub fn fail(&mut self, reason: crate::app::FailReason) {
+        use crate::app::FailReason;
+        self.loading = false;
+        let empty = self.data.is_none();
+        match reason {
+            FailReason::Forbidden => self.forbidden = empty,
+            FailReason::RateLimited => self.limited = empty,
+            _ => self.failed = empty,
+        }
+    }
 }
 
 impl<T> Default for Slot<T> {
@@ -32,6 +48,7 @@ impl<T> Default for Slot<T> {
             loading: false,
             failed: false,
             forbidden: false,
+            limited: false,
         }
     }
 }

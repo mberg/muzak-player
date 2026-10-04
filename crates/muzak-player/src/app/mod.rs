@@ -1343,22 +1343,18 @@ impl Core {
                 self.state.online = true;
             }
             LibraryUpdate::SectionFailed { section, reason } => {
-                let slot = self.state.sections.entry(section).or_default();
-                slot.loading = false;
-                slot.failed = slot.data.is_none();
+                self.state.sections.entry(section).or_default().fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::TracksFailed {
                 collection_uri,
                 reason,
             } => {
-                let slot = self.state.tracks.entry(collection_uri).or_default();
-                slot.loading = false;
-                if reason == FailReason::Forbidden {
-                    slot.forbidden = slot.data.is_none();
-                } else {
-                    slot.failed = slot.data.is_none();
-                }
+                self.state
+                    .tracks
+                    .entry(collection_uri)
+                    .or_default()
+                    .fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::SearchResults { query, results } => {
@@ -1411,9 +1407,11 @@ impl Core {
             }
             LibraryUpdate::EditFailed { id, reason } => self.edit_failed(id, reason, now_ms, fx),
             LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
-                let slot = self.state.artist_albums.entry(artist_uri).or_default();
-                slot.loading = false;
-                slot.failed = slot.data.is_none();
+                self.state
+                    .artist_albums
+                    .entry(artist_uri)
+                    .or_default()
+                    .fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::Account(account) => self.state.account = Some(account),

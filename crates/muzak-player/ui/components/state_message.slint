@@ -10,6 +10,7 @@ export component StateMessage inherits Rectangle {
         text: root.state == LoadState.loading ? "Loading…"
             : root.state == LoadState.failed ? root.failed-text
             : root.state == LoadState.forbidden ? "Spotify won't list these songs here, but Play works."
+            : root.state == LoadState.limited ? "Spotify is limiting requests right now. Try again later."
             : root.empty-text;
         color: Theme.text-dim;
         font-size: Theme.font-body;

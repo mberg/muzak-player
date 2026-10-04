@@ -555,6 +555,7 @@ fn load_state(status: LoadStatus) -> LoadState {
         LoadStatus::Empty => LoadState::Empty,
         LoadStatus::Failed => LoadState::Failed,
         LoadStatus::Forbidden => LoadState::Forbidden,
+        LoadStatus::Limited => LoadState::Limited,
         LoadStatus::Ready => LoadState::Ready,
     }
 }
