@@ -168,11 +168,15 @@ export component NowPlayingScreen inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 12px;
-                Image {
-                    source: @image-url("../icons/volume.svg");
-                    width: 28px;
-                    height: 28px;
-                    colorize: Theme.text-dim;
+                // Level with the slider's line.
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../icons/volume.svg");
+                        width: 28px;
+                        height: 28px;
+                        colorize: Theme.text-dim;
+                    }
                 }
                 Scrubber {
                     value: root.volume / 100;
