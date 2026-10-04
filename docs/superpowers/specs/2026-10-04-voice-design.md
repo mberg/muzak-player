@@ -113,7 +113,11 @@ Hearing the wake word over the player's own music is the hard part. When the wak
    - Memory, CPU, and whether the music stays smooth with the transcription model running.
    - Wake-word detection with music playing.
    - Record the household saying about 30 real requests and rerun the spike on those.
-1. **Wake word plus Gemini.** One path for every request, with the listening overlay and music ducking.
+1. **Wake word plus Gemini.** One path for every request, with the listening overlay and music ducking. Built on `feat/voice`:
+   - **Wake word.** sherpa-onnx keyword spotting with the 3.3M model. The phrase is split into the model's pieces in Rust, so there's no Python on the Pi.
+   - **Wake-word test.** Four Mac voices, clean and with noise, at a threshold of 0.25: "hey muzak" woke on 22 of 24 requests. It also woke on "hey music" 3 times in 8, because the model hears "muzak" much like "music". Any phrase ending in "muzak" has the same problem. "Hey jukebox" never woke falsely, but missed more.
+   - **End of the request.** It's judged by loudness compared with the room before the wake word, so loud music that is then turned down can't hide the request.
+   - **The overlay.** A "Listening…" pill with a pulsing microphone, then "Working on it…", then the result in the message bar.
 2. **On-device commands.** Transcription and matching, with Gemini as the fallback.
 3. **Polish.**
    - Showing choices on screen when a request is unclear.

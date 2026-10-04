@@ -25,6 +25,24 @@ pub struct Config {
     /// Bluetooth speaker address to watch and reconnect.
     #[serde(default)]
     pub bluetooth_speaker: Option<String>,
+    /// Voice control: a sherpa-onnx keyword model folder. Voice is on when this is set.
+    #[serde(default)]
+    pub voice_model_dir: Option<PathBuf>,
+    /// Said before a request; defaults to "hey muzak".
+    #[serde(default)]
+    pub wake_phrase: Option<String>,
+    /// How sure the wake word must be, 0-1; lower hears it more readily. Defaults to 0.25.
+    #[serde(default)]
+    pub wake_threshold: Option<f32>,
+    /// Part of the microphone's name; the default input when unset.
+    #[serde(default)]
+    pub microphone: Option<String>,
+    /// Gemini API key for voice requests; GEMINI_API_KEY in the environment also works.
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
+    /// Defaults to gemini-3.8-flash.
+    #[serde(default)]
+    pub gemini_model: Option<String>,
 }
 
 fn default_audio_backend() -> String {

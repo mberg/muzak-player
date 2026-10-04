@@ -2,6 +2,7 @@ pub mod input;
 pub mod state;
 #[cfg(test)]
 pub(crate) mod tests;
+mod voice;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -147,6 +148,7 @@ impl Core {
             history: None,
             recent_songs: false,
             sleep_ends_ms: None,
+            voice: VoiceState::default(),
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
                 device_name: cfg.device_name.clone(),
@@ -207,6 +209,7 @@ impl Core {
                 self.on_sleep_tick(now_ms, &mut fx);
             }
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
+            Input::Voice(update) => self.on_voice(update, now_ms, &mut fx),
             Input::SonosRooms(rooms) => {
                 self.state.device.sonos_rooms = rooms;
                 self.state.device.sonos_scanning = false;
@@ -1377,9 +1380,11 @@ impl Core {
                     slot.loading = false;
                     slot.failed = false;
                     self.state.online = true;
+                    self.voice_search_results(&query, now_ms, fx);
                 }
             }
             LibraryUpdate::SearchFailed { query, reason } => {
+                self.voice_search_failed(&query);
                 if query == self.state.search.sent.trim() {
                     let slot = &mut self.state.search.results;
                     slot.data = None;
@@ -1480,6 +1485,7 @@ impl Core {
             self.state.notice = None;
         }
         self.on_sleep_tick(now_ms, fx);
+        self.voice_tick(now_ms, fx);
         self.count_listening(now_ms);
         if self.listened_ms >= self.listened_reported + LISTEN_REPORT_MS {
             self.report_listening(fx);

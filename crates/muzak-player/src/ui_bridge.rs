@@ -361,6 +361,8 @@ impl Bridge {
         w.set_shuffle(v.now.shuffle);
         w.set_repeat(v.now.repeat.index());
         w.set_banner(v.banner.unwrap_or_default().into());
+        w.set_voice_status(v.voice_status.as_str().into());
+        w.set_voice_listening(v.voice_listening);
         w.set_display_mode(match v.display {
             DisplayMode::Active => 0,
             DisplayMode::Dim => 1,

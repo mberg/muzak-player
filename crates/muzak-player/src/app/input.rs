@@ -22,6 +22,71 @@ pub enum Input {
     HistoryRecent(Vec<crate::model::PlayRecord>),
     /// Sonos rooms found on the network.
     SonosRooms(Vec<crate::settings::SonosRoom>),
+    Voice(VoiceUpdate),
+}
+
+/// What the voice service tells the core.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VoiceUpdate {
+    /// The wake word was heard and recording started.
+    Woke,
+    /// Recording finished; Gemini is working out what was asked.
+    Thinking,
+    Command(VoiceCommand),
+    /// Nothing the player can do was asked, or nothing was heard.
+    NotUnderstood,
+    /// Asking failed: no internet, no key, or a server problem.
+    Failed(String),
+}
+
+/// One thing a voice request asks for. Each runs through the same code as a tap.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VoiceCommand {
+    /// A playlist, album or artist from the library list Gemini was given, by URI.
+    Play(String),
+    /// Search Spotify and play the first result of this kind.
+    Search {
+        query: String,
+        kind: SearchKind,
+    },
+    Pause,
+    Resume,
+    Next,
+    Previous,
+    Louder,
+    Quieter,
+    SetVolume(u8),
+    /// Minutes; 0 turns the sleep timer off.
+    SleepTimer(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchKind {
+    Song,
+    Album,
+    Artist,
+    Playlist,
+}
+
+/// What Gemini is told about the player with each request.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VoiceContext {
+    /// "Graceland by Paul Simon", if something is loaded.
+    pub now_playing: Option<String>,
+    pub playing: bool,
+    pub volume: u8,
+    /// Playlists, albums and artists in the library.
+    pub items: Vec<VoiceItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceItem {
+    pub uri: String,
+    /// "playlist", "album", "artist" or "liked".
+    pub kind: &'static str,
+    pub name: String,
+    /// Owner of a playlist, artists of an album.
+    pub by: String,
 }
 
 /// Work for the play-history store.
@@ -262,6 +327,8 @@ pub enum Effect {
     History(HistoryCommand),
     /// Look for Sonos rooms on the network.
     ScanSonos,
+    /// What the voice service passes to Gemini with the next request.
+    VoiceContext(VoiceContext),
 }
 
 #[derive(Debug, Clone, PartialEq)]

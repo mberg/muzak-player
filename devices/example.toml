@@ -10,3 +10,11 @@ audio_device = "plughw:CARD=Headphones"
 initial_volume = 60
 dim_after_secs = 180
 off_after_secs = 600
+# Voice control: say the wake word, then a request. Needs a USB microphone and the keyword model:
+#   curl -sSL https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2 | tar xj -C /var/lib/muzak
+# voice_model_dir = "/var/lib/muzak/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+# gemini_api_key = "…"            # or GEMINI_API_KEY in the environment
+# wake_phrase = "hey muzak"       # the model hears "muzak" much like "music"
+# wake_threshold = 0.25           # lower wakes more readily
+# microphone = "USB"              # part of the microphone's name; the default input otherwise
+# gemini_model = "gemini-3.8-flash"
