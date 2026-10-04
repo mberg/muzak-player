@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn load_with_start_uri_starts_on_that_track() {
         let catalog = Arc::new(FakeCatalog::sample());
-        let uri = catalog.albums[0].uri.clone();
+        let uri = catalog.albums()[0].uri.clone();
         let third = catalog.tracks_for(&uri)[2].clone();
         let mut p = FakePlayer::new(catalog.clone());
         let updates = p.handle(PlayerCommand::Load {
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn load_plays_and_runs_to_the_end() {
         let catalog = Arc::new(FakeCatalog::sample());
-        let uri = catalog.albums[0].uri.clone();
+        let uri = catalog.albums()[0].uri.clone();
         let mut p = FakePlayer::new(catalog.clone());
         let updates = p.handle(PlayerCommand::Load {
             context_uri: uri.clone(),

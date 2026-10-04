@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::app::{AppState, DisplayMode, Notice, PlayStatus, Screen, SearchFilter, Slot};
+use crate::app::{
+    AppState, DisplayMode, Notice, PlayStatus, Screen, SearchFilter, Slot, TextPurpose,
+};
 use crate::library::matching::matches;
 use crate::model::{Collection, LIKED_URI, Repeat, Section, Track, liked_collection};
 
@@ -16,6 +18,7 @@ pub enum ScreenView {
     NowPlaying,
     Search,
     Artist,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +66,9 @@ pub struct ArtistView {
     pub header: TileView,
     pub albums: Vec<TileView>,
     pub status: LoadStatus,
+    pub followed: bool,
+    /// "Artists" when drilled down from the Artists list; empty otherwise.
+    pub back_label: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +81,7 @@ pub struct TileView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrackRowView {
+    pub uri: String,
     pub title: String,
     pub artists: String,
     pub duration: String,
@@ -86,10 +93,73 @@ pub struct DetailView {
     pub header: TileView,
     pub status: LoadStatus,
     pub tracks: Vec<TrackRowView>,
+    /// The signed-in account owns this playlist.
+    pub editable: bool,
+    pub editing: bool,
+    /// Rows offer "add to playlist": on albums and Liked Songs, not on playlists.
+    pub can_add: bool,
+    /// For example "23 songs · 1 hr 12 min"; empty until the songs load.
+    pub summary: String,
+    /// An album, which can be saved to or removed from the library.
+    pub saveable: bool,
+    pub saved: bool,
+    /// The artist name under an album's title opens the artist (Back inside a drill-down).
+    pub artist_link: bool,
+}
+
+/// A Bluetooth speaker found by a scan.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpeakerRowView {
+    pub address: String,
+    pub name: String,
+    /// "Connecting…", "In use", "Paired" or empty.
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingsView {
+    pub account_name: String,
+    pub account_id: String,
+    pub device_name: String,
+    /// "Headphone jack" or the speaker's name.
+    pub output: String,
+    pub on_speaker: bool,
+    pub speaker_connected: bool,
+    pub bluetooth: bool,
+    pub scanning: bool,
+    pub speakers: Vec<SpeakerRowView>,
+    /// A line under the speaker list: a failure or "Restarting…".
+    pub message: String,
+    /// The sleep timer's length in minutes.
+    pub sleep_minutes: u32,
+    /// Why there's no Bluetooth, shown instead of the speaker buttons.
+    pub bluetooth_note: String,
+    pub restarting: bool,
+}
+
+/// The add-to-playlist picker: the user's own playlists.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickerView {
+    pub playlists: Vec<TileView>,
+}
+
+/// The name dialog for a new or renamed playlist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextEntryView {
+    pub title: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NowView {
+    /// The playing song, for adding it to a playlist; empty when unknown.
+    pub track_uri: String,
+    /// The artist name can open the artist's page.
+    pub has_artist: bool,
+    /// Minutes left on the sleep timer, as "28 min"; empty when it's off.
+    pub sleep_left: String,
+    /// The playing song is in Liked Songs.
+    pub liked: bool,
     pub title: String,
     pub artists: String,
     pub image_url: Option<String>,
@@ -115,11 +185,22 @@ pub struct View {
     pub mini_visible: bool,
     pub banner: Option<String>,
     pub display: DisplayMode,
+    /// The dim screen shows a clock, except while falling asleep to a sleep timer.
+    pub show_clock: bool,
     pub auth_needed: bool,
-    /// Small label in the rail naming the signed-in account; empty until known.
-    pub account: String,
     pub search: SearchView,
     pub artist: Option<ArtistView>,
+    pub picker: Option<PickerView>,
+    pub text_entry: Option<TextEntryView>,
+    /// Name of the playlist the delete confirmation asks about.
+    pub confirm_delete: Option<String>,
+    /// The on-screen keyboard is up, for search or a name.
+    pub keyboard: bool,
+    /// Collection screens show a list instead of tiles.
+    pub list_view: bool,
+    /// Colour scheme index.
+    pub theme: u32,
+    pub settings: SettingsView,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -134,10 +215,17 @@ pub fn build(state: &AppState) -> View {
         Screen::NowPlaying => ScreenView::NowPlaying,
         Screen::Search => ScreenView::Search,
         Screen::Artist(_) => ScreenView::Artist,
+        Screen::Settings => ScreenView::Settings,
     };
     let grid_section = match state.screen {
         Screen::Grid(section) => section,
-        _ if matches!(state.section, Section::Liked | Section::Search) => Section::Playlists,
+        _ if matches!(
+            state.section,
+            Section::Liked | Section::Search | Section::Settings
+        ) =>
+        {
+            Section::Playlists
+        }
         _ => state.section,
     };
     let grid_slot = state.sections.get(&grid_section);
@@ -147,6 +235,7 @@ pub fn build(state: &AppState) -> View {
         .unwrap_or_default();
     let pb = &state.playback;
     let has_playback = pb.track.is_some() || pb.context_uri.is_some();
+    let keyboard = state.keyboard_open || state.text_entry.is_some();
 
     View {
         screen,
@@ -156,18 +245,114 @@ pub fn build(state: &AppState) -> View {
         grid_status: status(grid_slot),
         detail: detail(state),
         now: now(state),
-        mini_visible: has_playback && screen != ScreenView::NowPlaying && !state.keyboard_open,
+        mini_visible: has_playback && screen != ScreenView::NowPlaying && !keyboard,
         banner: banner(state),
         display: state.display,
+        show_clock: state.sleep_ends_ms.is_none(),
         auth_needed: state.auth_needed,
-        account: state
+        search: search(state),
+        artist: artist(state),
+        picker: state.picker.as_ref().map(|_| PickerView {
+            playlists: own_playlists(state).iter().map(tile).collect(),
+        }),
+        text_entry: state.text_entry.as_ref().map(|entry| TextEntryView {
+            title: match entry.purpose {
+                TextPurpose::NewPlaylist { .. } => "New playlist".into(),
+                TextPurpose::Rename { .. } => "Rename playlist".into(),
+                TextPurpose::DeviceName => "Device name".into(),
+            },
+            text: entry.text.clone(),
+        }),
+        confirm_delete: state.confirm_delete.as_ref().map(|uri| {
+            find_collection(state, uri)
+                .map(|c| c.name)
+                .unwrap_or_default()
+        }),
+        keyboard,
+        list_view: state.list_view,
+        theme: state.device.saved.theme.unwrap_or(0),
+        settings: settings(state),
+    }
+}
+
+fn settings(state: &AppState) -> SettingsView {
+    let d = &state.device;
+    let current = d.speaker.as_ref().map(|s| s.address.as_str());
+    let speakers = d
+        .found
+        .iter()
+        .map(|s| SpeakerRowView {
+            address: s.address.clone(),
+            name: s.name.clone(),
+            status: if d.connecting.as_deref() == Some(s.address.as_str()) {
+                "Connecting…".into()
+            } else if current == Some(s.address.as_str()) {
+                "In use".into()
+            } else if s.paired {
+                "Paired".into()
+            } else {
+                String::new()
+            },
+        })
+        .collect();
+    let message = if d.restarting {
+        "Saved. Restarting the player…".to_string()
+    } else if let Some(name) = &d.failed {
+        format!("Couldn't connect to {name}. Check it's on and ready to pair.")
+    } else if d.scanning {
+        "Looking for speakers…".to_string()
+    } else {
+        String::new()
+    };
+    SettingsView {
+        account_name: state
             .account
             .as_ref()
             .map(|a| a.name.clone())
             .unwrap_or_default(),
-        search: search(state),
-        artist: artist(state),
+        account_id: state
+            .account
+            .as_ref()
+            .map(|a| a.id.clone())
+            .unwrap_or_default(),
+        device_name: d.device_name.clone(),
+        output: d
+            .speaker
+            .as_ref()
+            .map_or_else(|| "Headphone jack".to_string(), |s| s.name.clone()),
+        on_speaker: d.speaker.is_some(),
+        speaker_connected: state.speaker_connected,
+        bluetooth: d.bluetooth,
+        sleep_minutes: d
+            .saved
+            .sleep_minutes
+            .unwrap_or(crate::app::DEFAULT_SLEEP_MINUTES),
+        bluetooth_note: if d.bluetooth {
+            String::new()
+        } else if cfg!(target_os = "linux") {
+            "Bluetooth isn't working on this player. Restarting the device usually fixes it.".into()
+        } else {
+            "Bluetooth speakers are paired on the Raspberry Pi, from this screen. This computer \
+             can't pair them; run with --fake to try the screen here."
+                .into()
+        },
+        scanning: d.scanning,
+        speakers,
+        message,
+        restarting: d.restarting,
     }
+}
+
+/// Playlists the signed-in account owns, which are the only ones it can change.
+fn own_playlists(state: &AppState) -> Vec<Collection> {
+    let Some(me) = state.account.as_ref() else {
+        return Vec::new();
+    };
+    section_items(state, Section::Playlists)
+        .iter()
+        .filter(|p| p.owner_id.as_deref() == Some(me.id.as_str()))
+        .cloned()
+        .collect()
 }
 
 fn row(kind: RowKind, c: &Collection) -> SearchRowView {
@@ -330,6 +515,17 @@ fn artist(state: &AppState) -> Option<ArtistView> {
         header,
         albums,
         status: status(slot),
+        followed: state.liked.get(&uri).copied().unwrap_or_else(|| {
+            section_items(state, Section::Artists)
+                .iter()
+                .any(|a| a.uri == uri)
+        }),
+        back_label: match state.back_stack.last() {
+            Some(Screen::Grid(Section::Artists)) if state.screen == Screen::Artist(uri.clone()) => {
+                Section::Artists.title().into()
+            }
+            _ => String::new(),
+        },
     })
 }
 
@@ -384,6 +580,7 @@ fn find_collection(state: &AppState, uri: &str) -> Option<Collection> {
     });
     from_sections
         .chain(from_search)
+        .chain(state.artists_seen.values())
         .find(|c| c.uri == uri)
         .cloned()
 }
@@ -406,6 +603,7 @@ fn detail(state: &AppState) -> Option<DetailView> {
             tracks
                 .iter()
                 .map(|t| TrackRowView {
+                    uri: t.uri.clone(),
                     title: t.name.clone(),
                     artists: t.artists.clone(),
                     duration: fmt_ms(t.duration_ms),
@@ -414,11 +612,43 @@ fn detail(state: &AppState) -> Option<DetailView> {
                 .collect()
         })
         .unwrap_or_default();
+    let editable = own_playlists(state).iter().any(|p| p.uri == uri);
+    let summary = slot
+        .and_then(|s| s.data.as_ref())
+        .map(|tracks| track_summary(tracks))
+        .unwrap_or_default();
     Some(DetailView {
+        editing: editable && state.editing.as_deref() == Some(uri.as_str()),
+        editable,
+        summary,
+        artist_link: uri.starts_with("spotify:album:")
+            && find_collection(state, &uri).is_some_and(|c| !c.subtitle.is_empty()),
+        saveable: uri.starts_with("spotify:album:"),
+        saved: state.liked.get(&uri).copied().unwrap_or_else(|| {
+            section_items(state, Section::Albums)
+                .iter()
+                .any(|a| a.uri == uri)
+        }),
+        can_add: !uri.starts_with("spotify:playlist:") && !uri.starts_with("muzak:new:"),
         header,
         status: status(slot),
         tracks,
     })
+}
+
+/// "1 song · 3 min", "23 songs · 1 hr 12 min".
+fn track_summary(tracks: &[Track]) -> String {
+    let count = match tracks.len() {
+        1 => "1 song".to_string(),
+        n => format!("{n} songs"),
+    };
+    let minutes = tracks.iter().map(|t| t.duration_ms as u64).sum::<u64>() / 60_000;
+    let length = match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} hr"),
+        (h, m) => format!("{h} hr {m} min"),
+    };
+    format!("{count} · {length}")
 }
 
 fn now(state: &AppState) -> NowView {
@@ -441,6 +671,19 @@ fn now(state: &AppState) -> NowView {
         0.0
     };
     NowView {
+        track_uri: pb.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default(),
+        has_artist: pb.track.as_ref().is_some_and(|t| t.artist_uri.is_some()),
+        sleep_left: match state.sleep_ends_ms {
+            // The core's clock isn't in state, so the view counts from the last tick it saw.
+            Some(ends) => format!("{} min", ends.saturating_sub(state.now_ms).div_ceil(60_000)),
+            None => String::new(),
+        },
+        liked: pb
+            .track
+            .as_ref()
+            .and_then(|t| state.liked.get(&t.uri))
+            .copied()
+            .unwrap_or(false),
         title,
         artists,
         image_url,
@@ -456,9 +699,16 @@ fn now(state: &AppState) -> NowView {
 }
 
 fn banner(state: &AppState) -> Option<String> {
-    match state.notice {
+    match &state.notice {
         Some(Notice::NoInternet) => Some("No internet right now".into()),
         Some(Notice::TrackUnavailable) => Some("That song can't play, skipping".into()),
+        Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
+        Some(Notice::SpotifyBusy) => {
+            Some("Spotify is limiting changes right now. Try again later.".into())
+        }
+        Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
+        Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
+        Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }
@@ -481,6 +731,7 @@ mod tests {
     #[test]
     fn grid_status_covers_loading_empty_failed_ready() {
         let mut c = core();
+        c.handle(ui(UiAction::ShowSection(Section::Playlists)), 0);
         assert_eq!(build(c.state()).grid_status, LoadStatus::Loading);
         c.handle(
             Input::Library(LibraryUpdate::Section {
@@ -803,6 +1054,37 @@ mod tests {
         );
         c.handle(ui(UiAction::OpenCollection(playlist(5).uri)), 1_000);
         assert_eq!(build(c.state()).detail.unwrap().header.title, "Playlist 5");
+    }
+
+    #[test]
+    fn add_buttons_show_on_albums_and_liked_but_not_playlists() {
+        let mut c = core();
+        let can_add = |c: &crate::app::Core| build(c.state()).detail.unwrap().can_add;
+        c.handle(ui(UiAction::OpenCollection("spotify:album:a1".into())), 0);
+        assert!(can_add(&c));
+        c.handle(
+            ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+            0,
+        );
+        assert!(!can_add(&c));
+        c.handle(ui(UiAction::ShowSection(Section::Liked)), 0);
+        assert!(can_add(&c));
+    }
+
+    #[test]
+    fn summary_counts_songs_and_length() {
+        let mut tracks: Vec<Track> = (0..23).map(track).collect();
+        tracks[0].duration_ms = 180_000 + 12 * 60_000 + 60 * 60_000 - 23 * 180_000;
+        assert_eq!(track_summary(&tracks), "23 songs · 1 hr 12 min");
+        assert_eq!(track_summary(&tracks[1..2]), "1 song · 3 min");
+    }
+
+    #[test]
+    fn no_clock_while_falling_asleep() {
+        let mut c = core();
+        assert!(build(c.state()).show_clock);
+        c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
+        assert!(!build(c.state()).show_clock);
     }
 
     #[test]

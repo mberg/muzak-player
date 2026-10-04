@@ -6,9 +6,15 @@ import { SearchRowData } from "../types.slint";
 export component SearchRow inherits Rectangle {
     in property <SearchRowData> data;
     callback clicked();
+    callback add();
     height: root.data.kind == 0 ? 40px : 64px;
     border-radius: 10px;
     background: touch.pressed && root.data.kind != 0 ? Theme.surface-hi : transparent;
+    // Under the content, so the plus button gets its own taps.
+    touch := TouchArea {
+        enabled: root.data.kind != 0;
+        clicked => { root.clicked(); }
+    }
     if root.data.kind == 0: Text {
         x: 12px;
         y: parent.height - self.height - 4px;
@@ -63,6 +69,24 @@ export component SearchRow inherits Rectangle {
                 overflow: elide;
             }
         }
+        if root.data.kind == 1: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                border-radius: 24px;
+                background: add-touch.pressed ? Theme.surface-hi : transparent;
+                Image {
+                    source: @image-url("../icons/plus.svg");
+                    width: 24px;
+                    height: 24px;
+                    colorize: Theme.text-dim;
+                }
+                add-touch := TouchArea {
+                    clicked => { root.add(); }
+                }
+            }
+        }
         Text {
             width: 72px;
             text: root.data.kind == 1 ? "Song" : root.data.kind == 2 ? "Album" : root.data.kind == 3 ? "Artist" : "Playlist";
@@ -71,9 +95,5 @@ export component SearchRow inherits Rectangle {
             horizontal-alignment: right;
             vertical-alignment: center;
         }
-    }
-    touch := TouchArea {
-        enabled: root.data.kind != 0;
-        clicked => { root.clicked(); }
     }
 }

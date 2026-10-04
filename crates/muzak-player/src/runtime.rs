@@ -64,6 +64,31 @@ async fn run(
     images: ImageSink,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.state_dir)?;
+    // Choices made on the Settings screen override the config file.
+    let saved = crate::settings::Settings::load(&config.state_dir);
+    let mut config = config;
+    saved.apply(&mut config);
+    let speaker = match &saved.output {
+        Some(crate::settings::Output::Bluetooth(speaker)) => Some(speaker.clone()),
+        Some(crate::settings::Output::Jack) => None,
+        None => config
+            .bluetooth_speaker
+            .clone()
+            .map(|address| crate::settings::Speaker {
+                name: address.clone(),
+                address,
+            }),
+    };
+    let bluetooth = crate::bluetooth::spawn(
+        if fake {
+            crate::bluetooth::Backend::Fake
+        } else {
+            crate::bluetooth::Backend::Real {
+                watch: config.bluetooth_speaker.clone(),
+            }
+        },
+        inputs.clone(),
+    );
     let cache = Arc::new(DiskCache::new(config.cache_dir())?);
     let (player, library) = if fake {
         let catalog = Arc::new(FakeCatalog::sample());
@@ -81,6 +106,8 @@ async fn run(
             inputs.clone(),
         );
         let http = crate::library::web_api::ReqwestHttp::new()?;
+        // Endpoints Spotify told us to leave alone, remembered across restarts.
+        let block_file = config.cache_dir().join("rate-limits.json");
         let web_auth = config
             .state_dir
             .join(crate::library::refresh_tokens::FILE_NAME);
@@ -88,11 +115,17 @@ async fn run(
             // Contingency A: library requests use the parent's own developer app.
             tracing::info!("using developer-app tokens from {}", web_auth.display());
             let tokens = crate::library::refresh_tokens::RefreshTokens::load(&web_auth)?;
-            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            let source = Arc::new(
+                crate::library::web_api::WebApi::new(http, tokens)
+                    .with_block_file(block_file.clone()),
+            );
             spawn_library(source, cache, inputs.clone())
         } else {
             let tokens = crate::library::session_tokens::SessionTokens::new(session_rx);
-            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            let source = Arc::new(
+                crate::library::web_api::WebApi::new(http, tokens)
+                    .with_block_file(block_file.clone()),
+            );
             spawn_library(source, cache, inputs.clone())
         };
         (player, library)
@@ -103,7 +136,7 @@ async fn run(
         images,
     );
 
-    let platform = crate::platform::Platform::start(&config, inputs.clone());
+    let platform = crate::platform::Platform::start();
 
     let started = Instant::now();
     let now_ms = || started.elapsed().as_millis() as u64;
@@ -111,9 +144,19 @@ async fn run(
         dim_after_ms: config.dim_after_secs * 1000,
         off_after_ms: config.off_after_secs * 1000,
         initial_volume: config.initial_volume,
+        device_name: config.device_name.clone(),
+        speaker,
+        saved,
+        bluetooth: bluetooth.is_some(),
+    };
+    let outputs = Outputs {
+        player,
+        library,
+        bluetooth,
+        state_dir: config.state_dir.clone(),
     };
     let (mut core, effects) = Core::new(core_config, now_ms());
-    dispatch(effects, &player, &library, &platform);
+    dispatch(effects, &outputs, &platform);
     publish(core.state().clone());
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -132,26 +175,52 @@ async fn run(
         if quiet && effects.is_empty() {
             continue;
         }
-        dispatch(effects, &player, &library, &platform);
+        dispatch(effects, &outputs, &platform);
         publish(core.state().clone());
     }
 }
 
-fn dispatch(
-    effects: Vec<Effect>,
-    player: &UnboundedSender<PlayerCommand>,
-    library: &UnboundedSender<LibraryRequest>,
-    platform: &crate::platform::Platform,
-) {
+/// Where effects go.
+struct Outputs {
+    player: UnboundedSender<PlayerCommand>,
+    library: UnboundedSender<LibraryRequest>,
+    bluetooth: Option<UnboundedSender<crate::app::BtCommand>>,
+    state_dir: std::path::PathBuf,
+}
+
+fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform::Platform) {
     for effect in effects {
         match effect {
             Effect::Player(command) => {
-                let _ = player.send(command);
+                let _ = outputs.player.send(command);
             }
             Effect::Library(request) => {
-                let _ = library.send(request);
+                let _ = outputs.library.send(request);
             }
             Effect::Display(mode) => platform.set_display(mode),
+            Effect::Bluetooth(command) => {
+                if let Some(bluetooth) = &outputs.bluetooth {
+                    let _ = bluetooth.send(command);
+                }
+            }
+            Effect::SaveSettings(settings) => {
+                if let Err(e) = settings.save(&outputs.state_dir) {
+                    tracing::error!("saving settings failed: {e:#}");
+                }
+            }
+            Effect::ApplySettings(settings) => {
+                let state_dir = outputs.state_dir.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = settings.save(&state_dir) {
+                        tracing::error!("saving settings failed: {e:#}");
+                        return;
+                    }
+                    tracing::info!("settings saved; restarting to apply them");
+                    // Long enough for the screen to say it's restarting.
+                    tokio::time::sleep(Duration::from_millis(800)).await;
+                    crate::platform::restart();
+                });
+            }
         }
     }
 }
@@ -222,6 +291,30 @@ mod tests {
                 .data
                 .as_ref()
                 .is_some_and(|r| !r.playlists.is_empty())
+        });
+
+        // Editing: add the playing song to "Bedtime" (fake1) and see Spotify's answer come back.
+        wait_for(&|s| s.account.is_some());
+        let song = "spotify:track:fake-spotify-playlist-fake0-1";
+        inputs
+            .send(Input::Ui(UiAction::OpenCollection(
+                "spotify:playlist:fake1".into(),
+            )))
+            .unwrap();
+        inputs
+            .send(Input::Ui(UiAction::OpenPicker(song.into())))
+            .unwrap();
+        inputs
+            .send(Input::Ui(UiAction::PickPlaylist(
+                "spotify:playlist:fake1".into(),
+            )))
+            .unwrap();
+        wait_for(&|s| {
+            s.tracks
+                .get("spotify:playlist:fake1")
+                .and_then(|slot| slot.data.as_ref())
+                .is_some_and(|tracks| tracks.len() == 13 && tracks[12].uri == song)
+                && !s.tracks["spotify:playlist:fake1"].loading
         });
     }
 }

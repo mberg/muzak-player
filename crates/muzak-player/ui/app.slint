@@ -1,7 +1,7 @@
 import "fonts/Nunito-Bold.ttf";
 import "fonts/Nunito-ExtraBold.ttf";
 import { Theme } from "theme.slint";
-import { TileData, TrackData, ScreenKind, LoadState, SearchRowData } from "types.slint";
+import { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData } from "types.slint";
 import { Rail } from "components/rail.slint";
 import { MiniPlayer } from "components/mini_player.slint";
 import { Banner } from "components/banner.slint";
@@ -13,8 +13,12 @@ import { AuthNeededScreen } from "screens/auth_needed.slint";
 import { SearchScreen } from "screens/search.slint";
 import { ArtistScreen } from "screens/artist.slint";
 import { Keyboard } from "components/keyboard.slint";
+import { PlaylistPicker } from "components/picker.slint";
+import { NameDialog } from "components/name_dialog.slint";
+import { ConfirmDelete } from "components/confirm_dialog.slint";
+import { SettingsScreen } from "screens/settings.slint";
 
-export { TileData, TrackData, ScreenKind, LoadState, SearchRowData }
+export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData, Theme }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -47,8 +51,20 @@ export component AppWindow inherits Window {
     in property <string> banner;
     in property <int> display-mode;
     in property <string> clock;
+    in property <bool> show-clock;
     in property <bool> auth-needed;
-    in property <string> account;
+    in property <string> account-name;
+    in property <string> account-id;
+    in property <string> device-name;
+    in property <string> output-name;
+    in property <bool> on-speaker;
+    in property <bool> speaker-connected;
+    in property <bool> bluetooth;
+    in property <bool> scanning;
+    in property <[SpeakerRowData]> speakers;
+    in property <string> settings-message;
+    in property <string> bluetooth-note;
+    in property <bool> restarting;
     in property <string> search-query;
     in property <bool> keyboard-open;
     in property <[SearchRowData]> search-rows;
@@ -58,6 +74,28 @@ export component AppWindow inherits Window {
     in property <TileData> artist;
     in property <[TileData]> artist-albums;
     in property <LoadState> artist-state;
+    in property <bool> detail-editable;
+    in property <bool> detail-editing;
+    in property <bool> detail-can-add;
+    in property <string> detail-summary;
+    in property <bool> detail-saveable;
+    in property <bool> detail-saved;
+    in property <bool> detail-artist-link;
+    in property <bool> artist-followed;
+    in property <string> artist-back-label;
+    in property <string> now-track-uri;
+    in property <bool> now-liked;
+    in property <bool> now-has-artist;
+    in property <string> sleep-left;
+    in property <int> sleep-minutes;
+    callback set-theme(int);
+    in property <bool> list-view;
+    in property <bool> picker-open;
+    in property <[TileData]> picker-playlists;
+    in property <bool> name-open;
+    in property <string> name-title;
+    in property <string> name-text;
+    in property <string> confirm-delete;
 
     callback show-section(int);
     callback open-collection(string);
@@ -83,6 +121,34 @@ export component AppWindow inherits Window {
     callback open-artist(string);
     callback play-artist(string);
     callback play-song(string);
+    callback keyboard-done();
+    callback toggle-like();
+    callback open-playing-artist();
+    callback open-album-artist(string);
+    callback open-sleep-timer();
+    callback set-sleep-length(int);
+    callback toggle-list-view();
+    callback toggle-save-album(string);
+    callback toggle-follow(string);
+    callback pick-liked();
+    callback rename-device();
+    callback find-speakers();
+    callback connect-speaker(string);
+    callback use-jack();
+    callback forget-speaker();
+    callback open-picker(string);
+    callback close-picker();
+    callback pick-playlist(string);
+    callback new-playlist();
+    callback cancel-name();
+    callback edit-playlist(string);
+    callback finish-editing();
+    callback rename-playlist();
+    callback ask-delete();
+    callback confirm-delete-playlist();
+    callback cancel-delete();
+    callback remove-track(int);
+    callback move-track(int, int);
 
     property <length> content-height: root.mini-visible ? root.height - Theme.mini-height : root.height;
 
@@ -93,7 +159,6 @@ export component AppWindow inherits Window {
         // Search uses the whole screen.
         visible: root.screen != ScreenKind.search;
         selected: root.section;
-        account: root.account;
         select(i) => { root.show-section(i); }
     }
     GridScreen {
@@ -106,6 +171,8 @@ export component AppWindow inherits Window {
         tiles: root.tiles;
         state: root.grid-state;
         open(uri) => { root.open-collection(uri); }
+        list-view: root.list-view;
+        toggle-layout => { root.toggle-list-view(); }
     }
     DetailScreen {
         x: Theme.rail-width;
@@ -119,6 +186,22 @@ export component AppWindow inherits Window {
         back => { root.back(); }
         play(shuffle) => { root.play-collection(root.detail.uri, shuffle); }
         play-track(i) => { root.play-track(root.detail.uri, i); }
+        editable: root.detail-editable;
+        editing: root.detail-editing;
+        can-add: root.detail-can-add;
+        summary: root.detail-summary;
+        saveable: root.detail-saveable;
+        saved: root.detail-saved;
+        artist-link: root.detail-artist-link;
+        open-artist => { root.open-album-artist(root.detail.uri); }
+        toggle-save => { root.toggle-save-album(root.detail.uri); }
+        add(uri) => { root.open-picker(uri); }
+        edit => { root.edit-playlist(root.detail.uri); }
+        finish-editing => { root.finish-editing(); }
+        rename => { root.rename-playlist(); }
+        delete => { root.ask-delete(); }
+        remove(i) => { root.remove-track(i); }
+        move-track(from, to) => { root.move-track(from, to); }
     }
     SearchScreen {
         x: 0;
@@ -135,11 +218,39 @@ export component AppWindow inherits Window {
         open(uri) => { root.open-collection(uri); }
         open-artist(uri) => { root.open-artist(uri); }
         play-song(uri) => { root.play-song(uri); }
+        add-song(uri) => { root.open-picker(uri); }
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
         close => { root.close-search(); }
         filter: root.search-filter;
         set-filter(i) => { root.set-search-filter(i); }
+    }
+    SettingsScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.settings;
+        account-name: root.account-name;
+        account-id: root.account-id;
+        device-name: root.device-name;
+        output: root.output-name;
+        on-speaker: root.on-speaker;
+        speaker-connected: root.speaker-connected;
+        bluetooth: root.bluetooth;
+        scanning: root.scanning;
+        speakers: root.speakers;
+        message: root.settings-message;
+        bluetooth-note: root.bluetooth-note;
+        restarting: root.restarting;
+        rename-device => { root.rename-device(); }
+        find-speakers => { root.find-speakers(); }
+        connect-speaker(address) => { root.connect-speaker(address); }
+        use-jack => { root.use-jack(); }
+        forget-speaker => { root.forget-speaker(); }
+        sleep-minutes: root.sleep-minutes;
+        set-sleep-length(m) => { root.set-sleep-length(m); }
+        set-theme(i) => { root.set-theme(i); }
     }
     ArtistScreen {
         x: Theme.rail-width;
@@ -150,19 +261,16 @@ export component AppWindow inherits Window {
         header: root.artist;
         albums: root.artist-albums;
         state: root.artist-state;
+        followed: root.artist-followed;
+        back-label: root.artist-back-label;
+        toggle-follow => { root.toggle-follow(root.artist.uri); }
+        list-view: root.list-view;
+        toggle-layout => { root.toggle-list-view(); }
         back => { root.back(); }
         play => { root.play-artist(root.artist.uri); }
         open(uri) => { root.open-collection(uri); }
     }
-    kb := Keyboard {
-        x: 0;
-        y: root.height - self.height;
-        width: root.width;
-        visible: root.keyboard-open && root.screen == ScreenKind.search;
-        key(text) => { root.key-pressed(text); }
-        backspace => { root.backspace(); }
-        done => { root.close-keyboard(); }
-    }
+
     if root.mini-visible: MiniPlayer {
         x: root.screen == ScreenKind.search ? 0 : Theme.rail-width;
         y: root.height - Theme.mini-height;
@@ -201,6 +309,54 @@ export component AppWindow inherits Window {
         set-volume(v) => { root.set-volume(v); }
         toggle-shuffle => { root.toggle-shuffle(); }
         cycle-repeat => { root.cycle-repeat(); }
+        can-add: root.now-track-uri != "";
+        add => { root.open-picker(root.now-track-uri); }
+        liked: root.now-liked;
+        toggle-like => { root.toggle-like(); }
+        has-artist: root.now-has-artist;
+        open-artist => { root.open-playing-artist(); }
+        sleep-left: root.sleep-left;
+        open-sleep => { root.open-sleep-timer(); }
+    }
+    if root.picker-open: PlaylistPicker {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        playlists: root.picker-playlists;
+        pick(uri) => { root.pick-playlist(uri); }
+        new-playlist => { root.new-playlist(); }
+        pick-liked => { root.pick-liked(); }
+        close => { root.close-picker(); }
+    }
+    if root.name-open: NameDialog {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height - kb.height;
+        title: root.name-title;
+        text: root.name-text;
+        save => { root.keyboard-done(); }
+        cancel => { root.cancel-name(); }
+    }
+    kb := Keyboard {
+        x: 0;
+        y: root.height - self.height;
+        width: root.width;
+        visible: root.keyboard-open;
+        shown: root.keyboard-open;
+        key(text) => { root.key-pressed(text); }
+        backspace => { root.backspace(); }
+        done => { root.keyboard-done(); }
+    }
+    if root.confirm-delete != "": ConfirmDelete {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        name: root.confirm-delete;
+        confirm => { root.confirm-delete-playlist(); }
+        cancel => { root.cancel-delete(); }
     }
     if root.banner != "": Banner {
         x: (root.width - self.width) / 2;
@@ -213,13 +369,14 @@ export component AppWindow inherits Window {
         width: root.width;
         height: root.height;
     }
-    if root.display-mode != 0: IdleOverlay {
+    IdleOverlay {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         mode: root.display-mode;
         clock: root.clock;
+        show-clock: root.show-clock;
         touched => { root.touched(); }
     }
 }

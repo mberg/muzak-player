@@ -1,0 +1,73 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { TileData } from "../types.slint";
+
+component CollectionRow inherits Rectangle {
+    in property <TileData> data;
+    callback clicked();
+    height: 68px;
+    border-radius: 10px;
+    background: touch.pressed ? Theme.surface-hi : transparent;
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 52px;
+                height: 52px;
+                border-radius: 6px;
+                clip: true;
+                background: Theme.surface;
+                Image {
+                    source: @image-url("../icons/note.svg");
+                    width: 50%;
+                    height: 50%;
+                    colorize: Theme.text-dim;
+                    visible: !root.data.has-image;
+                }
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.data.image;
+                    image-fit: cover;
+                    visible: root.data.has-image;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            min-width: 0;
+            Text {
+                text: root.data.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 800;
+                overflow: elide;
+            }
+            Text {
+                text: root.data.subtitle;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+// The list alternative to the tile grid: one row per playlist or album.
+export component CollectionList inherits Rectangle {
+    in property <[TileData]> items;
+    callback open(string);
+    ListView {
+        for item in root.items: CollectionRow {
+            data: item;
+            clicked => { root.open(item.uri); }
+        }
+    }
+}

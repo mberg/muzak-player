@@ -45,6 +45,15 @@ impl DiskCache {
         }
     }
 
+    /// How long ago an entry was written, if it exists.
+    pub fn age(&self, key: &str) -> Option<std::time::Duration> {
+        let modified = std::fs::metadata(self.path_for(key))
+            .ok()?
+            .modified()
+            .ok()?;
+        modified.elapsed().ok()
+    }
+
     pub fn write<T: Serialize>(&self, key: &str, value: &T) -> std::io::Result<()> {
         let path = self.path_for(key);
         let tmp = path.with_extension("json.tmp");

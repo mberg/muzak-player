@@ -455,7 +455,7 @@ pub fn map_event(event: PlayerEvent) -> Option<PlayerUpdate> {
 }
 
 fn track_from_item(item: &AudioItem) -> Track {
-    let (artists, album) = match &item.unique_fields {
+    let (artists, album, artist_uri) = match &item.unique_fields {
         UniqueFields::Track { artists, album, .. } => (
             artists
                 .iter()
@@ -463,11 +463,13 @@ fn track_from_item(item: &AudioItem) -> Track {
                 .collect::<Vec<_>>()
                 .join(", "),
             album.clone(),
+            artists.first().and_then(|a| a.id.to_uri().ok()),
         ),
-        UniqueFields::Episode { show_name, .. } => (show_name.clone(), String::new()),
+        UniqueFields::Episode { show_name, .. } => (show_name.clone(), String::new(), None),
         UniqueFields::Local { artists, album, .. } => (
             artists.clone().unwrap_or_default(),
             album.clone().unwrap_or_default(),
+            None,
         ),
     };
     let image_url = item
@@ -485,6 +487,7 @@ fn track_from_item(item: &AudioItem) -> Track {
         image_url,
         duration_ms: item.duration_ms,
         album_uri: None,
+        artist_uri,
     }
 }
 

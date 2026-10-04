@@ -7,13 +7,20 @@ export struct TileData {
 }
 
 export struct TrackData {
+    uri: string,
     title: string,
     artists: string,
     duration: string,
     current: bool,
 }
 
-export enum ScreenKind { grid, detail, now-playing, search, artist }
+export enum ScreenKind { grid, detail, now-playing, search, artist, settings }
+
+export struct SpeakerRowData {
+    address: string,
+    name: string,
+    status: string,
+}
 
 export enum LoadState { loading, empty, failed, forbidden, ready }
 

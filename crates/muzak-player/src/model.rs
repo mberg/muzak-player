@@ -8,9 +8,12 @@ pub const LIKED_URI: &str = "muzak:liked";
 pub enum Section {
     Playlists,
     Albums,
+    /// Artists the user follows.
+    Artists,
     Liked,
     Recent,
     Search,
+    Settings,
 }
 
 impl Section {
@@ -18,18 +21,22 @@ impl Section {
         match self {
             Section::Playlists => 0,
             Section::Albums => 1,
-            Section::Liked => 2,
-            Section::Recent => 3,
+            Section::Artists => 2,
+            Section::Liked => 3,
             Section::Search => 4,
+            Section::Recent => 5,
+            Section::Settings => 6,
         }
     }
 
     pub fn from_index(index: i32) -> Section {
         match index {
             1 => Section::Albums,
-            2 => Section::Liked,
-            3 => Section::Recent,
+            2 => Section::Artists,
+            3 => Section::Liked,
             4 => Section::Search,
+            5 => Section::Recent,
+            6 => Section::Settings,
             _ => Section::Playlists,
         }
     }
@@ -38,9 +45,11 @@ impl Section {
         match self {
             Section::Playlists => "Playlists",
             Section::Albums => "Albums",
+            Section::Artists => "Artists",
             Section::Liked => "Liked Songs",
             Section::Recent => "Recent",
             Section::Search => "Search",
+            Section::Settings => "Settings",
         }
     }
 
@@ -48,15 +57,18 @@ impl Section {
         match self {
             Section::Playlists => "section-playlists",
             Section::Albums => "section-albums",
+            Section::Artists => "section-artists",
             Section::Liked => "section-liked",
             Section::Recent => "section-recent",
             Section::Search => "section-search",
+            Section::Settings => "section-settings",
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CollectionKind {
+    #[default]
     Playlist,
     Album,
     Liked,
@@ -64,7 +76,7 @@ pub enum CollectionKind {
 }
 
 /// Something you can open and play as a whole: a playlist, an album, or Liked Songs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Collection {
     pub uri: String,
     pub kind: CollectionKind,
@@ -72,6 +84,15 @@ pub struct Collection {
     /// Owner for playlists, artists for albums.
     pub subtitle: String,
     pub image_url: Option<String>,
+    /// Spotify ID of a playlist's owner. Only owned playlists can be edited.
+    #[serde(default)]
+    pub owner_id: Option<String>,
+    /// A playlist's version, sent with edits so Spotify can detect conflicts.
+    #[serde(default)]
+    pub snapshot_id: Option<String>,
+    /// An album's first artist, so the album page can lead to the artist.
+    #[serde(default)]
+    pub artist_uri: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +107,71 @@ pub struct Track {
     /// The album this track is on, used to play a single song in its album.
     #[serde(default)]
     pub album_uri: Option<String>,
+    /// The first credited artist, so the song can lead to the artist's page.
+    #[serde(default)]
+    pub artist_uri: Option<String>,
+}
+
+/// A change to one of the user's playlists.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PlaylistEdit {
+    Add {
+        playlist_uri: String,
+        track_uri: String,
+    },
+    /// Create a private playlist and put one song in it.
+    Create {
+        name: String,
+        track_uri: String,
+    },
+    /// Removes every copy of the song; Spotify no longer removes by position.
+    Remove {
+        playlist_uri: String,
+        track_uri: String,
+        snapshot_id: Option<String>,
+    },
+    /// Moves the song at `from` so it ends up at index `to`.
+    Move {
+        playlist_uri: String,
+        from: usize,
+        to: usize,
+        snapshot_id: Option<String>,
+    },
+    Rename {
+        playlist_uri: String,
+        name: String,
+    },
+    /// Removes the playlist from the user's library.
+    Delete {
+        playlist_uri: String,
+    },
+    /// Save a song to Liked Songs.
+    Like {
+        track_uri: String,
+    },
+    Unlike {
+        track_uri: String,
+    },
+    /// Save an album to the user's library.
+    SaveAlbum {
+        album_uri: String,
+    },
+    UnsaveAlbum {
+        album_uri: String,
+    },
+    Follow {
+        artist_uri: String,
+    },
+    Unfollow {
+        artist_uri: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EditOutcome {
+    Done,
+    /// The playlist a `Create` made.
+    Created(Collection),
 }
 
 /// Catalog search results. Library matches are computed from state by the view.
@@ -138,5 +224,6 @@ pub fn liked_collection() -> Collection {
         name: Section::Liked.title().to_string(),
         subtitle: String::new(),
         image_url: None,
+        ..Default::default()
     }
 }

@@ -46,7 +46,7 @@ off_after_secs = 20
 
 Check:
 
-- [ ] "Loading…" shows briefly, then six playlist tiles. Long names end in "…".
+- [ ] "Loading…" shows briefly, then the four album tiles: Albums is the home screen. Long names end in "…" (see Playlists).
 - [ ] The left rail (Playlists, Albums, Liked, Recent) switches the content. Liked opens a track list directly.
 - [ ] Tapping a tile opens its track list. Play opens Now Playing.
 - [ ] Shuffle starts on the last song.
@@ -91,6 +91,7 @@ cargo run -p muzak-setup -- probe --state-dir secrets/dev
    - Redirect URI: `http://127.0.0.1:8898/login`
    - Tick the "Web API" box.
    - Under "User Management", add the email of each Spotify account that will use the player or the probe below returns 403.
+   One developer app serves every device and every person: you do not need one per device. Its users are capped in development mode, so check the limit on the dashboard.
 2. Copy the app's Client ID, sign in again through the app, then probe again:
    ```bash
    cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
@@ -144,6 +145,45 @@ Check, with the real account:
 - [ ] A playlist owned by someone else says Spotify won't list its songs, and Play still works.
 - [ ] With Wi-Fi off, library matches still show, with a "No internet right now" note.
 
+### 5. Playlists
+
+Editing, liking and following artists need five more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
+
+```bash
+cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
+cp secrets/dev/web-auth.json dev/state/
+```
+
+Check:
+
+- [ ] The plus button on a track row, on Now Playing, and on a search song opens "Add to playlist" with only your own playlists.
+- [ ] Picking one shows "Added to <name>". Adding the same song again shows "Already in <name>".
+- [ ] "New playlist" opens a name field with the keyboard. Save creates it at the top of Playlists with the song in it.
+- [ ] On Now Playing, the heart next to the plus fills in when the song is in Liked Songs. Tapping it likes or unlikes the song, and Liked Songs updates.
+- [ ] Your own playlists show a pencil next to Back. Someone else's don't.
+- [ ] In edit mode, the minus button removes a song, and dragging the handle on the left moves it.
+- [ ] Rename changes the name everywhere. Delete asks first, then removes the playlist and returns to Playlists.
+- [ ] The Spotify app on your phone shows each change.
+- [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
+
+### Sleep timer
+
+- [ ] On the playing-song screen, tapping the moon at the end of the volume row starts the sleep timer straight away: 30 minutes unless Settings says 60.
+- [ ] The moon turns gold and shows the minutes left. About 3 seconds after the last touch the screen fades over 5 seconds to dim (no clock), then goes dark after a minute. A tap wakes it instantly.
+- [ ] In the last 5 seconds the music fades out, then pauses; the next Play is at the old volume.
+- [ ] Tapping the moon while it runs turns it off.
+- [ ] Settings → Sleep timer switches between 30 and 60 minutes without restarting the player.
+- [ ] Settings → Colours switches between Midnight (default), Ocean, Forest and Daylight at once, and the choice survives a restart.
+
+### 6. Settings
+
+The gear at the bottom of the left rail opens Settings.
+
+- [ ] It shows your Spotify account name and ID.
+- [ ] The pencil next to the device name opens the keyboard. Saving says "Restarting the player…", the player restarts, and Spotify on your phone shows the new name.
+- [ ] On the Mac, the Speaker section says speakers are paired on the Raspberry Pi. With `--fake`, "Find speakers" lists three pretend speakers; picking "Boombox" restarts on it, and "Old Speaker" fails with a message.
+- [ ] Your choices are kept in `dev/state/settings.json`. Delete that file to go back to the config file's values.
+
 ## Testing on the Pi
 
 Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/hardware-checklist.md). In short:
@@ -161,7 +201,8 @@ Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/
    scripts/build-pi.sh
    scripts/deploy.sh muzak-<name>.local devices/<name>.toml secrets/<name>
    ```
-6. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
+6. **Pick the speaker** in Settings on the touchscreen if you use Bluetooth: Find speakers, then tap it. Put the speaker in pairing mode first.
+7. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
 
 To read logs on the Pi:
 

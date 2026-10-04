@@ -11,7 +11,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::app::{AppState, DisplayMode, Input, UiAction};
 use crate::model::Section;
 use crate::view::{self, LoadStatus, RowKind, ScreenView, SearchRowView, TileView, TrackRowView};
-use crate::{AppWindow, LoadState, ScreenKind, SearchRowData, TileData, TrackData};
+use crate::{
+    AppWindow, LoadState, ScreenKind, SearchRowData, SpeakerRowData, Theme, TileData, TrackData,
+};
 
 const IMAGE_CACHE_LIMIT: usize = 80;
 
@@ -19,7 +21,9 @@ struct Images {
     ready: HashMap<String, Image>,
     order: VecDeque<String>,
     requested: HashSet<String>,
-    /// URLs the current view shows. These are never evicted.
+    /// URLs the current render asked for, so the screen shows them. These are never
+    /// evicted: evicting a cover on screen makes the next render request it again, which
+    /// loops forever once a screen shows more covers than the cache holds.
     live: HashSet<String>,
     requests: UnboundedSender<String>,
 }
@@ -41,8 +45,14 @@ fn evict(order: &mut VecDeque<String>, live: &HashSet<String>, limit: usize) -> 
 }
 
 impl Images {
+    /// Starts a render: covers are live again only if this render asks for them.
+    fn begin_render(&mut self) {
+        self.live.clear();
+    }
+
     fn get(&mut self, url: &Option<String>) -> Option<Image> {
         let url = url.as_ref()?;
+        self.live.insert(url.clone());
         if let Some(image) = self.ready.get(url) {
             return Some(image.clone());
         }
@@ -69,6 +79,7 @@ struct Bridge {
     tracks: Rc<VecModel<TrackData>>,
     search_rows: Rc<VecModel<SearchRowData>>,
     artist_albums: Rc<VecModel<TileData>>,
+    picker_playlists: Rc<VecModel<TileData>>,
     last: Option<AppState>,
 }
 
@@ -90,6 +101,8 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
     let artist_albums = Rc::new(VecModel::<TileData>::default());
     window.set_search_rows(ModelRc::from(search_rows.clone()));
     window.set_artist_albums(ModelRc::from(artist_albums.clone()));
+    let picker_playlists = Rc::new(VecModel::<TileData>::default());
+    window.set_picker_playlists(ModelRc::from(picker_playlists.clone()));
     let bridge = Bridge {
         window: window.as_weak(),
         images: Images {
@@ -103,6 +116,7 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
         tracks,
         search_rows,
         artist_albums,
+        picker_playlists,
         last: None,
     };
     BRIDGE.with(|cell| *cell.borrow_mut() = Some(bridge));
@@ -211,8 +225,71 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     window.on_open_artist(move |uri| s(UiAction::OpenArtist(uri.to_string())));
     let s = send.clone();
     window.on_play_artist(move |uri| s(UiAction::PlayArtist(uri.to_string())));
-    let s = send;
+    let s = send.clone();
     window.on_play_song(move |uri| s(UiAction::PlaySong(uri.to_string())));
+    let s = send.clone();
+    window.on_toggle_save_album(move |uri| s(UiAction::ToggleSaveAlbum(uri.to_string())));
+    let s = send.clone();
+    window.on_toggle_follow(move |uri| s(UiAction::ToggleFollow(uri.to_string())));
+    let s = send.clone();
+    window.on_pick_liked(move || s(UiAction::PickLiked));
+    let s = send.clone();
+    window.on_rename_device(move || s(UiAction::RenameDevice));
+    let s = send.clone();
+    window.on_find_speakers(move || s(UiAction::FindSpeakers));
+    let s = send.clone();
+    window.on_connect_speaker(move |address| s(UiAction::ConnectSpeaker(address.to_string())));
+    let s = send.clone();
+    window.on_use_jack(move || s(UiAction::UseJack));
+    let s = send.clone();
+    window.on_forget_speaker(move || s(UiAction::ForgetSpeaker));
+    let s = send.clone();
+    window.on_toggle_list_view(move || s(UiAction::ToggleListView));
+    let s = send.clone();
+    window.on_set_theme(move |i| s(UiAction::SetTheme(i.max(0) as u32)));
+    let s = send.clone();
+    window.on_open_sleep_timer(move || s(UiAction::TapSleepTimer));
+    let s = send.clone();
+    window.on_set_sleep_length(move |minutes| s(UiAction::SetSleepLength(minutes.max(1) as u32)));
+    let s = send.clone();
+    window.on_open_album_artist(move |uri| s(UiAction::OpenAlbumArtist(uri.to_string())));
+    let s = send.clone();
+    window.on_open_playing_artist(move || s(UiAction::OpenPlayingArtist));
+    let s = send.clone();
+    window.on_toggle_like(move || s(UiAction::ToggleLike));
+    let s = send.clone();
+    window.on_keyboard_done(move || s(UiAction::KeyboardDone));
+    let s = send.clone();
+    window.on_open_picker(move |uri| s(UiAction::OpenPicker(uri.to_string())));
+    let s = send.clone();
+    window.on_close_picker(move || s(UiAction::ClosePicker));
+    let s = send.clone();
+    window.on_pick_playlist(move |uri| s(UiAction::PickPlaylist(uri.to_string())));
+    let s = send.clone();
+    window.on_new_playlist(move || s(UiAction::NewPlaylist));
+    let s = send.clone();
+    window.on_cancel_name(move || s(UiAction::CancelText));
+    let s = send.clone();
+    window.on_edit_playlist(move |uri| s(UiAction::EditPlaylist(uri.to_string())));
+    let s = send.clone();
+    window.on_finish_editing(move || s(UiAction::FinishEditing));
+    let s = send.clone();
+    window.on_rename_playlist(move || s(UiAction::RenamePlaylist));
+    let s = send.clone();
+    window.on_ask_delete(move || s(UiAction::AskDelete));
+    let s = send.clone();
+    window.on_confirm_delete_playlist(move || s(UiAction::ConfirmDelete));
+    let s = send.clone();
+    window.on_cancel_delete(move || s(UiAction::CancelDelete));
+    let s = send.clone();
+    window.on_remove_track(move |i| s(UiAction::RemoveTrack(i.max(0) as usize)));
+    let s = send;
+    window.on_move_track(move |from, to| {
+        s(UiAction::MoveTrack {
+            from: from.max(0) as usize,
+            to: to.max(0) as usize,
+        })
+    });
 }
 
 impl Bridge {
@@ -224,7 +301,7 @@ impl Bridge {
             return;
         };
         let v = view::build(state);
-        self.images.live = live_images(&v);
+        self.images.begin_render();
 
         w.set_screen(match v.screen {
             ScreenView::Grid => ScreenKind::Grid,
@@ -232,6 +309,7 @@ impl Bridge {
             ScreenView::NowPlaying => ScreenKind::NowPlaying,
             ScreenView::Search => ScreenKind::Search,
             ScreenView::Artist => ScreenKind::Artist,
+            ScreenView::Settings => ScreenKind::Settings,
         });
         w.set_section(v.section.index());
         w.set_grid_title(v.grid_title.as_str().into());
@@ -247,6 +325,13 @@ impl Bridge {
             w.set_detail(tile_data(&mut self.images, &detail.header));
             sync(&self.tracks, detail.tracks.iter().map(track_data).collect());
             w.set_detail_state(load_state(detail.status));
+            w.set_detail_editable(detail.editable);
+            w.set_detail_editing(detail.editing);
+            w.set_detail_can_add(detail.can_add);
+            w.set_detail_summary(detail.summary.as_str().into());
+            w.set_detail_saveable(detail.saveable);
+            w.set_detail_saved(detail.saved);
+            w.set_detail_artist_link(detail.artist_link);
         }
 
         let art = self.images.get(&v.now.image_url);
@@ -270,11 +355,45 @@ impl Bridge {
             DisplayMode::Off => 2,
         });
         w.set_clock(chrono::Local::now().format("%-I:%M").to_string().into());
+        w.set_show_clock(v.show_clock);
         w.set_auth_needed(v.auth_needed);
 
         // Search rows and artist albums are built only while shown, so their covers are
         // requested only then.
-        w.set_keyboard_open(v.search.keyboard);
+        w.set_keyboard_open(v.keyboard);
+        w.set_now_track_uri(v.now.track_uri.as_str().into());
+        w.set_now_liked(v.now.liked);
+        w.set_now_has_artist(v.now.has_artist);
+        w.set_sleep_left(v.now.sleep_left.as_str().into());
+        w.set_list_view(v.list_view);
+        w.global::<Theme>().set_scheme(v.theme as i32);
+        w.set_picker_open(v.picker.is_some());
+        if let Some(picker) = &v.picker {
+            let rows = picker
+                .playlists
+                .iter()
+                .map(|t| tile_data(&mut self.images, t))
+                .collect();
+            sync(&self.picker_playlists, rows);
+        }
+        w.set_name_open(v.text_entry.is_some());
+        if let Some(entry) = &v.text_entry {
+            w.set_name_title(entry.title.as_str().into());
+            w.set_name_text(entry.text.as_str().into());
+        }
+        w.set_confirm_delete(
+            v.confirm_delete
+                .as_deref()
+                .map(|name| {
+                    if name.is_empty() {
+                        "this playlist"
+                    } else {
+                        name
+                    }
+                })
+                .unwrap_or_default()
+                .into(),
+        );
         w.set_search_query(v.search.query.as_str().into());
         w.set_search_state(load_state(v.search.status));
         w.set_search_note(v.search.note.as_str().into());
@@ -297,36 +416,36 @@ impl Bridge {
                 .collect();
             sync(&self.artist_albums, albums);
             w.set_artist_state(load_state(artist.status));
+            w.set_artist_followed(artist.followed);
+            w.set_artist_back_label(artist.back_label.as_str().into());
         }
-        w.set_account(v.account.as_str().into());
+        let s = &v.settings;
+        w.set_account_name(s.account_name.as_str().into());
+        w.set_account_id(s.account_id.as_str().into());
+        w.set_device_name(s.device_name.as_str().into());
+        w.set_output_name(s.output.as_str().into());
+        w.set_on_speaker(s.on_speaker);
+        w.set_speaker_connected(s.speaker_connected);
+        w.set_bluetooth(s.bluetooth);
+        w.set_scanning(s.scanning);
+        w.set_settings_message(s.message.as_str().into());
+        w.set_sleep_minutes(s.sleep_minutes as i32);
+        w.set_bluetooth_note(s.bluetooth_note.as_str().into());
+        w.set_restarting(s.restarting);
+        let speakers: Vec<SpeakerRowData> = s
+            .speakers
+            .iter()
+            .map(|r| SpeakerRowData {
+                address: r.address.as_str().into(),
+                name: r.name.as_str().into(),
+                status: r.status.as_str().into(),
+            })
+            .collect();
+        w.set_speakers(ModelRc::new(VecModel::from(speakers)));
     }
 }
 
 /// Every image URL the view shows: grid tiles, the detail header and the now-playing art.
-fn live_images(v: &view::View) -> HashSet<String> {
-    v.grid
-        .iter()
-        .map(|t| &t.image_url)
-        .chain(v.detail.iter().map(|d| &d.header.image_url))
-        .chain(std::iter::once(&v.now.image_url))
-        .chain(
-            v.search
-                .rows
-                .iter()
-                .filter(|_| v.screen == ScreenView::Search)
-                .map(|r| &r.image_url),
-        )
-        .chain(
-            v.artist
-                .iter()
-                .filter(|_| v.screen == ScreenView::Artist)
-                .flat_map(|a| a.albums.iter().map(|t| &t.image_url)),
-        )
-        .flatten()
-        .cloned()
-        .collect()
-}
-
 fn search_row_data(images: &mut Images, r: &SearchRowView) -> SearchRowData {
     let image = images.get(&r.image_url);
     SearchRowData {
@@ -358,6 +477,7 @@ fn tile_data(images: &mut Images, t: &TileView) -> TileData {
 
 fn track_data(t: &TrackRowView) -> TrackData {
     TrackData {
+        uri: t.uri.as_str().into(),
         title: t.title.as_str().into(),
         artists: t.artists.as_str().into(),
         duration: t.duration.as_str().into(),
@@ -426,14 +546,17 @@ mod tests {
             live: HashSet::new(),
             requests: tx,
         };
+        // Any screen, the add-to-playlist sheet included, that shows more covers than
+        // the cache holds: whatever a render asks for is live, with no list to forget.
         let all = urls(0..IMAGE_CACHE_LIMIT + 1);
-        images.live = all.iter().cloned().collect();
+        images.begin_render();
         for url in &all {
             assert!(images.get(&Some(url.clone())).is_none());
         }
         for url in &all {
             images.insert(url.clone(), Image::default());
             // Each delivery re-renders the view.
+            images.begin_render();
             for u in &all {
                 images.get(&Some(u.clone()));
             }

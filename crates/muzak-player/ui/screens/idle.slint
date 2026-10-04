@@ -1,20 +1,26 @@
 import { Theme } from "../theme.slint";
 
-// mode 1 = dim (clock), mode 2 = off (black). Any tap wakes.
+// mode 0 = awake (nothing shown), 1 = dim (clock), 2 = off (black). Any tap wakes.
+// Dimming and going dark fade over 5 seconds; waking is instant.
 export component IdleOverlay inherits Rectangle {
     in property <int> mode;
     in property <string> clock;
+    // No clock while falling asleep to a sleep timer: just dim, then dark.
+    in property <bool> show-clock: true;
     callback touched();
-    background: root.mode == 2 ? #000000 : #000000c0;
-    animate background { duration: 600ms; }
+    // 80% darker when dim (the Pi also lowers its backlight); black when off.
+    background: root.mode == 0 ? #00000000 : root.mode == 1 ? #000000cc : #000000;
+    animate background { duration: root.mode == 0 ? 0ms : 5s; }
     Text {
-        visible: root.mode == 1;
         text: root.clock;
         color: Theme.text;
         font-size: 96px;
         font-weight: 800;
+        opacity: root.mode == 1 && root.show-clock ? 1 : 0;
+        animate opacity { duration: root.mode == 0 ? 0ms : 5s; }
     }
-    TouchArea {
+    // Only catches taps while dim or off, so it never blocks the screen when awake.
+    if root.mode != 0: TouchArea {
         clicked => { root.touched(); }
     }
 }

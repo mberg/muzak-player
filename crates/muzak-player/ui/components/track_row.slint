@@ -1,45 +1,120 @@
 import { Theme } from "../theme.slint";
 import { TrackData } from "../types.slint";
 
-export component TrackRow inherits Rectangle {
-    in property <TrackData> data;
+component SmallButton inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.text-dim;
     callback clicked();
-    height: Theme.touch;
-    border-radius: 10px;
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
     background: touch.pressed ? Theme.surface-hi : transparent;
-    HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        spacing: 12px;
-        VerticalLayout {
-            alignment: center;
-            // Take all the width the duration does not, so the duration sits at the right edge.
-            horizontal-stretch: 1;
-            min-width: 0;
-            Text {
-                text: root.data.title;
-                color: root.data.current ? Theme.accent : Theme.text;
-                font-size: Theme.font-body;
-                font-weight: 800;
-                overflow: elide;
-            }
-            Text {
-                text: root.data.artists;
-                color: Theme.text-dim;
-                font-size: Theme.font-small;
-                overflow: elide;
-            }
-        }
-        Text {
-            text: root.data.duration;
-            color: Theme.text-dim;
-            font-size: Theme.font-small;
-            vertical-alignment: center;
-            horizontal-alignment: right;
-            width: 64px;
-        }
+    Image {
+        source: root.icon;
+        width: 24px;
+        height: 24px;
+        colorize: root.tint;
     }
     touch := TouchArea {
         clicked => { root.clicked(); }
+    }
+}
+
+export component TrackRow inherits Rectangle {
+    in property <TrackData> data;
+    // Edit mode: a drag handle on the left and a remove button instead of add.
+    in property <bool> editing;
+    // Show the add-to-playlist button outside edit mode.
+    in property <bool> show-add: true;
+    // While this row is being dragged, how far it has moved.
+    in property <length> drag-offset;
+    // 1 shows a drop line above this row, 2 below it.
+    in property <int> drop-marker;
+    callback clicked();
+    callback add();
+    callback remove();
+    callback drag-start();
+    callback drag-move(length);
+    callback drag-end();
+    height: Theme.touch;
+    // Tap to play only outside edit mode.
+    touch := TouchArea {
+        enabled: !root.editing;
+        clicked => { root.clicked(); }
+    }
+    Rectangle {
+        y: root.drag-offset;
+        height: parent.height;
+        border-radius: 10px;
+        background: root.drag-offset != 0 ? Theme.surface-hi : (touch.pressed ? Theme.surface-hi : transparent);
+        HorizontalLayout {
+            padding-left: root.editing ? 0px : 12px;
+            padding-right: 4px;
+            spacing: 8px;
+            if root.editing: Rectangle {
+                width: 48px;
+                Image {
+                    source: @image-url("../icons/drag.svg");
+                    width: 24px;
+                    height: 24px;
+                    colorize: Theme.text-dim;
+                }
+                TouchArea {
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down) {
+                            root.drag-start();
+                        } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                            root.drag-end();
+                        }
+                    }
+                    moved => { root.drag-move(self.mouse-y - self.pressed-y); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                // Take all the width the buttons and duration do not.
+                horizontal-stretch: 1;
+                min-width: 0;
+                Text {
+                    text: root.data.title;
+                    color: root.data.current ? Theme.accent : Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 800;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.data.artists;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                if !root.editing && root.show-add: SmallButton {
+                    icon: @image-url("../icons/plus.svg");
+                    clicked => { root.add(); }
+                }
+                if root.editing: SmallButton {
+                    icon: @image-url("../icons/remove.svg");
+                    tint: Theme.danger;
+                    clicked => { root.remove(); }
+                }
+            }
+            Text {
+                text: root.data.duration;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                width: 52px;
+            }
+        }
+    }
+    if root.drop-marker != 0: Rectangle {
+        y: root.drop-marker == 1 ? 0px : parent.height - 3px;
+        height: 3px;
+        border-radius: 2px;
+        background: Theme.accent;
     }
 }

@@ -97,7 +97,7 @@ Delete removes the playlist from the Playlists and Recent sections, leaves edit 
 
 - `Collection` gains `owner_id: Option<String>` and `snapshot_id: Option<String>`. Both are `#[serde(default)]`, so existing caches still load.
 - `CollectionKind::Playlist` collections are editable when `owner_id == me`.
-- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 20 of each, from the Spotify catalog.
+- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 10 of each (Spotify rejects higher limits since 2026), from the Spotify catalog.
 - Library matches are not stored. `view` computes them from state on each build: the user's playlists, saved albums and loaded Liked Songs whose name, or artist for songs, contains the query, ignoring case and accents. At most 5 of each kind.
 - New `PlaylistEdit` enum: `Add { playlist_uri, track_uri }`, `CreateAndAdd { name, track_uri }`, `Remove { playlist_uri, track_uri, position, snapshot_id }`, `Move { playlist_uri, from, to, snapshot_id }`, `Rename { playlist_uri, name }`, `Delete { playlist_uri }`.
 
@@ -116,11 +116,15 @@ Endpoints. Spotify renamed some playlist endpoints in 2026, so each write tries 
 | Search | `GET /search?type=track,album,playlist&limit=20&q=…` |
 | Me | `GET /me` |
 | Add | `POST /playlists/{id}/items` with `uris` |
-| Create | `POST /me/playlists`, falling back to `POST /users/{me}/playlists`, then Add |
-| Remove | `DELETE /playlists/{id}/items` with `items: [{uri, positions:[n]}]` and `snapshot_id` |
+| Create | `POST /me/playlists` with `name` and `public: false`, then Add |
+| Remove | `DELETE /playlists/{id}/items` with `items: [{uri}]` and `snapshot_id`. This removes every copy of the song; the API no longer takes positions. |
 | Move | `PUT /playlists/{id}/items` with `range_start`, `insert_before`, `snapshot_id` |
 | Rename | `PUT /playlists/{id}` with `name` |
-| Delete | `DELETE /playlists/{id}/followers` |
+| Delete | `DELETE /me/library?uris=spotify:playlist:{id}`, falling back to the deprecated `DELETE /playlists/{id}/followers` on 404 |
+
+Checked against Spotify's reference docs on 2026-10-03: all item endpoints use `/items`; the `/tracks` forms are deprecated.
+
+After a successful edit the core asks the library to reload the affected track list and the Playlists section. That rewrites the disk cache from Spotify's own answer and refreshes `snapshot_id`, so the cache never drifts from the server.
 
 Responses that return a new `snapshot_id` update the stored collection, so the next remove or move uses it.
 
@@ -162,6 +166,16 @@ All sizes fit 800×480 with 48px touch targets or larger.
 - **Library service:** cache rewrites after each edit kind; edits not deduplicated.
 - **Fake source:** search and every edit, so `cargo run -p muzak-player -- --fake` exercises the whole feature.
 - **Manual:** `probe --write` against a real account, then the README's Mac checklist extended with a Search and Playlists section.
+
+## Next: Settings and Bluetooth
+
+Agreed on 2026-10-03, to be designed in its own spec after playlist editing:
+
+- The account label at the bottom of the rail becomes a gear and opens Settings.
+- Settings shows the account, the device name (editable with the on-screen keyboard; it is the name shown in Spotify Connect), and the speaker: headphone jack or a Bluetooth speaker, with scan, pair, connect and forget.
+- Bluetooth talks to BlueZ directly over D-Bus (the `bluer` crate), not through `bluetoothctl`.
+- The chosen speaker is stored in the state directory and overrides the config file. Changing speakers restarts the player.
+- No Spotify Connect device picking: the player only plays on its own speaker.
 
 ## Risks
 

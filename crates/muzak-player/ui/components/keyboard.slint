@@ -5,9 +5,14 @@ component KeyCap inherits Rectangle {
     in property <string> value: root.label;
     in property <image> icon;
     in property <bool> special: false;
+    // Lit, for Shift while it's on.
+    in property <bool> active: false;
     callback tapped(string);
     border-radius: 8px;
-    background: touch.pressed ? Theme.surface-hi : (root.special ? Theme.bg : #3a3555);
+    accessible-role: button;
+    accessible-label: root.label != "" ? root.label : root.value;
+    accessible-action-default => { root.tapped(root.value); }
+    background: root.active ? Theme.accent : touch.pressed ? Theme.surface-hi : (root.special ? Theme.bg : Theme.key);
     if root.label != "": Text {
         text: root.label;
         color: Theme.text;
@@ -20,7 +25,7 @@ component KeyCap inherits Rectangle {
         source: root.icon;
         width: 28px;
         height: 28px;
-        colorize: Theme.text;
+        colorize: root.active ? Theme.accent-text : Theme.text;
     }
     touch := TouchArea {
         clicked => { root.tapped(root.value); }
@@ -32,6 +37,16 @@ export component Keyboard inherits Rectangle {
     callback key(string);
     callback backspace();
     callback done();
+    // Set while the keyboard is on screen. Each time it appears it takes keyboard focus, so a
+    // Mac's physical keyboard types into it; focusing it while hidden does nothing.
+    in property <bool> shown;
+    // The next letter comes out uppercase, like a phone keyboard.
+    property <bool> shifted: false;
+    changed shown => {
+        if (self.shown) {
+            keys.focus();
+        }
+    }
     height: 240px;
     background: Theme.surface;
     // Absorbs taps between keys so nothing underneath reacts.
@@ -56,7 +71,11 @@ export component Keyboard inherits Rectangle {
             accept
         }
     }
-    init => { keys.focus(); }
+    init => {
+        if (self.shown) {
+            keys.focus();
+        }
+    }
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
@@ -70,8 +89,11 @@ export component Keyboard inherits Rectangle {
         HorizontalLayout {
             spacing: 6px;
             for k in ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]: KeyCap {
-                label: k;
-                tapped(v) => { root.key(v); }
+                label: root.shifted ? k.to-uppercase() : k;
+                tapped(v) => {
+                    root.key(v);
+                    root.shifted = false;
+                }
             }
         }
         HorizontalLayout {
@@ -79,16 +101,28 @@ export component Keyboard inherits Rectangle {
             padding-left: 36px;
             padding-right: 36px;
             for k in ["a", "s", "d", "f", "g", "h", "j", "k", "l"]: KeyCap {
-                label: k;
-                tapped(v) => { root.key(v); }
+                label: root.shifted ? k.to-uppercase() : k;
+                tapped(v) => {
+                    root.key(v);
+                    root.shifted = false;
+                }
             }
         }
         HorizontalLayout {
             spacing: 6px;
-            padding-left: 36px;
+            KeyCap {
+                special: true;
+                active: root.shifted;
+                value: "Shift";
+                icon: @image-url("../icons/shift.svg");
+                tapped => { root.shifted = !root.shifted; }
+            }
             for k in ["z", "x", "c", "v", "b", "n", "m", "'", "&"]: KeyCap {
-                label: k;
-                tapped(v) => { root.key(v); }
+                label: root.shifted ? k.to-uppercase() : k;
+                tapped(v) => {
+                    root.key(v);
+                    root.shifted = false;
+                }
             }
         }
         HorizontalLayout {

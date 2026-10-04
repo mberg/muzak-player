@@ -35,31 +35,45 @@ component RailItem inherits Rectangle {
     }
 }
 
+// Index order matches Section::index in model.rs.
 export component Rail inherits Rectangle {
     in property <int> selected;
-    in property <string> account;
     callback select(int);
     width: Theme.rail-width;
     background: Theme.surface;
-    VerticalLayout {
-        padding-top: 12px;
-        alignment: start;
-        RailItem { icon: @image-url("../icons/playlists.svg"); label: "Playlists"; active: root.selected == 0; clicked => { root.select(0); } }
-        RailItem { icon: @image-url("../icons/album.svg"); label: "Albums"; active: root.selected == 1; clicked => { root.select(1); } }
-        RailItem { icon: @image-url("../icons/heart.svg"); label: "Liked"; active: root.selected == 2; clicked => { root.select(2); } }
-        RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 3; clicked => { root.select(3); } }
-        RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
-    }
-    // Which Spotify account this device is signed in to. Kept small and dim on purpose.
-    Text {
-        x: 8px;
-        width: root.width - 16px;
-        y: root.height - self.height - 10px;
-        text: root.account;
-        font-size: 11px;
-        color: Theme.text-dim;
-        opacity: 0.7;
-        horizontal-alignment: center;
-        overflow: elide;
+    // Scrolls when the items don't fit the screen.
+    Flickable {
+        content-height: items.preferred-height;
+        items := VerticalLayout {
+            width: root.width;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            alignment: start;
+            RailItem { icon: @image-url("../icons/playlists.svg"); label: "Playlists"; active: root.selected == 0; clicked => { root.select(0); } }
+            RailItem { icon: @image-url("../icons/album.svg"); label: "Albums"; active: root.selected == 1; clicked => { root.select(1); } }
+            RailItem { icon: @image-url("../icons/artist.svg"); label: "Artists"; active: root.selected == 2; clicked => { root.select(2); } }
+            RailItem { icon: @image-url("../icons/heart.svg"); label: "Liked"; active: root.selected == 3; clicked => { root.select(3); } }
+            RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
+            RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 5; clicked => { root.select(5); } }
+            // Settings: small, at the end of the list.
+            Rectangle {
+                height: 64px;
+                Rectangle {
+                    width: 56px;
+                    height: 48px;
+                    border-radius: 12px;
+                    background: root.selected == 6 || gear-touch.pressed ? Theme.surface-hi : transparent;
+                    Image {
+                        source: @image-url("../icons/settings.svg");
+                        width: 26px;
+                        height: 26px;
+                        colorize: root.selected == 6 ? Theme.accent : Theme.text-dim;
+                    }
+                    gear-touch := TouchArea {
+                        clicked => { root.select(6); }
+                    }
+                }
+            }
+        }
     }
 }

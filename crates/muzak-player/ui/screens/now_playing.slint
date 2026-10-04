@@ -23,6 +23,17 @@ export component NowPlayingScreen inherits Rectangle {
     callback set-volume(int);
     callback toggle-shuffle();
     callback cycle-repeat();
+    callback add();
+    callback toggle-like();
+    callback open-artist();
+    callback open-sleep();
+    // Minutes left on the sleep timer, as "28 min"; empty when off.
+    in property <string> sleep-left;
+    // The artist name opens the artist's page.
+    in property <bool> has-artist;
+    in property <bool> liked;
+    // Whether there is a song to add to a playlist.
+    in property <bool> can-add;
     background: Theme.bg;
     // Absorbs taps so nothing underneath reacts.
     TouchArea {}
@@ -71,11 +82,38 @@ export component NowPlayingScreen inherits Rectangle {
                 overflow: elide;
                 max-height: 80px;
             }
-            Text {
-                text: root.loading ? "Loading…" : root.artists;
-                color: Theme.text-dim;
-                font-size: Theme.font-body;
-                overflow: elide;
+            // The artist, with like and add-to-playlist on the same line.
+            HorizontalLayout {
+                spacing: 4px;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    artist-text := Text {
+                        x: 0;
+                        width: Math.min(self.preferred-width, parent.width);
+                        text: root.loading ? "Loading…" : root.artists;
+                        color: root.has-artist && artist-touch.pressed ? Theme.text : Theme.text-dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    artist-touch := TouchArea {
+                        x: 0;
+                        width: artist-text.width;
+                        enabled: root.has-artist;
+                        clicked => { root.open-artist(); }
+                    }
+                }
+                if root.can-add: IconButton {
+                    size: 52px;
+                    icon: root.liked ? @image-url("../icons/heart.svg") : @image-url("../icons/heart-outline.svg");
+                    active: root.liked;
+                    clicked => { root.toggle-like(); }
+                }
+                if root.can-add: IconButton {
+                    size: 52px;
+                    icon: @image-url("../icons/plus.svg");
+                    clicked => { root.add(); }
+                }
             }
             Scrubber {
                 value: root.progress;
@@ -130,15 +168,56 @@ export component NowPlayingScreen inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 12px;
-                Image {
-                    source: @image-url("../icons/volume.svg");
-                    width: 28px;
-                    height: 28px;
-                    colorize: Theme.text-dim;
+                // Level with the slider's line.
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../icons/volume.svg");
+                        width: 28px;
+                        height: 28px;
+                        colorize: Theme.text-dim;
+                    }
                 }
                 Scrubber {
                     value: root.volume / 100;
                     changed(v) => { root.set-volume(Math.round(v * 100)); }
+                }
+                // Sleep timer at the end of the volume row: tap to choose, tap again to cancel.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: moon-row.preferred-width;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: moon-touch.pressed ? Theme.surface-hi : transparent;
+                        accessible-role: button;
+                        accessible-label: "Sleep timer";
+                        accessible-action-default => { root.open-sleep(); }
+                        moon-row := HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("../icons/moon.svg");
+                                    width: 24px;
+                                    height: 24px;
+                                    colorize: root.sleep-left == "" ? Theme.text-dim : Theme.accent;
+                                }
+                            }
+                            if root.sleep-left != "": Text {
+                                text: root.sleep-left;
+                                color: Theme.accent;
+                                font-size: Theme.font-small;
+                                font-weight: 800;
+                                vertical-alignment: center;
+                            }
+                        }
+                        moon-touch := TouchArea {
+                            clicked => { root.open-sleep(); }
+                        }
+                    }
                 }
             }
         }

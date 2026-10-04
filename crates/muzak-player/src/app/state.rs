@@ -11,6 +11,7 @@ pub enum Screen {
     Search,
     /// An artist's albums, by artist URI.
     Artist(String),
+    Settings,
 }
 
 /// Library data plus its loading status. Data stays visible while a refresh runs.
@@ -99,10 +100,61 @@ pub struct Playback {
     pub repeat: Repeat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
     NoInternet,
     TrackUnavailable,
+    /// Spotify refused a playlist change; the screen has been put back.
+    CouldntSave,
+    /// Spotify is rate-limiting the app; the change was put back.
+    SpotifyBusy,
+    /// A song was added to the named playlist.
+    AddedTo(String),
+    /// The song is already in the named playlist, so nothing was added.
+    AlreadyIn(String),
+    /// Something was taken out of the named list.
+    RemovedFrom(String),
+}
+
+/// The Settings screen: this device's name and speaker.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DeviceSettings {
+    /// What is saved; the Settings screen changes it and the player restarts to apply it.
+    pub saved: crate::settings::Settings,
+    /// The name Spotify Connect shows now.
+    pub device_name: String,
+    /// The Bluetooth speaker in use now; None means the headphone jack.
+    pub speaker: Option<crate::settings::Speaker>,
+    /// Bluetooth exists on this device (the Pi, or `--fake` mode).
+    pub bluetooth: bool,
+    pub scanning: bool,
+    pub found: Vec<crate::app::FoundSpeaker>,
+    /// Address being paired and connected.
+    pub connecting: Option<String>,
+    /// Name of the speaker that last failed to connect.
+    pub failed: Option<String>,
+    /// Settings were saved and the player is restarting.
+    pub restarting: bool,
+}
+
+/// What the on-screen text field is for, apart from search.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextPurpose {
+    /// Name a new playlist that will start with this song.
+    NewPlaylist {
+        track_uri: String,
+    },
+    Rename {
+        playlist_uri: String,
+    },
+    /// This device's Spotify Connect name.
+    DeviceName,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextEntry {
+    pub purpose: TextPurpose,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,4 +185,23 @@ pub struct AppState {
     pub keyboard_open: bool,
     /// Album lists keyed by artist URI.
     pub artist_albums: HashMap<String, Slot<Vec<Collection>>>,
+    /// Track URI being added while the add-to-playlist picker is open.
+    pub picker: Option<String>,
+    /// The name dialog for a new or renamed playlist.
+    pub text_entry: Option<TextEntry>,
+    /// Playlist URI whose track list is in edit mode.
+    pub editing: Option<String>,
+    /// Playlist URI waiting for the user to confirm deletion.
+    pub confirm_delete: Option<String>,
+    /// Whether songs are in Liked Songs, by track URI, as far as known.
+    pub liked: HashMap<String, bool>,
+    /// Playlists, albums and artist albums show as a list instead of tiles.
+    pub list_view: bool,
+    pub device: DeviceSettings,
+    /// Artists opened from a song, so their page has a name before it loads elsewhere.
+    pub artists_seen: HashMap<String, Collection>,
+    /// The core's clock at the last input, so the view can show times left.
+    pub now_ms: u64,
+    /// When the sleep timer pauses playback, if one is set.
+    pub sleep_ends_ms: Option<u64>,
 }

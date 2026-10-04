@@ -5,18 +5,23 @@ export component PillButton inherits Rectangle {
     in property <image> icon;
     in property <bool> primary: false;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
     height: Theme.touch;
     min-width: 120px;
     border-radius: root.height / 2;
     background: root.primary
         ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
         : (touch.pressed ? Theme.surface-hi : Theme.surface);
+    // A button without an icon centers its label.
+    property <bool> has-icon: root.icon.width > 0;
     HorizontalLayout {
-        padding-left: 18px;
+        padding-left: root.has-icon ? 18px : 22px;
         padding-right: 22px;
         spacing: 8px;
         alignment: center;
-        VerticalLayout {
+        if root.has-icon: VerticalLayout {
             alignment: center;
             Image {
                 source: root.icon;

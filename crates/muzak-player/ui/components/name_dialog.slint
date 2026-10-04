@@ -1,0 +1,55 @@
+import { Theme } from "../theme.slint";
+import { PillButton } from "pill_button.slint";
+
+// The name field for a new or renamed playlist. The keyboard docks below it.
+export component NameDialog inherits Rectangle {
+    in property <string> title;
+    in property <string> text;
+    callback save();
+    callback cancel();
+    background: Theme.bg;
+    TouchArea {}
+    VerticalLayout {
+        padding: 20px;
+        spacing: 14px;
+        alignment: start;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 22px;
+            font-weight: 800;
+        }
+        Rectangle {
+            height: 56px;
+            border-radius: 12px;
+            background: Theme.surface;
+            border-width: 2px;
+            border-color: Theme.accent;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                Text {
+                    text: root.text == "" ? "Playlist name" : root.text;
+                    color: root.text == "" ? Theme.text-dim : Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: root.text == "" ? 400 : 800;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: end;
+            PillButton {
+                label: "Cancel";
+                clicked => { root.cancel(); }
+            }
+            PillButton {
+                label: "Save";
+                primary: true;
+                clicked => { root.save(); }
+            }
+        }
+    }
+}
