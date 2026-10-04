@@ -23,6 +23,22 @@ pub struct Slot<T> {
     pub failed: bool,
     /// True when Spotify refused the fetch (HTTP 403) and there is no data to show.
     pub forbidden: bool,
+    /// True when Spotify is rate-limiting this request and there is no data to show.
+    pub limited: bool,
+}
+
+impl<T> Slot<T> {
+    /// Records a failed fetch; it only shows when there's nothing cached to show instead.
+    pub fn fail(&mut self, reason: crate::app::FailReason) {
+        use crate::app::FailReason;
+        self.loading = false;
+        let empty = self.data.is_none();
+        match reason {
+            FailReason::Forbidden => self.forbidden = empty,
+            FailReason::RateLimited => self.limited = empty,
+            _ => self.failed = empty,
+        }
+    }
 }
 
 impl<T> Default for Slot<T> {
@@ -32,6 +48,7 @@ impl<T> Default for Slot<T> {
             loading: false,
             failed: false,
             forbidden: false,
+            limited: false,
         }
     }
 }
@@ -114,6 +131,8 @@ pub enum Notice {
     AlreadyIn(String),
     /// Something was taken out of the named list.
     RemovedFrom(String),
+    /// An empty playlist with this name was made.
+    Created(String),
 }
 
 /// The Settings screen: this device's name and speaker.
@@ -143,9 +162,10 @@ pub struct DeviceSettings {
 /// What the on-screen text field is for, apart from search.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextPurpose {
-    /// Name a new playlist that will start with this song.
+    /// Name a new playlist, starting with this song or empty.
     NewPlaylist {
-        track_uri: String,
+        /// None makes an empty playlist.
+        track_uri: Option<String>,
     },
     Rename {
         playlist_uri: String,

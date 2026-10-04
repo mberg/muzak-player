@@ -125,6 +125,18 @@ fn ui_clicks() {
         window.set_recent_chips(false);
         window.set_recent_songs(false);
 
+        // Playlists: the plus makes a new, empty playlist.
+        window.set_screen(ScreenKind::Grid);
+        window.set_can_create_playlist(true);
+        let created = Rc::new(Cell::new(false));
+        let cr = created.clone();
+        window.on_create_playlist(move || cr.set(true));
+        visible_by_label(&window, "New playlist")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(created.get(), "the plus on Playlists starts a new playlist");
+        window.set_can_create_playlist(false);
+
         // Keyboard: Shift makes the next letter uppercase, then turns itself off.
         window.set_keyboard_open(true);
         let typed = Rc::new(std::cell::RefCell::new(String::new()));

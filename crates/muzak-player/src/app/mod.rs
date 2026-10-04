@@ -465,7 +465,8 @@ impl Core {
         };
         match entry.purpose {
             TextPurpose::NewPlaylist { track_uri } => {
-                let track = self.find_track(&track_uri);
+                let track = track_uri.as_deref().and_then(|uri| self.find_track(uri));
+                let empty = track_uri.is_none();
                 let edit = PlaylistEdit::Create {
                     name: name.clone(),
                     track_uri,
@@ -496,7 +497,11 @@ impl Core {
                     undo.placeholder = Some(placeholder.clone());
                     undo.tracks.push((placeholder, None));
                 }
-                self.notify(Notice::AddedTo(name), now_ms);
+                if empty {
+                    self.notify(Notice::Created(name), now_ms);
+                } else {
+                    self.notify(Notice::AddedTo(name), now_ms);
+                }
             }
             TextPurpose::DeviceName => {
                 let name: String = name.chars().take(MAX_DEVICE_NAME_CHARS).collect();
@@ -1042,10 +1047,18 @@ impl Core {
             UiAction::OpenPicker(track_uri) => self.state.picker = Some(track_uri),
             UiAction::ClosePicker => self.state.picker = None,
             UiAction::PickPlaylist(playlist_uri) => self.add_to_playlist(playlist_uri, now_ms, fx),
+            UiAction::NewEmptyPlaylist => {
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::NewPlaylist { track_uri: None },
+                    text: String::new(),
+                });
+            }
             UiAction::NewPlaylist => {
                 if let Some(track_uri) = self.state.picker.take() {
                     self.state.text_entry = Some(TextEntry {
-                        purpose: TextPurpose::NewPlaylist { track_uri },
+                        purpose: TextPurpose::NewPlaylist {
+                            track_uri: Some(track_uri),
+                        },
                         text: String::new(),
                     });
                 }
@@ -1343,22 +1356,18 @@ impl Core {
                 self.state.online = true;
             }
             LibraryUpdate::SectionFailed { section, reason } => {
-                let slot = self.state.sections.entry(section).or_default();
-                slot.loading = false;
-                slot.failed = slot.data.is_none();
+                self.state.sections.entry(section).or_default().fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::TracksFailed {
                 collection_uri,
                 reason,
             } => {
-                let slot = self.state.tracks.entry(collection_uri).or_default();
-                slot.loading = false;
-                if reason == FailReason::Forbidden {
-                    slot.forbidden = slot.data.is_none();
-                } else {
-                    slot.failed = slot.data.is_none();
-                }
+                self.state
+                    .tracks
+                    .entry(collection_uri)
+                    .or_default()
+                    .fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::SearchResults { query, results } => {
@@ -1411,9 +1420,11 @@ impl Core {
             }
             LibraryUpdate::EditFailed { id, reason } => self.edit_failed(id, reason, now_ms, fx),
             LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
-                let slot = self.state.artist_albums.entry(artist_uri).or_default();
-                slot.loading = false;
-                slot.failed = slot.data.is_none();
+                self.state
+                    .artist_albums
+                    .entry(artist_uri)
+                    .or_default()
+                    .fail(reason);
                 self.on_failure(reason);
             }
             LibraryUpdate::Account(account) => self.state.account = Some(account),

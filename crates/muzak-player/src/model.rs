@@ -122,10 +122,11 @@ pub enum PlaylistEdit {
         playlist_uri: String,
         track_uri: String,
     },
-    /// Create a private playlist and put one song in it.
+    /// Create a private playlist, with one song in it or empty.
     Create {
         name: String,
-        track_uri: String,
+        /// The song it starts with; None makes an empty playlist.
+        track_uri: Option<String>,
     },
     /// Removes every copy of the song; Spotify no longer removes by position.
     Remove {

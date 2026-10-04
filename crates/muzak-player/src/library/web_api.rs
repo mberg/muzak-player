@@ -861,7 +861,9 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
                     .await?,
                 )?;
                 let collection = playlist_collection(created);
-                self.add(&collection.uri, &track_uri).await?;
+                if let Some(track_uri) = track_uri {
+                    self.add(&collection.uri, &track_uri).await?;
+                }
                 Ok(EditOutcome::Created(collection))
             }
             PlaylistEdit::Remove {
@@ -1323,7 +1325,7 @@ mod tests {
         let outcome = api
             .apply(PlaylistEdit::Create {
                 name: "Road".into(),
-                track_uri: "spotify:track:t1".into(),
+                track_uri: Some("spotify:track:t1".into()),
             })
             .await
             .unwrap();

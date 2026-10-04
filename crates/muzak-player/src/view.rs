@@ -28,6 +28,8 @@ pub enum LoadStatus {
     Failed,
     /// Spotify won't list it for this app, though playing it works.
     Forbidden,
+    /// Spotify is rate-limiting it for now.
+    Limited,
     Ready,
 }
 
@@ -214,6 +216,8 @@ pub struct View {
     pub list_view: bool,
     /// Colour scheme index.
     pub theme: u32,
+    /// Playlists shows a button to make a new, empty playlist.
+    pub can_create_playlist: bool,
     /// Recent's chips (albums and playlists, or songs) show on its screen.
     pub recent_chips: bool,
     pub recent_songs: bool,
@@ -290,6 +294,7 @@ pub fn build(state: &AppState) -> View {
         keyboard,
         list_view: state.list_view,
         theme: state.device.saved.theme.unwrap_or(0),
+        can_create_playlist: state.screen == Screen::Grid(Section::Playlists),
         recent_chips: state.screen == Screen::Grid(Section::Recent),
         recent_songs: state.recent_songs,
         recent_song_rows: if state.recent_songs && state.screen == Screen::Grid(Section::Recent) {
@@ -562,14 +567,31 @@ fn artist(state: &AppState) -> Option<ArtistView> {
         .map(|c| tile(&c))
         .unwrap_or_else(|| blank_tile(&uri));
     let slot = state.artist_albums.get(&uri);
-    let albums = slot
+    let loaded: Vec<TileView> = slot
         .and_then(|s| s.data.as_ref())
         .map(|albums| albums.iter().map(tile).collect())
         .unwrap_or_default();
+    // Until the artist's own list loads (or while Spotify is limiting it), show their
+    // albums from the latest search.
+    let from_search: Vec<TileView> = state
+        .search
+        .results
+        .data
+        .iter()
+        .flat_map(|found| found.albums.iter())
+        .filter(|a| a.artist_uri.as_deref() == Some(uri.as_str()))
+        .map(tile)
+        .collect();
+    let has_list = slot.is_some_and(|s| s.data.is_some());
+    let (albums, status) = if !has_list && !from_search.is_empty() {
+        (from_search, LoadStatus::Ready)
+    } else {
+        (loaded, status(slot))
+    };
     Some(ArtistView {
         header,
         albums,
-        status: status(slot),
+        status,
         followed: state.liked.get(&uri).copied().unwrap_or_else(|| {
             section_items(state, Section::Artists)
                 .iter()
@@ -611,6 +633,7 @@ fn status<T>(slot: Option<&Slot<Vec<T>>>) -> LoadStatus {
         Some(Slot {
             forbidden: true, ..
         }) => LoadStatus::Forbidden,
+        Some(Slot { limited: true, .. }) => LoadStatus::Limited,
         Some(Slot { failed: true, .. }) => LoadStatus::Failed,
         _ => LoadStatus::Loading,
     }
@@ -771,6 +794,7 @@ fn banner(state: &AppState) -> Option<String> {
         Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
         Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
         Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),
+        Some(Notice::Created(name)) => Some(format!("Created {name}")),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }
@@ -1173,6 +1197,52 @@ mod tests {
             build(c.state()).detail.unwrap().summary,
             "1986 · 2 songs · 6 min"
         );
+    }
+
+    #[test]
+    fn a_limited_artist_page_falls_back_to_search_albums() {
+        let mut c = core();
+        let album = Collection {
+            uri: "spotify:album:sw".into(),
+            kind: crate::model::CollectionKind::Album,
+            name: "Slippery When Wet".into(),
+            artist_uri: Some("spotify:artist:bj".into()),
+            ..Default::default()
+        };
+        search_for(&mut c, "bon jovi");
+        catalog(
+            &mut c,
+            "bon jovi",
+            crate::model::SearchResults {
+                albums: vec![album],
+                ..Default::default()
+            },
+        );
+        c.handle(ui(UiAction::OpenArtist("spotify:artist:bj".into())), 1_000);
+        c.handle(
+            Input::Library(LibraryUpdate::ArtistAlbumsFailed {
+                artist_uri: "spotify:artist:bj".into(),
+                reason: FailReason::RateLimited,
+            }),
+            1_000,
+        );
+        let artist = build(c.state()).artist.unwrap();
+        assert_eq!(artist.status, LoadStatus::Ready);
+        assert_eq!(artist.albums[0].title, "Slippery When Wet");
+
+        // With nothing from search either, it says Spotify is limiting.
+        c.handle(
+            ui(UiAction::OpenArtist("spotify:artist:other".into())),
+            1_000,
+        );
+        c.handle(
+            Input::Library(LibraryUpdate::ArtistAlbumsFailed {
+                artist_uri: "spotify:artist:other".into(),
+                reason: FailReason::RateLimited,
+            }),
+            1_000,
+        );
+        assert_eq!(build(c.state()).artist.unwrap().status, LoadStatus::Limited);
     }
 
     #[test]
