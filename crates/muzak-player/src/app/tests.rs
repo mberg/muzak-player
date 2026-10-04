@@ -54,9 +54,9 @@ pub(crate) fn with_tracks(core: &mut Core, uri: &str, n: u32) {
 }
 
 #[test]
-fn new_requests_initial_sections_and_shows_playlists() {
+fn new_requests_initial_sections_and_shows_albums() {
     let (core, effects) = Core::new(config(), 0);
-    assert_eq!(core.state().screen, Screen::Grid(Section::Playlists));
+    assert_eq!(core.state().screen, Screen::Grid(Section::Albums));
     assert_eq!(
         effects,
         vec![
@@ -121,7 +121,7 @@ fn open_collection_then_back() {
         })]
     );
     c.handle(ui(UiAction::Back), 0);
-    assert_eq!(c.state().screen, Screen::Grid(Section::Playlists));
+    assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn back_on_empty_stack_is_noop() {
     let mut c = core();
     let fx = c.handle(ui(UiAction::Back), 0);
     assert!(fx.is_empty());
-    assert_eq!(c.state().screen, Screen::Grid(Section::Playlists));
+    assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn controls_emit_commands() {
 fn open_now_playing_needs_something_playing() {
     let mut c = core();
     c.handle(ui(UiAction::OpenNowPlaying), 0);
-    assert_eq!(c.state().screen, Screen::Grid(Section::Playlists));
+    assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
     c.handle(Input::Player(PlayerUpdate::TrackChanged(track(1))), 0);
     c.handle(ui(UiAction::OpenNowPlaying), 0);
     assert_eq!(c.state().screen, Screen::NowPlaying);

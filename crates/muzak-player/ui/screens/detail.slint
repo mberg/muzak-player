@@ -6,6 +6,45 @@ import { PillButton } from "../components/pill_button.slint";
 import { TrackRow } from "../components/track_row.slint";
 import { StateMessage } from "../components/state_message.slint";
 
+// A small text button for the bar above the song list.
+component BarButton inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> primary: false;
+    in property <color> tint: Theme.text;
+    callback clicked();
+    height: 40px;
+    width: row.preferred-width;
+    border-radius: 20px;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : (touch.pressed ? Theme.surface-hi : Theme.surface);
+    row := HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 16px;
+        spacing: 6px;
+        if root.icon.width > 0: VerticalLayout {
+            alignment: center;
+            Image {
+                source: root.icon;
+                width: 20px;
+                height: 20px;
+                colorize: root.primary ? Theme.accent-text : root.tint;
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.primary ? Theme.accent-text : root.tint;
+            font-size: Theme.font-small;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component DetailScreen inherits Rectangle {
     in property <TileData> header;
     in property <[TrackData]> tracks;
@@ -14,6 +53,8 @@ export component DetailScreen inherits Rectangle {
     in property <bool> editable;
     in property <bool> editing;
     in property <bool> can-add;
+    // "23 songs · 1 hr 12 min"
+    in property <string> summary;
     callback back();
     callback play(bool);
     callback play-track(int);
@@ -29,28 +70,19 @@ export component DetailScreen inherits Rectangle {
     property <length> drag-dy: 0px;
     property <int> drag-to: root.drag-from < 0 ? -1
         : Math.max(0, Math.min(root.tracks.length - 1, root.drag-from + Math.round(root.drag-dy / Theme.touch)));
+    property <length> art: 196px;
     background: Theme.bg;
     HorizontalLayout {
         padding: 16px;
-        spacing: 16px;
+        padding-right: 8px;
+        spacing: 20px;
         VerticalLayout {
-            width: 240px;
+            width: root.art;
             spacing: 10px;
             alignment: start;
-            HorizontalLayout {
-                IconButton {
-                    icon: @image-url("../icons/back.svg");
-                    clicked => { root.back(); }
-                }
-                Rectangle {}
-                if root.editable && !root.editing: IconButton {
-                    icon: @image-url("../icons/edit.svg");
-                    clicked => { root.edit(); }
-                }
-            }
             Rectangle {
-                width: 180px;
-                height: 180px;
+                width: root.art;
+                height: root.art;
                 border-radius: Theme.radius;
                 clip: true;
                 background: Theme.surface;
@@ -70,17 +102,27 @@ export component DetailScreen inherits Rectangle {
                     animate opacity { duration: 200ms; }
                 }
             }
-            Text {
-                text: root.header.title;
-                color: Theme.text;
-                font-size: 22px;
-                font-weight: 800;
-                wrap: word-wrap;
-                overflow: elide;
-                max-height: 60px;
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: root.header.title;
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 800;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    max-height: 52px;
+                }
+                Text {
+                    text: root.header.subtitle;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    overflow: elide;
+                    visible: root.header.subtitle != "";
+                }
             }
-            if !root.editing: HorizontalLayout {
-                spacing: 10px;
+            HorizontalLayout {
+                spacing: 8px;
                 alignment: start;
                 PillButton {
                     label: "Play";
@@ -93,57 +135,92 @@ export component DetailScreen inherits Rectangle {
                     clicked => { root.play(true); }
                 }
             }
-            if root.editing: HorizontalLayout {
-                spacing: 8px;
-                alignment: start;
-                IconButton {
-                    size: 52px;
-                    icon: @image-url("../icons/edit.svg");
-                    clicked => { root.rename(); }
-                }
-                IconButton {
-                    size: 52px;
-                    icon: @image-url("../icons/delete.svg");
-                    clicked => { root.delete(); }
-                }
-                PillButton {
-                    min-width: 96px;
-                    label: "Done";
-                    primary: true;
-                    clicked => { root.finish-editing(); }
-                }
-            }
         }
-        Rectangle {
-            ListView {
-                for track[i] in root.tracks: TrackRow {
-                    data: track;
-                    editing: root.editing;
-                    show-add: root.can-add;
-                    drag-offset: i == root.drag-from ? root.drag-dy : 0px;
-                    drop-marker: i != root.drag-to || i == root.drag-from ? 0 : (root.drag-to < root.drag-from ? 1 : 2);
-                    clicked => { root.play-track(i); }
-                    add => { root.add(track.uri); }
-                    remove => { root.remove(i); }
-                    drag-start => {
-                        root.drag-from = i;
-                        root.drag-dy = 0px;
+        VerticalLayout {
+            spacing: 4px;
+            // The bar above the songs: what's here, and editing for playlists you own.
+            HorizontalLayout {
+                height: 44px;
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.editing ? "Drag to reorder" : root.summary;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.editable && !root.editing: VerticalLayout {
+                    alignment: center;
+                    BarButton {
+                        label: "Edit";
+                        icon: @image-url("../icons/edit.svg");
+                        clicked => { root.edit(); }
                     }
-                    drag-move(dy) => { root.drag-dy = dy; }
-                    drag-end => {
-                        if (root.drag-from >= 0 && root.drag-to != root.drag-from) {
-                            root.move-track(root.drag-from, root.drag-to);
-                        }
-                        root.drag-from = -1;
-                        root.drag-dy = 0px;
+                }
+                if root.editing: VerticalLayout {
+                    alignment: center;
+                    BarButton {
+                        label: "Rename";
+                        clicked => { root.rename(); }
+                    }
+                }
+                if root.editing: VerticalLayout {
+                    alignment: center;
+                    BarButton {
+                        label: "Delete";
+                        tint: Theme.danger;
+                        clicked => { root.delete(); }
+                    }
+                }
+                if root.editing: VerticalLayout {
+                    alignment: center;
+                    BarButton {
+                        label: "Done";
+                        primary: true;
+                        clicked => { root.finish-editing(); }
                     }
                 }
             }
-            if root.state != LoadState.ready: StateMessage {
-                width: parent.width;
-                height: parent.height;
-                state: root.state;
-                empty-text: "No songs here yet";
+            Rectangle {
+                ListView {
+                    for track[i] in root.tracks: Rectangle {
+                        height: Theme.touch;
+                        TrackRow {
+                            // Room for the scrollbar so it doesn't cover the durations.
+                            width: parent.width - 12px;
+                            x: 0;
+                            data: track;
+                            editing: root.editing;
+                            show-add: root.can-add;
+                            drag-offset: i == root.drag-from ? root.drag-dy : 0px;
+                            drop-marker: i != root.drag-to || i == root.drag-from ? 0 : (root.drag-to < root.drag-from ? 1 : 2);
+                            clicked => { root.play-track(i); }
+                            add => { root.add(track.uri); }
+                            remove => { root.remove(i); }
+                            drag-start => {
+                                root.drag-from = i;
+                                root.drag-dy = 0px;
+                            }
+                            drag-move(dy) => { root.drag-dy = dy; }
+                            drag-end => {
+                                if (root.drag-from >= 0 && root.drag-to != root.drag-from) {
+                                    root.move-track(root.drag-from, root.drag-to);
+                                }
+                                root.drag-from = -1;
+                                root.drag-dy = 0px;
+                            }
+                        }
+                    }
+                }
+                if root.state != LoadState.ready: StateMessage {
+                    width: parent.width;
+                    height: parent.height;
+                    state: root.state;
+                    empty-text: "No songs here yet";
+                }
             }
         }
     }

@@ -94,6 +94,8 @@ pub struct DetailView {
     pub editing: bool,
     /// Rows offer "add to playlist": on albums and Liked Songs, not on playlists.
     pub can_add: bool,
+    /// For example "23 songs · 1 hr 12 min"; empty until the songs load.
+    pub summary: String,
 }
 
 /// The add-to-playlist picker: the user's own playlists.
@@ -479,14 +481,34 @@ fn detail(state: &AppState) -> Option<DetailView> {
         })
         .unwrap_or_default();
     let editable = own_playlists(state).iter().any(|p| p.uri == uri);
+    let summary = slot
+        .and_then(|s| s.data.as_ref())
+        .map(|tracks| track_summary(tracks))
+        .unwrap_or_default();
     Some(DetailView {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
+        summary,
         can_add: !uri.starts_with("spotify:playlist:") && !uri.starts_with("muzak:new:"),
         header,
         status: status(slot),
         tracks,
     })
+}
+
+/// "1 song · 3 min", "23 songs · 1 hr 12 min".
+fn track_summary(tracks: &[Track]) -> String {
+    let count = match tracks.len() {
+        1 => "1 song".to_string(),
+        n => format!("{n} songs"),
+    };
+    let minutes = tracks.iter().map(|t| t.duration_ms as u64).sum::<u64>() / 60_000;
+    let length = match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} hr"),
+        (h, m) => format!("{h} hr {m} min"),
+    };
+    format!("{count} · {length}")
 }
 
 fn now(state: &AppState) -> NowView {
@@ -559,6 +581,7 @@ mod tests {
     #[test]
     fn grid_status_covers_loading_empty_failed_ready() {
         let mut c = core();
+        c.handle(ui(UiAction::ShowSection(Section::Playlists)), 0);
         assert_eq!(build(c.state()).grid_status, LoadStatus::Loading);
         c.handle(
             Input::Library(LibraryUpdate::Section {
@@ -896,6 +919,14 @@ mod tests {
         assert!(!can_add(&c));
         c.handle(ui(UiAction::ShowSection(Section::Liked)), 0);
         assert!(can_add(&c));
+    }
+
+    #[test]
+    fn summary_counts_songs_and_length() {
+        let mut tracks: Vec<Track> = (0..23).map(track).collect();
+        tracks[0].duration_ms = 180_000 + 12 * 60_000 + 60 * 60_000 - 23 * 180_000;
+        assert_eq!(track_summary(&tracks), "23 songs · 1 hr 12 min");
+        assert_eq!(track_summary(&tracks[1..2]), "1 song · 3 min");
     }
 
     #[test]

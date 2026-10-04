@@ -29,10 +29,6 @@ export component ArtistScreen inherits Rectangle {
         width: root.width - 2 * root.pad;
         height: Theme.touch;
         spacing: 12px;
-        IconButton {
-            icon: @image-url("../icons/back.svg");
-            clicked => { root.back(); }
-        }
         Text {
             horizontal-stretch: 1;
             text: root.header.title;

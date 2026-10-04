@@ -46,7 +46,7 @@ off_after_secs = 20
 
 Check:
 
-- [ ] "Loading…" shows briefly, then six playlist tiles. Long names end in "…".
+- [ ] "Loading…" shows briefly, then the four album tiles: Albums is the home screen. Long names end in "…" (see Playlists).
 - [ ] The left rail (Playlists, Albums, Liked, Recent) switches the content. Liked opens a track list directly.
 - [ ] Tapping a tile opens its track list. Play opens Now Playing.
 - [ ] Shuffle starts on the last song.

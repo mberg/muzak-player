@@ -64,8 +64,9 @@ pub struct Core {
 impl Core {
     pub fn new(cfg: CoreConfig, now_ms: u64) -> (Core, Vec<Effect>) {
         let state = AppState {
-            screen: Screen::Grid(Section::Playlists),
-            section: Section::Playlists,
+            // Albums is the home screen at power-on.
+            screen: Screen::Grid(Section::Albums),
+            section: Section::Albums,
             back_stack: Vec::new(),
             sections: Default::default(),
             tracks: Default::default(),
@@ -100,7 +101,7 @@ impl Core {
             last_activity_ms: now_ms,
             notice_until_ms: 0,
             last_load: None,
-            before_search: Section::Playlists,
+            before_search: Section::Albums,
             next_edit: 0,
             undo: HashMap::new(),
         };
