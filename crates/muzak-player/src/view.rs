@@ -649,6 +649,13 @@ fn detail(state: &AppState) -> Option<DetailView> {
         .and_then(|s| s.data.as_ref())
         .map(|tracks| track_summary(tracks))
         .unwrap_or_default();
+    // Albums lead with the year they came out: "1986 · 11 songs · 43 min".
+    let year = find_collection(state, &uri).and_then(|c| c.year);
+    let summary = match (year, summary.is_empty()) {
+        (Some(year), true) => year.to_string(),
+        (Some(year), false) => format!("{year} · {summary}"),
+        (None, _) => summary,
+    };
     Some(DetailView {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
@@ -1117,6 +1124,32 @@ mod tests {
         assert!(build(c.state()).show_clock);
         c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
         assert!(!build(c.state()).show_clock);
+    }
+
+    #[test]
+    fn album_summary_leads_with_the_year() {
+        let mut c = core();
+        let album = Collection {
+            uri: "spotify:album:a1".into(),
+            kind: crate::model::CollectionKind::Album,
+            name: "Graceland".into(),
+            year: Some(1986),
+            ..Default::default()
+        };
+        c.handle(
+            Input::Library(LibraryUpdate::Section {
+                section: Section::Albums,
+                items: vec![album.clone()],
+            }),
+            0,
+        );
+        c.handle(ui(UiAction::OpenCollection(album.uri.clone())), 0);
+        assert_eq!(build(c.state()).detail.unwrap().summary, "1986");
+        with_tracks(&mut c, &album.uri, 2);
+        assert_eq!(
+            build(c.state()).detail.unwrap().summary,
+            "1986 · 2 songs · 6 min"
+        );
     }
 
     #[test]
