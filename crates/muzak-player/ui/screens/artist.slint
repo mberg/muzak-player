@@ -4,6 +4,7 @@ import { Tile } from "../components/tile.slint";
 import { IconButton } from "../components/icon_button.slint";
 import { PillButton } from "../components/pill_button.slint";
 import { StateMessage } from "../components/state_message.slint";
+import { CollectionList } from "../components/collection_list.slint";
 
 // An artist's albums. Spotify does not give this app an artist's top songs.
 export component ArtistScreen inherits Rectangle {
@@ -13,6 +14,8 @@ export component ArtistScreen inherits Rectangle {
     callback back();
     callback play();
     callback open(string);
+    in property <bool> list-view;
+    callback toggle-layout();
     property <int> columns: 4;
     property <length> pad: 16px;
     property <length> top: 84px;
@@ -39,6 +42,10 @@ export component ArtistScreen inherits Rectangle {
             vertical-alignment: center;
             overflow: elide;
         }
+        IconButton {
+            icon: root.list-view ? @image-url("../icons/grid.svg") : @image-url("../icons/list.svg");
+            clicked => { root.toggle-layout(); }
+        }
         VerticalLayout {
             alignment: center;
             PillButton {
@@ -49,7 +56,15 @@ export component ArtistScreen inherits Rectangle {
             }
         }
     }
-    Flickable {
+    if root.list-view: CollectionList {
+        x: 8px;
+        y: root.top;
+        width: root.width - 16px;
+        height: root.height - root.top;
+        items: root.albums;
+        open(uri) => { root.open(uri); }
+    }
+    if !root.list-view: Flickable {
         x: 0;
         y: root.top;
         width: root.width;

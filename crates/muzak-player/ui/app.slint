@@ -66,6 +66,7 @@ export component AppWindow inherits Window {
     in property <bool> detail-can-add;
     in property <string> now-track-uri;
     in property <bool> now-liked;
+    in property <bool> list-view;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
     in property <bool> name-open;
@@ -99,6 +100,7 @@ export component AppWindow inherits Window {
     callback play-song(string);
     callback keyboard-done();
     callback toggle-like();
+    callback toggle-list-view();
     callback open-picker(string);
     callback close-picker();
     callback pick-playlist(string);
@@ -135,6 +137,8 @@ export component AppWindow inherits Window {
         tiles: root.tiles;
         state: root.grid-state;
         open(uri) => { root.open-collection(uri); }
+        list-view: root.list-view;
+        toggle-layout => { root.toggle-list-view(); }
     }
     DetailScreen {
         x: Theme.rail-width;
@@ -190,6 +194,8 @@ export component AppWindow inherits Window {
         header: root.artist;
         albums: root.artist-albums;
         state: root.artist-state;
+        list-view: root.list-view;
+        toggle-layout => { root.toggle-list-view(); }
         back => { root.back(); }
         play => { root.play-artist(root.artist.uri); }
         open(uri) => { root.open-collection(uri); }

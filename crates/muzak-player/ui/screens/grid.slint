@@ -2,12 +2,16 @@ import { Theme } from "../theme.slint";
 import { TileData, LoadState } from "../types.slint";
 import { Tile } from "../components/tile.slint";
 import { StateMessage } from "../components/state_message.slint";
+import { CollectionList } from "../components/collection_list.slint";
+import { IconButton } from "../components/icon_button.slint";
 
 export component GridScreen inherits Rectangle {
     in property <string> title;
     in property <[TileData]> tiles;
     in property <LoadState> state;
     callback open(string);
+    in property <bool> list-view;
+    callback toggle-layout();
     property <int> columns: 4;
     property <length> pad: 16px;
     property <length> header: 56px;
@@ -23,7 +27,21 @@ export component GridScreen inherits Rectangle {
         font-size: Theme.font-title;
         font-weight: 800;
     }
-    Flickable {
+    IconButton {
+        x: root.width - self.width - 8px;
+        y: 0px;
+        icon: root.list-view ? @image-url("../icons/grid.svg") : @image-url("../icons/list.svg");
+        clicked => { root.toggle-layout(); }
+    }
+    if root.list-view: CollectionList {
+        x: 8px;
+        y: root.header;
+        width: root.width - 16px;
+        height: root.height - root.header;
+        items: root.tiles;
+        open(uri) => { root.open(uri); }
+    }
+    if !root.list-view: Flickable {
         x: 0;
         y: root.header;
         width: root.width;

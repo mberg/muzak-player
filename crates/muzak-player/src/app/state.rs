@@ -167,4 +167,6 @@ pub struct AppState {
     pub confirm_delete: Option<String>,
     /// Whether songs are in Liked Songs, by track URI, as far as known.
     pub liked: HashMap<String, bool>,
+    /// Playlists, albums and artist albums show as a list instead of tiles.
+    pub list_view: bool,
 }

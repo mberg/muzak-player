@@ -151,6 +151,8 @@ pub struct View {
     pub confirm_delete: Option<String>,
     /// The on-screen keyboard is up, for search or a name.
     pub keyboard: bool,
+    /// Collection screens show a list instead of tiles.
+    pub list_view: bool,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -215,6 +217,7 @@ pub fn build(state: &AppState) -> View {
                 .unwrap_or_default()
         }),
         keyboard,
+        list_view: state.list_view,
     }
 }
 

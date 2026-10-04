@@ -92,6 +92,7 @@ impl Core {
             editing: None,
             confirm_delete: None,
             liked: HashMap::new(),
+            list_view: false,
         };
         let mut core = Core {
             state,
@@ -711,6 +712,7 @@ impl Core {
             UiAction::CancelDelete => self.state.confirm_delete = None,
             UiAction::ConfirmDelete => self.delete_playlist(now_ms, fx),
             UiAction::ToggleLike => self.toggle_like(now_ms, fx),
+            UiAction::ToggleListView => self.state.list_view = !self.state.list_view,
             UiAction::ClearSearch => {
                 self.edit_query(now_ms, String::clear);
                 // Clearing is deliberate, so there is no reason to wait.

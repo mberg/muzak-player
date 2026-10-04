@@ -1085,3 +1085,11 @@ fn heart_likes_the_playing_song_and_undoes_on_failure() {
     assert!(!c.state().liked["spotify:track:t5"]);
     assert_eq!(track_names(&c, LIKED_URI), ["Song 0", "Song 1"]);
 }
+
+#[test]
+fn list_view_toggles() {
+    let mut c = core();
+    assert!(!c.state().list_view);
+    c.handle(ui(UiAction::ToggleListView), 0);
+    assert!(c.state().list_view);
+}

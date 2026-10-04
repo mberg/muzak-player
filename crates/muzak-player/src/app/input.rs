@@ -81,6 +81,8 @@ pub enum UiAction {
     CancelDelete,
     /// Like or unlike the playing song.
     ToggleLike,
+    /// Switch collection screens between tiles and a list.
+    ToggleListView,
 }
 
 #[derive(Debug, Clone, PartialEq)]
