@@ -47,6 +47,40 @@ component SmallPill inherits Rectangle {
     }
 }
 
+// A colour scheme preview: its background with its accent, and its name.
+component Swatch inherits Rectangle {
+    in property <int> index;
+    callback clicked();
+    width: 120px;
+    height: 84px;
+    border-radius: 12px;
+    background: Theme.backgrounds[root.index];
+    border-width: Theme.scheme == root.index ? 3px : 1px;
+    border-color: Theme.scheme == root.index ? Theme.accent : Theme.surface-hi;
+    accessible-role: button;
+    accessible-label: Theme.scheme-names[root.index];
+    accessible-action-default => { root.clicked(); }
+    Rectangle {
+        x: 14px;
+        y: 14px;
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        background: Theme.accents[root.index];
+    }
+    Text {
+        x: 14px;
+        y: parent.height - self.height - 10px;
+        text: Theme.scheme-names[root.index];
+        color: Theme.texts[root.index];
+        font-size: Theme.font-small;
+        font-weight: 800;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 component SpeakerRow inherits Rectangle {
     in property <SpeakerRowData> data;
     callback clicked();
@@ -107,6 +141,7 @@ export component SettingsScreen inherits Rectangle {
     callback forget-speaker();
     in property <int> sleep-minutes;
     callback set-sleep-length(int);
+    callback set-theme(int);
     background: Theme.bg;
     Flickable {
         content-height: column.preferred-height;
@@ -166,6 +201,17 @@ export component SettingsScreen inherits Rectangle {
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Colours";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    for i in [0, 1, 2, 3]: Swatch {
+                        index: i;
+                        clicked => { root.set-theme(i); }
+                    }
                 }
             }
             Card {

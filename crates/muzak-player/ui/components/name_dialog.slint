@@ -29,7 +29,7 @@ export component NameDialog inherits Rectangle {
                 padding-left: 16px;
                 padding-right: 16px;
                 Text {
-                    text: root.text == "" ? "Playlist name" : root.text + "|";
+                    text: root.text == "" ? "Playlist name" : root.text;
                     color: root.text == "" ? Theme.text-dim : Theme.text;
                     font-size: Theme.font-body;
                     font-weight: root.text == "" ? 400 : 800;

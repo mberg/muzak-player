@@ -21,6 +21,8 @@ const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
+/// The last colour scheme index (Daylight).
+const MAX_THEME: u32 = 3;
 /// Sleep timer length unless Settings says otherwise.
 pub const DEFAULT_SLEEP_MINUTES: u32 = 30;
 /// The sleep timer fades the volume out over its last this-many milliseconds.
@@ -1131,6 +1133,10 @@ impl Core {
                     )
                 };
                 self.on_ui(UiAction::SetSleepTimer(minutes), now_ms, fx);
+            }
+            UiAction::SetTheme(index) => {
+                self.state.device.saved.theme = Some(index.min(MAX_THEME));
+                fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
             }
             UiAction::SetSleepLength(minutes) => {
                 self.state.device.saved.sleep_minutes = Some(minutes);

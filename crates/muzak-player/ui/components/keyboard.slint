@@ -12,7 +12,7 @@ component KeyCap inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label != "" ? root.label : root.value;
     accessible-action-default => { root.tapped(root.value); }
-    background: root.active ? Theme.accent : touch.pressed ? Theme.surface-hi : (root.special ? Theme.bg : #3a3555);
+    background: root.active ? Theme.accent : touch.pressed ? Theme.surface-hi : (root.special ? Theme.bg : Theme.key);
     if root.label != "": Text {
         text: root.label;
         color: Theme.text;

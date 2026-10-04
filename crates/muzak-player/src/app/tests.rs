@@ -1536,3 +1536,14 @@ fn the_sleep_length_comes_from_settings_and_saves_without_a_restart() {
     c.handle(ui(UiAction::TapSleepTimer), 2_000);
     assert_eq!(c.state().sleep_ends_ms, None);
 }
+
+#[test]
+fn picking_a_colour_scheme_saves_without_a_restart() {
+    let mut c = core();
+    let fx = c.handle(ui(UiAction::SetTheme(1)), 0);
+    assert!(matches!(&fx[..], [Effect::SaveSettings(s)] if s.theme == Some(1)));
+    assert!(!c.state().device.restarting);
+    assert_eq!(crate::view::build(c.state()).theme, 1);
+    c.handle(ui(UiAction::SetTheme(9)), 0);
+    assert_eq!(crate::view::build(c.state()).theme, 3);
+}

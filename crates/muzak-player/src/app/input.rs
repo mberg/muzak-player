@@ -125,6 +125,8 @@ pub enum UiAction {
     TapSleepTimer,
     /// Settings: how long the sleep timer runs, in minutes.
     SetSleepLength(u32),
+    /// Settings: colour scheme by index.
+    SetTheme(u32),
     /// Set the sleep timer to these minutes; None turns it off.
     SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.

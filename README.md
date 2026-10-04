@@ -173,6 +173,7 @@ Check:
 - [ ] In the last 5 seconds the music fades out, then pauses; the next Play is at the old volume.
 - [ ] Tapping the moon while it runs turns it off.
 - [ ] Settings → Sleep timer switches between 30 and 60 minutes without restarting the player.
+- [ ] Settings → Colours switches between Midnight (default), Ocean, Forest and Daylight at once, and the choice survives a restart.
 
 ### 6. Settings
 

@@ -34,6 +34,9 @@ pub struct Settings {
     /// How long the sleep timer runs; 30 minutes when unset.
     #[serde(default)]
     pub sleep_minutes: Option<u32>,
+    /// Colour scheme: 0 Midnight (default), 1 Ocean, 2 Forest, 3 Daylight.
+    #[serde(default)]
+    pub theme: Option<u32>,
 }
 
 impl Settings {
@@ -109,6 +112,7 @@ mod tests {
             device_name: Some("Kitchen".into()),
             output: Some(Output::Jack),
             sleep_minutes: Some(60),
+            theme: Some(2),
         };
         settings.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), settings);
@@ -124,6 +128,7 @@ mod tests {
                 name: "Boom".into(),
             })),
             sleep_minutes: None,
+            theme: None,
         }
         .apply(&mut config);
         assert_eq!(config.device_name, "Kitchen");
@@ -146,6 +151,7 @@ mod tests {
             device_name: None,
             output: Some(Output::Jack),
             sleep_minutes: None,
+            theme: None,
         }
         .apply(&mut config);
         assert_eq!(config.audio_device.as_deref(), Some(JACK_DEVICE));

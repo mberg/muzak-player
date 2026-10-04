@@ -11,7 +11,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::app::{AppState, DisplayMode, Input, UiAction};
 use crate::model::Section;
 use crate::view::{self, LoadStatus, RowKind, ScreenView, SearchRowView, TileView, TrackRowView};
-use crate::{AppWindow, LoadState, ScreenKind, SearchRowData, SpeakerRowData, TileData, TrackData};
+use crate::{
+    AppWindow, LoadState, ScreenKind, SearchRowData, SpeakerRowData, Theme, TileData, TrackData,
+};
 
 const IMAGE_CACHE_LIMIT: usize = 80;
 
@@ -244,6 +246,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_set_theme(move |i| s(UiAction::SetTheme(i.max(0) as u32)));
+    let s = send.clone();
     window.on_open_sleep_timer(move || s(UiAction::TapSleepTimer));
     let s = send.clone();
     window.on_set_sleep_length(move |minutes| s(UiAction::SetSleepLength(minutes.max(1) as u32)));
@@ -362,6 +366,7 @@ impl Bridge {
         w.set_now_has_artist(v.now.has_artist);
         w.set_sleep_left(v.now.sleep_left.as_str().into());
         w.set_list_view(v.list_view);
+        w.global::<Theme>().set_scheme(v.theme as i32);
         w.set_picker_open(v.picker.is_some());
         if let Some(picker) = &v.picker {
             let rows = picker

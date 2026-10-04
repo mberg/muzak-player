@@ -1,11 +1,26 @@
+// Colour schemes: index 0 Midnight (default), 1 Ocean, 2 Forest, 3 Daylight.
+// Only colours change between schemes; sizes and fonts are shared.
 export global Theme {
-    out property <color> bg: #14121f;
-    out property <color> surface: #221f33;
-    out property <color> surface-hi: #2f2b45;
-    out property <color> text: #f4f2ff;
-    out property <color> text-dim: #a9a3c7;
-    out property <color> accent: #ffb703;
-    out property <color> accent-text: #1b1300;
+    in-out property <int> scheme: 0;
+    out property <[string]> scheme-names: ["Midnight", "Ocean", "Forest", "Daylight"];
+    out property <[color]> backgrounds: [#14121f, #0b1620, #101a13, #f6f3ee];
+    out property <[color]> surfaces: [#221f33, #132433, #19291f, #ffffff];
+    out property <[color]> surfaces-hi: [#2f2b45, #1c3447, #24392b, #ebe6dd];
+    out property <[color]> texts: [#f4f2ff, #eef6fb, #eff7f1, #1f1c24];
+    out property <[color]> texts-dim: [#a9a3c7, #9bb4c6, #a2baa8, #6c6676];
+    out property <[color]> accents: [#ffb703, #38bdf8, #7bd389, #e4572e];
+    out property <[color]> accent-texts: [#1b1300, #03202e, #0a2410, #ffffff];
+    out property <[color]> keys: [#3a3555, #24405a, #2c4635, #e2ddd3];
+
+    out property <color> bg: self.backgrounds[self.scheme];
+    out property <color> surface: self.surfaces[self.scheme];
+    out property <color> surface-hi: self.surfaces-hi[self.scheme];
+    out property <color> text: self.texts[self.scheme];
+    out property <color> text-dim: self.texts-dim[self.scheme];
+    out property <color> accent: self.accents[self.scheme];
+    out property <color> accent-text: self.accent-texts[self.scheme];
+    // Keys on the on-screen keyboard.
+    out property <color> key: self.keys[self.scheme];
     out property <color> danger: #e5484d;
     out property <length> rail-width: 96px;
     out property <length> mini-height: 80px;

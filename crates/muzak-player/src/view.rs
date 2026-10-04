@@ -198,6 +198,8 @@ pub struct View {
     pub keyboard: bool,
     /// Collection screens show a list instead of tiles.
     pub list_view: bool,
+    /// Colour scheme index.
+    pub theme: u32,
     pub settings: SettingsView,
 }
 
@@ -268,6 +270,7 @@ pub fn build(state: &AppState) -> View {
         }),
         keyboard,
         list_view: state.list_view,
+        theme: state.device.saved.theme.unwrap_or(0),
         settings: settings(state),
     }
 }

@@ -6,7 +6,8 @@ use std::rc::Rc;
 use i_slint_backend_testing::ElementHandle;
 use muzak_player::{AppWindow, ScreenKind, TileData};
 use slint::ComponentHandle;
-use slint::platform::PointerEventButton;
+use slint::LogicalPosition;
+use slint::platform::{PointerEventButton, WindowEvent};
 
 fn visible_by_label(window: &AppWindow, label: &str) -> ElementHandle {
     let found: Vec<ElementHandle> =
@@ -68,9 +69,24 @@ fn ui_clicks() {
             .await;
         assert!(opened.get(), "the moon starts the sleep timer");
 
-        // Settings: the sleep timer length.
+        // Settings: a colour swatch picks the scheme (near the top).
         window.set_screen(ScreenKind::Settings);
         window.set_sleep_minutes(30);
+        let theme = Rc::new(Cell::new(-1));
+        let th = theme.clone();
+        window.on_set_theme(move |i| th.set(i));
+        visible_by_label(&window, "Ocean")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(theme.get(), 1);
+
+        // Scroll Settings down like a person would, then pick the sleep timer length.
+        window.window().dispatch_event(WindowEvent::PointerScrolled {
+            position: LogicalPosition::new(400.0, 300.0),
+            delta_x: 0.0,
+            delta_y: -400.0,
+        });
+        slint::platform::update_timers_and_animations();
         let length = Rc::new(Cell::new(0));
         let l = length.clone();
         window.on_set_sleep_length(move |m| l.set(m));

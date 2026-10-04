@@ -18,7 +18,7 @@ import { NameDialog } from "components/name_dialog.slint";
 import { ConfirmDelete } from "components/confirm_dialog.slint";
 import { SettingsScreen } from "screens/settings.slint";
 
-export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData }
+export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData, Theme }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -88,6 +88,7 @@ export component AppWindow inherits Window {
     in property <bool> now-has-artist;
     in property <string> sleep-left;
     in property <int> sleep-minutes;
+    callback set-theme(int);
     in property <bool> list-view;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
@@ -249,6 +250,7 @@ export component AppWindow inherits Window {
         forget-speaker => { root.forget-speaker(); }
         sleep-minutes: root.sleep-minutes;
         set-sleep-length(m) => { root.set-sleep-length(m); }
+        set-theme(i) => { root.set-theme(i); }
     }
     ArtistScreen {
         x: Theme.rail-width;
