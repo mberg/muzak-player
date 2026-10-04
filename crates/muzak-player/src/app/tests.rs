@@ -1439,3 +1439,72 @@ fn an_album_cached_without_its_artist_finds_them_by_name() {
     let albums = c.state().sections[&Section::Albums].data.clone().unwrap();
     assert_eq!(albums[0].artist_uri.as_deref(), Some("spotify:artist:ps"));
 }
+
+// ---- Sleep timer ----
+
+fn playing_at(volume: u8) -> Core {
+    let mut c = core();
+    c.handle(ui(UiAction::SetVolume { percent: volume }), 0);
+    c.handle(Input::Player(PlayerUpdate::TrackChanged(track(1))), 0);
+    c.handle(Input::Player(PlayerUpdate::Playing { position_ms: 0 }), 0);
+    c
+}
+
+#[test]
+fn sleep_timer_fades_then_pauses_and_restores_volume() {
+    let mut c = playing_at(60);
+    c.handle(ui(UiAction::OpenSleepTimer), 0);
+    assert!(c.state().sleep_picker);
+    c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
+    assert!(!c.state().sleep_picker);
+    let ends = 30 * 60_000;
+    assert_eq!(c.state().sleep_ends_ms, Some(ends));
+    assert_eq!(crate::view::build(c.state()).now.sleep_left, "30 min");
+    let player = |fx: Vec<Effect>| -> Vec<Effect> {
+        fx.into_iter()
+            .filter(|e| matches!(e, Effect::Player(_)))
+            .collect()
+    };
+    // Halfway through the fade the volume is about half.
+    let fx = player(c.handle(Input::Tick, ends - 15_000));
+    assert_eq!(
+        fx,
+        vec![Effect::Player(PlayerCommand::SetVolume { percent: 30 })]
+    );
+    // At the end: pause, then the original volume comes back for next time.
+    let fx = player(c.handle(Input::Tick, ends));
+    assert_eq!(
+        fx,
+        vec![
+            Effect::Player(PlayerCommand::Pause),
+            Effect::Player(PlayerCommand::SetVolume { percent: 60 }),
+        ]
+    );
+    assert_eq!(c.state().playback.status, PlayStatus::Paused);
+    assert_eq!(c.state().playback.volume, 60);
+    assert_eq!(c.state().sleep_ends_ms, None);
+}
+
+#[test]
+fn turning_the_timer_off_mid_fade_restores_volume() {
+    let mut c = playing_at(60);
+    c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
+    c.handle(Input::Tick, 30 * 60_000 - 10_000);
+    let fx = c.handle(ui(UiAction::SetSleepTimer(None)), 30 * 60_000 - 9_000);
+    assert!(fx.contains(&Effect::Player(PlayerCommand::SetVolume { percent: 60 })));
+    assert_eq!(c.state().sleep_ends_ms, None);
+}
+
+#[test]
+fn the_screen_dims_while_falling_asleep_to_music() {
+    let mut c = playing_at(60);
+    c.handle(ui(UiAction::SetSleepTimer(Some(60))), 0);
+    c.handle(Input::Tick, config().dim_after_ms + 1);
+    assert_eq!(c.state().display, DisplayMode::Dim);
+    // A new song doesn't light it up again.
+    c.handle(
+        Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
+        config().dim_after_ms + 2,
+    );
+    assert_eq!(c.state().display, DisplayMode::Dim);
+}

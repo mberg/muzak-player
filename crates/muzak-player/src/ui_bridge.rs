@@ -244,6 +244,16 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_open_sleep_timer(move || s(UiAction::OpenSleepTimer));
+    let s = send.clone();
+    window.on_close_sleep_timer(move || s(UiAction::CloseSleepTimer));
+    let s = send.clone();
+    window.on_set_sleep_timer(move |minutes| {
+        s(UiAction::SetSleepTimer(
+            (minutes > 0).then_some(minutes as u32),
+        ))
+    });
+    let s = send.clone();
     window.on_open_album_artist(move |uri| s(UiAction::OpenAlbumArtist(uri.to_string())));
     let s = send.clone();
     window.on_open_playing_artist(move || s(UiAction::OpenPlayingArtist));
@@ -355,6 +365,8 @@ impl Bridge {
         w.set_now_track_uri(v.now.track_uri.as_str().into());
         w.set_now_liked(v.now.liked);
         w.set_now_has_artist(v.now.has_artist);
+        w.set_sleep_left(v.now.sleep_left.as_str().into());
+        w.set_sleep_picker(v.sleep_picker);
         w.set_list_view(v.list_view);
         w.set_picker_open(v.picker.is_some());
         if let Some(picker) = &v.picker {

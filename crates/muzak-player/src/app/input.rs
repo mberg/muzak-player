@@ -121,6 +121,10 @@ pub enum UiAction {
     ToggleSaveAlbum(String),
     /// Follow the artist, or stop following.
     ToggleFollow(String),
+    /// Sleep timer: show the choices, close them, or set minutes (None turns it off).
+    OpenSleepTimer,
+    CloseSleepTimer,
+    SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.
     RenameDevice,
     FindSpeakers,

@@ -166,6 +166,13 @@ Check:
 - [ ] The Spotify app on your phone shows each change.
 - [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
 
+### Sleep timer
+
+- [ ] On the playing-song screen, the moon at the top right opens "Sleep timer" with 30 minutes (default) and 60 minutes.
+- [ ] Once set, the moon turns gold and shows the minutes left; the screen dims and turns off as usual even though music plays.
+- [ ] In the last 30 seconds the music fades out, then pauses; the next Play is at the old volume.
+- [ ] "Turn off" in the sheet cancels it.
+
 ### 6. Settings
 
 The gear at the bottom of the left rail opens Settings.

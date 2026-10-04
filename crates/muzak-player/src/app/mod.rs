@@ -21,6 +21,8 @@ const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
+/// The sleep timer fades the volume out over its last this-many milliseconds.
+const SLEEP_FADE_MS: u64 = 30_000;
 
 /// What to put back if Spotify refuses an edit, and what to reload either way.
 #[derive(Debug, Default)]
@@ -69,6 +71,8 @@ pub struct Core {
     before_search: Section,
     next_edit: u64,
     undo: HashMap<u64, Undo>,
+    /// The volume before the sleep timer started fading, to put back afterwards.
+    sleep_volume: Option<u8>,
 }
 
 impl Core {
@@ -105,6 +109,9 @@ impl Core {
             liked: HashMap::new(),
             list_view: false,
             artists_seen: HashMap::new(),
+            now_ms,
+            sleep_ends_ms: None,
+            sleep_picker: false,
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
                 device_name: cfg.device_name.clone(),
@@ -122,6 +129,7 @@ impl Core {
             before_search: Section::Albums,
             next_edit: 0,
             undo: HashMap::new(),
+            sleep_volume: None,
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -138,6 +146,7 @@ impl Core {
 
     pub fn handle(&mut self, input: Input, now_ms: u64) -> Vec<Effect> {
         let mut fx = Vec::new();
+        self.state.now_ms = now_ms;
         match input {
             Input::Ui(action) => {
                 self.wake(now_ms, &mut fx);
@@ -1072,6 +1081,13 @@ impl Core {
                 self.remember_artist(&artist_uri, name);
                 self.on_ui(UiAction::OpenArtist(artist_uri), now_ms, fx);
             }
+            UiAction::OpenSleepTimer => self.state.sleep_picker = true,
+            UiAction::CloseSleepTimer => self.state.sleep_picker = false,
+            UiAction::SetSleepTimer(minutes) => {
+                self.state.sleep_picker = false;
+                self.restore_sleep_volume(fx);
+                self.state.sleep_ends_ms = minutes.map(|m| now_ms + u64::from(m) * 60_000);
+            }
             UiAction::OpenPlayingArtist => {
                 let Some(track) = self.state.playback.track.clone() else {
                     return;
@@ -1129,7 +1145,10 @@ impl Core {
             PlayerUpdate::Playing { position_ms } => {
                 self.state.playback.status = PlayStatus::Playing;
                 self.state.playback.position_ms = position_ms;
-                self.wake(now_ms, fx);
+                // A new song shouldn't light the screen while falling asleep.
+                if self.state.sleep_ends_ms.is_none() {
+                    self.wake(now_ms, fx);
+                }
             }
             PlayerUpdate::Paused { position_ms } => {
                 self.state.playback.status = PlayStatus::Paused;
@@ -1253,11 +1272,45 @@ impl Core {
         }
     }
 
+    /// Puts back the volume the sleep timer's fade turned down.
+    fn restore_sleep_volume(&mut self, fx: &mut Vec<Effect>) {
+        if let Some(volume) = self.sleep_volume.take() {
+            self.state.playback.volume = volume;
+            fx.push(Effect::Player(PlayerCommand::SetVolume { percent: volume }));
+        }
+    }
+
+    /// Fades the volume over the timer's last 30 seconds, then pauses and restores it.
+    fn on_sleep_tick(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(ends) = self.state.sleep_ends_ms else {
+            return;
+        };
+        let left = ends.saturating_sub(now_ms);
+        let pb = &mut self.state.playback;
+        if left == 0 {
+            if matches!(pb.status, PlayStatus::Playing | PlayStatus::Loading) {
+                pb.status = PlayStatus::Paused;
+                fx.push(Effect::Player(PlayerCommand::Pause));
+            }
+            self.state.sleep_ends_ms = None;
+            self.restore_sleep_volume(fx);
+        } else if left <= SLEEP_FADE_MS && pb.status == PlayStatus::Playing {
+            let base = *self.sleep_volume.get_or_insert(pb.volume);
+            let volume = (u64::from(base) * left / SLEEP_FADE_MS) as u8;
+            if volume != pb.volume {
+                pb.volume = volume;
+                fx.push(Effect::Player(PlayerCommand::SetVolume { percent: volume }));
+            }
+        }
+    }
+
     fn on_tick(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
         if self.state.notice.is_some() && now_ms >= self.notice_until_ms {
             self.state.notice = None;
         }
-        if self.state.playback.status == PlayStatus::Playing {
+        self.on_sleep_tick(now_ms, fx);
+        // Music keeps the screen awake, except while falling asleep to it.
+        if self.state.playback.status == PlayStatus::Playing && self.state.sleep_ends_ms.is_none() {
             self.last_activity_ms = now_ms;
         }
         let idle = now_ms.saturating_sub(self.last_activity_ms);

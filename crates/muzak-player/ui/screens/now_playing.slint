@@ -26,6 +26,9 @@ export component NowPlayingScreen inherits Rectangle {
     callback add();
     callback toggle-like();
     callback open-artist();
+    callback open-sleep();
+    // Minutes left on the sleep timer, as "28 min"; empty when off.
+    in property <string> sleep-left;
     // The artist name opens the artist's page.
     in property <bool> has-artist;
     in property <bool> liked;
@@ -176,6 +179,40 @@ export component NowPlayingScreen inherits Rectangle {
                     changed(v) => { root.set-volume(Math.round(v * 100)); }
                 }
             }
+        }
+    }
+    // Sleep timer, top right across from Back.
+    Rectangle {
+        x: root.width - self.width - 16px;
+        y: 20px;
+        width: moon-row.preferred-width;
+        height: Theme.touch;
+        border-radius: Theme.touch / 2;
+        background: moon-touch.pressed ? Theme.surface-hi : transparent;
+        accessible-role: button;
+        accessible-label: "Sleep timer";
+        accessible-action-default => { root.open-sleep(); }
+        moon-row := HorizontalLayout {
+            padding-left: 16px;
+            padding-right: root.sleep-left == "" ? 16px : 20px;
+            spacing: 8px;
+            Image {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../icons/moon.svg");
+                width: 30px;
+                height: 30px;
+                colorize: root.sleep-left == "" ? Theme.text : Theme.accent;
+            }
+            if root.sleep-left != "": Text {
+                text: root.sleep-left;
+                color: Theme.accent;
+                font-size: Theme.font-small;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+        }
+        moon-touch := TouchArea {
+            clicked => { root.open-sleep(); }
         }
     }
 }

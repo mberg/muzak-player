@@ -154,6 +154,8 @@ pub struct NowView {
     pub track_uri: String,
     /// The artist name can open the artist's page.
     pub has_artist: bool,
+    /// Minutes left on the sleep timer, as "28 min"; empty when it's off.
+    pub sleep_left: String,
     /// The playing song is in Liked Songs.
     pub liked: bool,
     pub title: String,
@@ -192,6 +194,8 @@ pub struct View {
     pub keyboard: bool,
     /// Collection screens show a list instead of tiles.
     pub list_view: bool,
+    /// The sleep timer's choices are on screen.
+    pub sleep_picker: bool,
     pub settings: SettingsView,
 }
 
@@ -261,6 +265,7 @@ pub fn build(state: &AppState) -> View {
         }),
         keyboard,
         list_view: state.list_view,
+        sleep_picker: state.sleep_picker,
         settings: settings(state),
     }
 }
@@ -659,6 +664,11 @@ fn now(state: &AppState) -> NowView {
     NowView {
         track_uri: pb.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default(),
         has_artist: pb.track.as_ref().is_some_and(|t| t.artist_uri.is_some()),
+        sleep_left: match state.sleep_ends_ms {
+            // The core's clock isn't in state, so the view counts from the last tick it saw.
+            Some(ends) => format!("{} min", ends.saturating_sub(state.now_ms).div_ceil(60_000)),
+            None => String::new(),
+        },
         liked: pb
             .track
             .as_ref()

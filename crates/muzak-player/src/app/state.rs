@@ -200,4 +200,10 @@ pub struct AppState {
     pub device: DeviceSettings,
     /// Artists opened from a song, so their page has a name before it loads elsewhere.
     pub artists_seen: HashMap<String, Collection>,
+    /// The core's clock at the last input, so the view can show times left.
+    pub now_ms: u64,
+    /// When the sleep timer pauses playback, if one is set.
+    pub sleep_ends_ms: Option<u64>,
+    /// The sleep timer's choices are on screen.
+    pub sleep_picker: bool,
 }

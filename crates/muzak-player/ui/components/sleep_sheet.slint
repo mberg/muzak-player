@@ -1,0 +1,72 @@
+import { Theme } from "../theme.slint";
+
+component Choice inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    callback clicked();
+    height: 72px;
+    border-radius: 36px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : (touch.pressed ? Theme.surface-hi : Theme.bg);
+    Text {
+        text: root.label;
+        color: root.primary ? Theme.accent-text : Theme.text;
+        font-size: 22px;
+        font-weight: 800;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Sleep timer: stop the music after 30 or 60 minutes.
+export component SleepSheet inherits Rectangle {
+    // Minutes left, as "28 min", when a timer is running.
+    in property <string> running;
+    callback pick(int);
+    callback turn-off();
+    callback close();
+    background: #000000b0;
+    TouchArea {
+        clicked => { root.close(); }
+    }
+    Rectangle {
+        width: 440px;
+        height: col.preferred-height;
+        border-radius: Theme.radius;
+        background: Theme.surface;
+        TouchArea {}
+        col := VerticalLayout {
+            padding: 24px;
+            spacing: 14px;
+            Text {
+                text: "Sleep timer";
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: 800;
+            }
+            Text {
+                text: root.running != "" ? "Music stops in " + root.running + "." : "Music fades out and stops.";
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+            }
+            Choice {
+                label: "30 minutes";
+                primary: true;
+                clicked => { root.pick(30); }
+            }
+            Choice {
+                label: "60 minutes";
+                clicked => { root.pick(60); }
+            }
+            if root.running != "": Choice {
+                label: "Turn off";
+                clicked => { root.turn-off(); }
+            }
+        }
+    }
+}
