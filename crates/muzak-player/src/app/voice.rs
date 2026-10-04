@@ -147,6 +147,71 @@ impl Core {
                 let minutes = (minutes > 0).then_some(minutes);
                 self.on_ui(UiAction::SetSleepTimer(minutes), now_ms, fx);
             }
+            VoiceCommand::LikeSong => {
+                let Some(track) = self.state.playback.track.clone() else {
+                    self.notify(Notice::Voice("Nothing is playing".into()), now_ms);
+                    return;
+                };
+                // The same path as the add sheet's heart, which also says if it's already there.
+                self.state.picker = Some(track.uri);
+                self.on_ui(UiAction::PickLiked, now_ms, fx);
+            }
+            VoiceCommand::SaveAlbum => {
+                let Some(album_uri) = self
+                    .state
+                    .playback
+                    .track
+                    .as_ref()
+                    .and_then(|t| t.album_uri.clone())
+                else {
+                    self.notify(Notice::Voice("Nothing is playing".into()), now_ms);
+                    return;
+                };
+                if self.in_library(&album_uri, Section::Albums) {
+                    self.notify(
+                        Notice::AlreadyIn(Section::Albums.title().to_string()),
+                        now_ms,
+                    );
+                } else {
+                    // Says "Added to Albums" itself.
+                    self.on_ui(UiAction::ToggleSaveAlbum(album_uri), now_ms, fx);
+                }
+            }
+            VoiceCommand::AddToPlaylist {
+                uri: playlist_uri,
+                heard,
+            } => {
+                let Some(track) = self.state.playback.track.clone() else {
+                    self.notify(Notice::Voice("Nothing is playing".into()), now_ms);
+                    return;
+                };
+                // The playlist whose name was said: Gemini's pick if it matches, otherwise any
+                // of the listener's own playlists that does.
+                let named = |uri: &str| {
+                    self.editable(uri)
+                        && self
+                            .playlist(uri)
+                            .is_some_and(|p| names_match(&heard, &p.name))
+                };
+                let playlist_uri = if named(&playlist_uri) {
+                    Some(playlist_uri)
+                } else {
+                    self.state
+                        .sections
+                        .get(&Section::Playlists)
+                        .and_then(|slot| slot.data.as_ref())
+                        .and_then(|list| list.iter().find(|p| named(&p.uri)))
+                        .map(|p| p.uri.clone())
+                };
+                let Some(playlist_uri) = playlist_uri else {
+                    // No playlist was named ("add this song"): heart it.
+                    self.state.picker = Some(track.uri);
+                    self.on_ui(UiAction::PickLiked, now_ms, fx);
+                    return;
+                };
+                self.state.picker = Some(track.uri);
+                self.on_ui(UiAction::PickPlaylist(playlist_uri), now_ms, fx);
+            }
             VoiceCommand::Louder | VoiceCommand::Quieter | VoiceCommand::SetVolume(_) => {}
         }
     }
@@ -259,5 +324,56 @@ impl Core {
             volume: self.state.voice.ducked_from.unwrap_or(pb.volume),
             items,
         }
+    }
+}
+
+/// Whether what the listener said is the playlist's name, allowing for small mishearings.
+fn names_match(heard: &str, name: &str) -> bool {
+    let clean = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect()
+    };
+    let (heard, name) = (clean(heard), clean(name));
+    if heard.is_empty() || name.is_empty() {
+        return false;
+    }
+    // Numbers must match exactly: "playlist 2" is not "Playlist 1".
+    let digits = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_digit()).collect() };
+    if digits(&heard) != digits(&name) {
+        return false;
+    }
+    if heard.contains(&name) || name.contains(&heard) {
+        return heard.len() * 2 >= name.len();
+    }
+    // Edit distance within a quarter of the name.
+    let (a, b): (Vec<char>, Vec<char>) = (heard.chars().collect(), name.chars().collect());
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut cur = vec![i; b.len() + 1];
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        prev = cur;
+    }
+    prev[b.len()] * 4 <= b.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::names_match;
+
+    #[test]
+    fn spoken_playlist_names_match_loosely() {
+        assert!(names_match("road trip", "Road Trip"));
+        assert!(names_match("the road trip", "Road Trip!"));
+        assert!(names_match("rode trip", "Road Trip"));
+        assert!(!names_match("", "Road Trip"));
+        assert!(!names_match("party", "Road Trip"));
+        assert!(!names_match("playlist 2", "Playlist 1"));
+        assert!(names_match("mix 2", "Mix 2"));
+        assert!(!names_match("road", "Road Trip Songs For The Long Drive"));
     }
 }

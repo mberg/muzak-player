@@ -58,6 +58,16 @@ pub enum VoiceCommand {
     SetVolume(u8),
     /// Minutes; 0 turns the sleep timer off.
     SleepTimer(u32),
+    /// Heart the playing song: add it to Liked Songs.
+    LikeSong,
+    /// Save the playing song's album to the library.
+    SaveAlbum,
+    /// Add the playing song to one of the listener's own playlists, by URI, with the name the
+    /// listener said, which must match it.
+    AddToPlaylist {
+        uri: String,
+        heard: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -44,6 +44,12 @@ fn instructions(context: &VoiceContext) -> String {
          Use what you know: for \"Paul Simon's first album\" search for that album's real title \
          and artist.\n\
          - For pause, resume, skipping, going back, louder or quieter, call player_control.\n\
+         - \"Add\", \"heart\", \"like\" and \"save\" all mean the same: for the playing \
+         song (\"heart this\", \"add this song\") call save_playing with song; for its album \
+         (\"save the album\", \"add this album\") call save_playing with album. To put the \
+         playing song in one of the listener's playlists (\"add this to Road Trip\"), call \
+         add_to_playlist with that playlist's id, but only when a playlist is named; with no \
+         playlist named, \"add this\" means save_playing.\n\
          - If the audio isn't a request for the player, or you can't tell what was asked, \
          call not_understood.\n\n",
     );
@@ -118,6 +124,27 @@ fn functions() -> Value {
             }
         },
         {
+            "name": "save_playing",
+            "description": "Heart the playing song (add it to Liked Songs), or save its album to the library.",
+            "parameters": {
+                "type": "object",
+                "properties": {"what": {"type": "string", "enum": ["song", "album"]}},
+                "required": ["what"]
+            }
+        },
+        {
+            "name": "add_to_playlist",
+            "description": "Add the playing song to a playlist the listener named. Never guess a playlist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "The playlist's id from the library list."},
+                    "heard_name": {"type": "string", "description": "The playlist name exactly as the listener said it; empty if they didn't say one."}
+                },
+                "required": ["id", "heard_name"]
+            }
+        },
+        {
             "name": "not_understood",
             "description": "The audio isn't a request for the player, or it's unclear.",
             "parameters": {"type": "object", "properties": {}}
@@ -180,6 +207,19 @@ pub fn parse_reply(reply: &Value) -> Option<VoiceCommand> {
         }),
         "set_volume" => Some(VoiceCommand::SetVolume(number("percent")?.min(100) as u8)),
         "sleep_timer" => Some(VoiceCommand::SleepTimer(number("minutes")?.min(240))),
+        "save_playing" => match text("what")? {
+            "song" => Some(VoiceCommand::LikeSong),
+            "album" => Some(VoiceCommand::SaveAlbum),
+            _ => None,
+        },
+        "add_to_playlist" => Some(match text("heard_name") {
+            Some(heard) => VoiceCommand::AddToPlaylist {
+                uri: text("id")?.to_string(),
+                heard: heard.to_string(),
+            },
+            // "Add this" with no playlist named means heart it.
+            None => VoiceCommand::LikeSong,
+        }),
         _ => None,
     }
 }
@@ -327,7 +367,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            6
+            8
         );
     }
 
@@ -358,6 +398,40 @@ mod tests {
         assert_eq!(
             parse_reply(&reply("sleep_timer", json!({"minutes": 30.0}))),
             Some(VoiceCommand::SleepTimer(30))
+        );
+    }
+
+    #[test]
+    fn saving_replies_become_commands() {
+        assert_eq!(
+            parse_reply(&reply("save_playing", json!({"what": "song"}))),
+            Some(VoiceCommand::LikeSong)
+        );
+        assert_eq!(
+            parse_reply(&reply("save_playing", json!({"what": "album"}))),
+            Some(VoiceCommand::SaveAlbum)
+        );
+        assert_eq!(
+            parse_reply(&reply(
+                "add_to_playlist",
+                json!({"id": "spotify:playlist:road", "heard_name": "road trip"})
+            )),
+            Some(VoiceCommand::AddToPlaylist {
+                uri: "spotify:playlist:road".into(),
+                heard: "road trip".into()
+            })
+        );
+        assert_eq!(
+            parse_reply(&reply(
+                "add_to_playlist",
+                json!({"id": "spotify:playlist:road", "heard_name": ""})
+            )),
+            Some(VoiceCommand::LikeSong),
+            "no playlist named"
+        );
+        assert_eq!(
+            parse_reply(&reply("save_playing", json!({"what": "artist"}))),
+            None
         );
     }
 
@@ -404,6 +478,16 @@ mod tests {
                 Some(VoiceCommand::Play("spotify:playlist:road".into())),
             ),
             ("skip this song", Some(VoiceCommand::Next)),
+            ("heart this", Some(VoiceCommand::LikeSong)),
+            ("add this song", Some(VoiceCommand::LikeSong)),
+            ("save the album", Some(VoiceCommand::SaveAlbum)),
+            (
+                "add this to road trip",
+                Some(VoiceCommand::AddToPlaylist {
+                    uri: "spotify:playlist:road".into(),
+                    heard: "road trip".into(),
+                }),
+            ),
             ("what's the capital of france", None),
         ];
         let gemini = Gemini::new(backend, std::env::var("GEMINI_MODEL").ok());
@@ -425,7 +509,24 @@ mod tests {
                 .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
                 .collect();
             let started = std::time::Instant::now();
-            let got = gemini.ask(&context(), &audio).await.unwrap();
+            let got = gemini
+                .ask(&context(), &audio)
+                .await
+                .unwrap()
+                .map(|c| match c {
+                    // As the player resolves it: a playlist only when its name was said (in
+                    // any case), otherwise a heart.
+                    VoiceCommand::AddToPlaylist { uri, heard }
+                        if heard.to_lowercase().contains("road") =>
+                    {
+                        VoiceCommand::AddToPlaylist {
+                            uri,
+                            heard: heard.to_lowercase(),
+                        }
+                    }
+                    VoiceCommand::AddToPlaylist { .. } => VoiceCommand::LikeSong,
+                    c => c,
+                });
             println!("{said:?} -> {got:?} in {:?}", started.elapsed());
             assert_eq!(got, want, "{said}");
         }

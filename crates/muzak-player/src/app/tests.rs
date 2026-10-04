@@ -1960,3 +1960,96 @@ fn the_microphone_button_starts_listening_once() {
     assert!(!crate::view::build(c.state()).voice_enabled);
     assert!(c.handle(ui(UiAction::Listen), 0).is_empty());
 }
+
+#[test]
+fn voice_hearts_the_song_saves_the_album_and_adds_to_a_playlist() {
+    let mut c = playing_at(60);
+    c.handle(
+        Input::Library(LibraryUpdate::Account(Account {
+            id: "mum".into(),
+            name: "Mum".into(),
+        })),
+        0,
+    );
+    let mut mine = playlist(1);
+    mine.owner_id = Some("mum".into());
+    let mut theirs = playlist(2);
+    theirs.owner_id = Some("someone-else".into());
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![mine, theirs],
+        }),
+        0,
+    );
+    let edits = |fx: &[Effect]| -> Vec<PlaylistEdit> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::Library(LibraryRequest::Edit { edit, .. }) => Some(edit.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::LikeSong)), 0);
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::Like {
+            track_uri: "spotify:track:t1".into()
+        }]
+    );
+    assert_eq!(banner(&c).as_deref(), Some("Added to Liked Songs"));
+    // Hearting it again doesn't unlike it.
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::LikeSong)), 0);
+    assert!(edits(&fx).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("Already in Liked Songs"));
+
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::SaveAlbum)), 0);
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::SaveAlbum {
+            album_uri: "spotify:album:a1".into()
+        }]
+    );
+    assert_eq!(banner(&c).as_deref(), Some("Added to Albums"));
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::SaveAlbum)), 0);
+    assert!(edits(&fx).is_empty(), "saving it again doesn't remove it");
+
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p1".into(),
+            heard: "playlist 1".into(),
+        })),
+        0,
+    );
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::Add {
+            playlist_uri: "spotify:playlist:p1".into(),
+            track_uri: "spotify:track:t1".into()
+        }]
+    );
+    // No playlist named ("add this song"): Gemini's guess is ignored and the song is hearted,
+    // which it already is.
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p1".into(),
+            heard: "song".into(),
+        })),
+        0,
+    );
+    assert!(edits(&fx).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("Already in Liked Songs"));
+    // Someone else's playlist can't be changed, even by name.
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p2".into(),
+            heard: "playlist 2".into(),
+        })),
+        0,
+    );
+    assert!(
+        !edits(&fx)
+            .iter()
+            .any(|e| matches!(e, PlaylistEdit::Add { .. }))
+    );
+}
