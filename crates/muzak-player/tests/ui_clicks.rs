@@ -81,11 +81,13 @@ fn ui_clicks() {
         assert_eq!(theme.get(), 1);
 
         // Scroll Settings down like a person would, then pick the sleep timer length.
-        window.window().dispatch_event(WindowEvent::PointerScrolled {
-            position: LogicalPosition::new(400.0, 300.0),
-            delta_x: 0.0,
-            delta_y: -400.0,
-        });
+        window
+            .window()
+            .dispatch_event(WindowEvent::PointerScrolled {
+                position: LogicalPosition::new(400.0, 300.0),
+                delta_x: 0.0,
+                delta_y: -400.0,
+            });
         slint::platform::update_timers_and_animations();
         let length = Rc::new(Cell::new(0));
         let l = length.clone();
@@ -94,6 +96,34 @@ fn ui_clicks() {
             .single_click(PointerEventButton::Left)
             .await;
         assert_eq!(length.get(), 60);
+
+        // Recent: the Songs chip, then a song plays.
+        window.set_keyboard_open(false);
+        window.set_screen(ScreenKind::Grid);
+        window.set_recent_chips(true);
+        let songs_on = Rc::new(Cell::new(false));
+        let so = songs_on.clone();
+        window.on_set_recent_songs(move |b| so.set(b));
+        visible_by_label(&window, "Songs")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(songs_on.get(), "the Songs chip switches Recent to songs");
+        window.set_recent_songs(true);
+        window.set_recent_song_rows(slint::ModelRc::new(slint::VecModel::from(vec![TileData {
+            uri: "0".into(),
+            title: "Graceland".into(),
+            subtitle: "Paul Simon · 12 min ago".into(),
+            ..Default::default()
+        }])));
+        let played = Rc::new(Cell::new(-1));
+        let pl = played.clone();
+        window.on_play_recent(move |i| pl.set(i));
+        visible_by_label(&window, "Graceland")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(played.get(), 0);
+        window.set_recent_chips(false);
+        window.set_recent_songs(false);
 
         // Keyboard: Shift makes the next letter uppercase, then turns itself off.
         window.set_keyboard_open(true);

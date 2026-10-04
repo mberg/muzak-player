@@ -166,6 +166,13 @@ Check:
 - [ ] The Spotify app on your phone shows each change.
 - [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
 
+### Recent and play history
+
+- [ ] Every song played on this player is logged in `dev/state/history.db` (SQLite), with how long it actually played.
+- [ ] Recent → "Albums & playlists" shows where recent songs were played from, newest first; songs skipped within 30 seconds don't count.
+- [ ] Recent → "Songs" lists recent songs with when they played ("12 min ago", "Yesterday"); tapping one plays it from where it was heard, with no Spotify search.
+- [ ] A player with no history yet shows Spotify's recently-played list until it has some.
+
 ### Sleep timer
 
 - [ ] On the playing-song screen, tapping the moon at the end of the volume row starts the sleep timer straight away: 30 minutes unless Settings says 60.

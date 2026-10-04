@@ -80,6 +80,7 @@ struct Bridge {
     search_rows: Rc<VecModel<SearchRowData>>,
     artist_albums: Rc<VecModel<TileData>>,
     picker_playlists: Rc<VecModel<TileData>>,
+    recent_songs: Rc<VecModel<TileData>>,
     last: Option<AppState>,
 }
 
@@ -101,6 +102,8 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
     let artist_albums = Rc::new(VecModel::<TileData>::default());
     window.set_search_rows(ModelRc::from(search_rows.clone()));
     window.set_artist_albums(ModelRc::from(artist_albums.clone()));
+    let recent_songs = Rc::new(VecModel::<TileData>::default());
+    window.set_recent_song_rows(ModelRc::from(recent_songs.clone()));
     let picker_playlists = Rc::new(VecModel::<TileData>::default());
     window.set_picker_playlists(ModelRc::from(picker_playlists.clone()));
     let bridge = Bridge {
@@ -117,6 +120,7 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
         search_rows,
         artist_albums,
         picker_playlists,
+        recent_songs,
         last: None,
     };
     BRIDGE.with(|cell| *cell.borrow_mut() = Some(bridge));
@@ -246,6 +250,10 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_set_recent_songs(move |songs| s(UiAction::SetRecentSongs(songs)));
+    let s = send.clone();
+    window.on_play_recent(move |i| s(UiAction::PlayRecentSong(i.max(0) as usize)));
+    let s = send.clone();
     window.on_set_theme(move |i| s(UiAction::SetTheme(i.max(0) as u32)));
     let s = send.clone();
     window.on_open_sleep_timer(move || s(UiAction::TapSleepTimer));
@@ -366,6 +374,29 @@ impl Bridge {
         w.set_now_has_artist(v.now.has_artist);
         w.set_sleep_left(v.now.sleep_left.as_str().into());
         w.set_list_view(v.list_view);
+        w.set_recent_chips(v.recent_chips);
+        w.set_recent_songs(v.recent_songs);
+        if v.recent_songs && v.recent_chips {
+            let now = chrono::Local::now();
+            let rows = v
+                .recent_song_rows
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let image = self.images.get(&r.image_url);
+                    TileData {
+                        // The index into history, for PlayRecentSong.
+                        uri: i.to_string().into(),
+                        title: r.title.as_str().into(),
+                        subtitle: format!("{} · {}", r.artists, played_ago(r.played_at, now))
+                            .into(),
+                        has_image: image.is_some(),
+                        image: image.unwrap_or_default(),
+                    }
+                })
+                .collect();
+            sync(&self.recent_songs, rows);
+        }
         w.global::<Theme>().set_scheme(v.theme as i32);
         w.set_picker_open(v.picker.is_some());
         if let Some(picker) = &v.picker {
@@ -446,6 +477,26 @@ impl Bridge {
 }
 
 /// Every image URL the view shows: grid tiles, the detail header and the now-playing art.
+/// "just now", "12 min ago", "3 h ago", "Yesterday", or a date like "Oct 2".
+fn played_ago(played_at: i64, now: chrono::DateTime<chrono::Local>) -> String {
+    use chrono::TimeZone;
+    let Some(then) = chrono::Local.timestamp_opt(played_at, 0).single() else {
+        return String::new();
+    };
+    let minutes = (now - then).num_minutes();
+    if minutes < 1 {
+        "just now".into()
+    } else if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 24 * 60 && then.date_naive() == now.date_naive() {
+        format!("{} h ago", minutes / 60)
+    } else if now.date_naive().pred_opt() == Some(then.date_naive()) {
+        "Yesterday".into()
+    } else {
+        then.format("%b %-d").to_string()
+    }
+}
+
 fn search_row_data(images: &mut Images, r: &SearchRowView) -> SearchRowData {
     let image = images.get(&r.image_url);
     SearchRowData {

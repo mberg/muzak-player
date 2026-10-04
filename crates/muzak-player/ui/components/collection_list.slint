@@ -5,6 +5,9 @@ import { TileData } from "../types.slint";
 component CollectionRow inherits Rectangle {
     in property <TileData> data;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.data.title;
+    accessible-action-default => { root.clicked(); }
     height: 68px;
     border-radius: 10px;
     background: touch.pressed ? Theme.surface-hi : transparent;
