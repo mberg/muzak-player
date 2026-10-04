@@ -24,7 +24,7 @@ Get the code:
 ```bash
 git clone https://github.com/mberg/muzak-player.git
 cd muzak-player
-cargo test --workspace       # expect 79 passed
+cargo test --workspace       # expect 82 passed
 ```
 
 The first build takes a few minutes. Later builds are quick.
@@ -84,13 +84,28 @@ cargo run -p muzak-setup -- probe --state-dir secrets/dev
 - [ ] Each line shows `HTTP 200`. At least one of the two "playlist items" lines must be 200.
 - [ ] The last line reads `All endpoints work with librespot tokens.`
 
-**If probe fails** (401 or 403): stop here and send me the output. The fix is a code change: the player would use your own Spotify developer app for library requests. This is "Contingency A" in the plan.
+**If probe fails** with a 403 from Spotify's token service ("Invalid request") or 401/403 on the endpoints, Spotify is refusing to give the librespot session a Web API token. Playback still works, but the library has to come through your own Spotify developer app instead. This is "Contingency A" in the plan:
+
+1. Create an app at https://developer.spotify.com/dashboard:
+   - Redirect URI: `http://127.0.0.1:8898/login`
+   - Tick the "Web API" box.
+   - Under "User Management", add the email of each Spotify account that will use the player (the kids' accounts), or the probe below returns 403.
+2. Copy the app's Client ID, sign in again through the app, then probe again:
+   ```bash
+   cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
+   cargo run -p muzak-setup -- probe --state-dir secrets/dev
+   ```
+   This saves `secrets/dev/web-auth.json`. The probe uses it automatically and should end with `All endpoints work with developer-app tokens.`
+3. In step 3 below, also copy `web-auth.json` into `dev/state/`. The player uses it when it is there.
+
+For the Pi, run `auth-web` with `--state-dir secrets/<kid>` as well. `scripts/deploy.sh` copies `web-auth.json` to the Pi when it exists.
 
 ### 3. Real playback on the Mac
 
 ```bash
 mkdir -p dev/state/librespot
 cp secrets/dev/librespot/credentials.json dev/state/librespot/
+cp secrets/dev/web-auth.json dev/state/ 2>/dev/null   # only after Contingency A
 cargo run -p muzak-player
 ```
 

@@ -18,5 +18,9 @@ if [ -n "$SECRETS" ]; then
     CRED="$SECRETS/librespot/credentials.json"
     [ -f "$CRED" ] || { echo "Missing $CRED" >&2; exit 1; }
     ssh "$HOST" 'sudo install -m 600 -o muzak -g muzak /dev/stdin /var/lib/muzak/librespot/credentials.json' < "$CRED"
+    WEB="$SECRETS/web-auth.json"
+    if [ -f "$WEB" ]; then
+        ssh "$HOST" 'sudo install -m 600 -o muzak -g muzak /dev/stdin /var/lib/muzak/web-auth.json' < "$WEB"
+    fi
 fi
 ssh "$HOST" 'sudo systemctl restart muzak-player && sleep 3 && systemctl --no-pager --lines=20 status muzak-player'
