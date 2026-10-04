@@ -110,6 +110,8 @@ pub enum PlayerCommand {
     Load {
         context_uri: String,
         start_index: Option<u32>,
+        /// When set, playback starts at this track instead of `start_index`.
+        start_uri: Option<String>,
         shuffle: bool,
     },
     Play,

@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub use input::*;
 pub use state::*;
 
-use crate::model::{LIKED_URI, Section};
+use crate::model::{LIKED_URI, Section, Track};
 
 /// How long a notice stays on screen.
 const NOTICE_MS: u64 = 4_000;
@@ -22,13 +22,23 @@ pub struct CoreConfig {
     pub initial_volume: u8,
 }
 
+/// Where a newly loaded context starts playing.
+#[derive(Debug, Clone, PartialEq)]
+enum Start {
+    /// Let shuffle pick.
+    Shuffled,
+    Index(u32),
+    /// A specific song, e.g. one picked from search results.
+    Track(Track),
+}
+
 /// The app's state machine. Pure: no I/O, time is passed in.
 pub struct Core {
     state: AppState,
     cfg: CoreConfig,
     last_activity_ms: u64,
     notice_until_ms: u64,
-    last_load: Option<((String, Option<u32>, bool), u64)>,
+    last_load: Option<((String, Start, bool), u64)>,
 }
 
 impl Core {
@@ -121,7 +131,11 @@ impl Core {
                 }
             }
             UiAction::PlayCollection { uri, shuffle } => {
-                let start = if shuffle { None } else { Some(0) };
+                let start = if shuffle {
+                    Start::Shuffled
+                } else {
+                    Start::Index(0)
+                };
                 self.start_playback(uri, start, shuffle, now_ms, fx);
             }
             UiAction::PlayTrack {
@@ -129,7 +143,13 @@ impl Core {
                 index,
             } => {
                 let shuffle = self.state.playback.shuffle;
-                self.start_playback(collection_uri, Some(index as u32), shuffle, now_ms, fx);
+                self.start_playback(
+                    collection_uri,
+                    Start::Index(index as u32),
+                    shuffle,
+                    now_ms,
+                    fx,
+                );
             }
             UiAction::TogglePlay => {
                 let pb = &mut self.state.playback;
@@ -322,12 +342,12 @@ impl Core {
     fn start_playback(
         &mut self,
         uri: String,
-        start_index: Option<u32>,
+        start: Start,
         shuffle: bool,
         now_ms: u64,
         fx: &mut Vec<Effect>,
     ) {
-        let key = (uri.clone(), start_index, shuffle);
+        let key = (uri.clone(), start.clone(), shuffle);
         if let Some((last_key, at)) = &self.last_load {
             if *last_key == key && now_ms.saturating_sub(*at) < DOUBLE_TAP_MS {
                 return;
@@ -337,14 +357,20 @@ impl Core {
         if !self.state.online {
             self.notify(Notice::NoInternet, now_ms);
         }
-        let first = start_index.and_then(|index| {
-            self.state
-                .tracks
-                .get(&uri)
-                .and_then(|slot| slot.data.as_ref())
-                .and_then(|tracks| tracks.get(index as usize))
-                .cloned()
-        });
+        let (start_index, start_uri, first) = match start {
+            Start::Shuffled => (None, None, None),
+            Start::Index(index) => (
+                Some(index),
+                None,
+                self.state
+                    .tracks
+                    .get(&uri)
+                    .and_then(|slot| slot.data.as_ref())
+                    .and_then(|tracks| tracks.get(index as usize))
+                    .cloned(),
+            ),
+            Start::Track(track) => (None, Some(track.uri.clone()), Some(track)),
+        };
         let pb = &mut self.state.playback;
         pb.context_uri = Some(uri.clone());
         pb.track = first;
@@ -354,6 +380,7 @@ impl Core {
         fx.push(Effect::Player(PlayerCommand::Load {
             context_uri: uri,
             start_index,
+            start_uri,
             shuffle,
         }));
         self.navigate(Screen::NowPlaying);
@@ -375,6 +402,7 @@ impl Core {
             fx.push(Effect::Player(PlayerCommand::Load {
                 context_uri: uri.clone(),
                 start_index: None,
+                start_uri: pb.track.as_ref().map(|t| t.uri.clone()),
                 shuffle: pb.shuffle,
             }));
         }

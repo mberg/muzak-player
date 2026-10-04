@@ -10,6 +10,7 @@ pub enum Section {
     Albums,
     Liked,
     Recent,
+    Search,
 }
 
 impl Section {
@@ -19,6 +20,7 @@ impl Section {
             Section::Albums => 1,
             Section::Liked => 2,
             Section::Recent => 3,
+            Section::Search => 4,
         }
     }
 
@@ -27,6 +29,7 @@ impl Section {
             1 => Section::Albums,
             2 => Section::Liked,
             3 => Section::Recent,
+            4 => Section::Search,
             _ => Section::Playlists,
         }
     }
@@ -37,6 +40,7 @@ impl Section {
             Section::Albums => "Albums",
             Section::Liked => "Liked Songs",
             Section::Recent => "Recent",
+            Section::Search => "Search",
         }
     }
 
@@ -46,6 +50,7 @@ impl Section {
             Section::Albums => "section-albums",
             Section::Liked => "section-liked",
             Section::Recent => "section-recent",
+            Section::Search => "section-search",
         }
     }
 }
@@ -55,6 +60,7 @@ pub enum CollectionKind {
     Playlist,
     Album,
     Liked,
+    Artist,
 }
 
 /// Something you can open and play as a whole: a playlist, an album, or Liked Songs.
@@ -77,6 +83,18 @@ pub struct Track {
     pub album: String,
     pub image_url: Option<String>,
     pub duration_ms: u32,
+    /// The album this track is on, used to play a single song in its album.
+    #[serde(default)]
+    pub album_uri: Option<String>,
+}
+
+/// Catalog search results. Library matches are computed from state by the view.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SearchResults {
+    pub tracks: Vec<Track>,
+    pub artists: Vec<Collection>,
+    pub albums: Vec<Collection>,
+    pub playlists: Vec<Collection>,
 }
 
 /// The Spotify account the library is read from.

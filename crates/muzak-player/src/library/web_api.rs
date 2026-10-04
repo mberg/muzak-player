@@ -228,18 +228,26 @@ fn album_collection(a: &AlbumObj) -> Collection {
 }
 
 /// Only real Spotify tracks; local files and podcast episodes are skipped.
-fn to_track(t: TrackObj, album_fallback: Option<(&str, Option<&str>)>) -> Option<Track> {
+/// `album_fallback` is (uri, name, image) for tracks listed under an album, which omit it.
+fn to_track(t: TrackObj, album_fallback: Option<(&str, &str, Option<&str>)>) -> Option<Track> {
     let uri = t.uri?;
     if t.is_local || !uri.starts_with("spotify:track:") {
         return None;
     }
-    let (album, image_url) = match &t.album {
+    let (album_uri, album, image_url) = match &t.album {
         Some(a) => (
+            a.uri.clone(),
             a.name.clone().unwrap_or_default(),
             pick_image(images(&a.images)),
         ),
         None => album_fallback
-            .map(|(name, image)| (name.to_string(), image.map(str::to_string)))
+            .map(|(uri, name, image)| {
+                (
+                    Some(uri.to_string()),
+                    name.to_string(),
+                    image.map(str::to_string),
+                )
+            })
             .unwrap_or_default(),
     };
     Some(Track {
@@ -249,6 +257,7 @@ fn to_track(t: TrackObj, album_fallback: Option<(&str, Option<&str>)>) -> Option
         album,
         image_url,
         duration_ms: t.duration_ms,
+        album_uri,
     })
 }
 
@@ -413,7 +422,7 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
         }
         Ok(raw
             .into_iter()
-            .filter_map(|t| to_track(t, Some((&album.name, image.as_deref()))))
+            .filter_map(|t| to_track(t, Some((&album.uri, &album.name, image.as_deref()))))
             .collect())
     }
 }
@@ -425,6 +434,7 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
             Section::Albums => self.albums().await,
             Section::Recent => self.recent().await,
             Section::Liked => Ok(vec![liked_collection()]),
+            Section::Search => Ok(Vec::new()),
         }
     }
 

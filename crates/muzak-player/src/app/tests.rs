@@ -31,6 +31,7 @@ pub(crate) fn track(n: u32) -> Track {
         album: "Album".into(),
         image_url: None,
         duration_ms: 180_000,
+        album_uri: Some("spotify:album:a1".into()),
     }
 }
 
@@ -221,6 +222,7 @@ fn load(uri: &str, start: Option<u32>, shuffle: bool) -> Effect {
     Effect::Player(PlayerCommand::Load {
         context_uri: uri.into(),
         start_index: start,
+        start_uri: None,
         shuffle,
     })
 }

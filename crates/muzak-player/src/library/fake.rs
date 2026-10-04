@@ -83,6 +83,8 @@ fn fake_tracks(collection_uri: &str, collection: &str, n: u32) -> Vec<Track> {
             image_url: None,
             // Short tracks so auto-advance is visible during UI work.
             duration_ms: 20_000 + i * 1_000,
+            // The fake player only knows collections, so a single song plays in its own one.
+            album_uri: Some(collection_uri.to_string()),
         })
         .collect()
 }
@@ -110,6 +112,7 @@ impl LibrarySource for FakeSource {
                 recent
             }
             Section::Liked => vec![liked_collection()],
+            Section::Search => Vec::new(),
         })
     }
 
