@@ -81,9 +81,11 @@ The official apps and third-party players (ShelfPlayer and Plappa on iOS, Lissen
 - **Token expiry.** Refresh tokens last ~7 days by default; a player left off longer than that needs signing in again. The settings screen will say so; an API key avoids it.
 - **API drift.** The docs are stale and auth changed twice in a year; the client is written against the server source and tested with recorded responses.
 
-## Decisions for the user
+## Decisions (2026-10-04)
 
-1. Sign-in: on the device (username/password with the keyboard), from the Mac (`muzak-setup abs-login`), or both? Recommendation: both, device first.
-2. One ABS user per player (each person's own progress), or a shared household user?
-3. Skip interval: 30 s both ways, or 15 back / 30 forward?
-4. Podcasts from ABS: out of scope for now?
+1. **Sign-in: both.** On the device with the on-screen keyboard, and from the Mac with `muzak-setup abs-login`.
+2. **One Audiobookshelf user per player.** The home server gets a user per person, so each player keeps its own progress.
+3. **Skip: 30 seconds** back and forward.
+4. **No podcasts** for now; only libraries whose `mediaType` is `book`.
+
+Search on the Books screen filters the already-loaded library on the device (title, author, narrator, series), so typing is instant and costs no server requests; a home library is a few thousand books at most.
