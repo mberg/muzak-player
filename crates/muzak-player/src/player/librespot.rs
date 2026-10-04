@@ -33,6 +33,8 @@ pub struct PlayerSettings {
     pub device: Option<String>,
     pub credentials_dir: PathBuf,
     pub initial_volume: u8,
+    /// Spotify stream quality in kbps.
+    pub bitrate: u16,
 }
 
 impl PlayerSettings {
@@ -43,6 +45,7 @@ impl PlayerSettings {
             device: config.audio_device.clone(),
             credentials_dir: config.librespot_dir(),
             initial_volume: config.initial_volume,
+            bitrate: config.bitrate,
         }
     }
 }
@@ -280,7 +283,11 @@ async fn connect_and_serve(
         .ok_or_else(|| Failure::Other(format!("unknown audio backend {}", settings.backend)))?;
     let device = settings.device.clone();
     let player_config = PlayerConfig {
-        bitrate: Bitrate::Bitrate160,
+        bitrate: match settings.bitrate {
+            96 => Bitrate::Bitrate96,
+            160 => Bitrate::Bitrate160,
+            _ => Bitrate::Bitrate320,
+        },
         position_update_interval: Some(Duration::from_secs(1)),
         ..Default::default()
     };

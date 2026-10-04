@@ -25,6 +25,9 @@ pub struct Config {
     /// Bluetooth speaker address to watch and reconnect.
     #[serde(default)]
     pub bluetooth_speaker: Option<String>,
+    /// Spotify stream quality in kbps: 96, 160 or 320 (the default).
+    #[serde(default = "default_bitrate")]
+    pub bitrate: u16,
     /// Audiobookshelf server, e.g. "http://nas.local:13378". Turns Books on.
     #[serde(default)]
     pub audiobookshelf_url: Option<String>,
@@ -69,6 +72,9 @@ fn default_dim_after_secs() -> u64 {
 fn default_off_after_secs() -> u64 {
     600
 }
+fn default_bitrate() -> u16 {
+    320
+}
 fn default_initial_volume() -> u8 {
     50
 }
@@ -87,6 +93,10 @@ impl Config {
             "device_name must not be blank"
         );
         ensure!(config.initial_volume <= 100, "initial_volume must be 0-100");
+        ensure!(
+            [96, 160, 320].contains(&config.bitrate),
+            "bitrate must be 96, 160 or 320"
+        );
         ensure!(
             config.off_after_secs > config.dim_after_secs,
             "off_after_secs must be greater than dim_after_secs"
@@ -150,5 +160,18 @@ mod tests {
         let text = include_str!("../../../devices/example.toml");
         let c = Config::parse(text).unwrap();
         assert_eq!(c.audio_device.as_deref(), Some("plughw:CARD=Headphones"));
+    }
+
+    #[test]
+    fn stream_quality_defaults_to_the_highest_and_is_checked() {
+        let base = "device_name = \"Den\"\nstate_dir = \"/x\"\n";
+        assert_eq!(Config::parse(base).unwrap().bitrate, 320);
+        assert_eq!(
+            Config::parse(&format!("{base}bitrate = 160\n"))
+                .unwrap()
+                .bitrate,
+            160
+        );
+        assert!(Config::parse(&format!("{base}bitrate = 256\n")).is_err());
     }
 }

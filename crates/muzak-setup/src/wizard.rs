@@ -174,6 +174,21 @@ async fn spotify_sign_in(dir: &Path, client_id: &str) -> anyhow::Result<()> {
     }
 }
 
+/// Spotify stream quality, highest first.
+fn choose_quality(current: i64) -> anyhow::Result<u16> {
+    let labels: Vec<&str> = devconfig::QUALITIES.iter().map(|(_, l)| *l).collect();
+    let default = devconfig::QUALITIES
+        .iter()
+        .position(|(k, _)| i64::from(*k) == current)
+        .unwrap_or(0);
+    let pick = Select::with_theme(&theme())
+        .with_prompt("Sound quality for Spotify")
+        .items(&labels)
+        .default(default)
+        .interact()?;
+    Ok(devconfig::QUALITIES[pick].0)
+}
+
 fn audiobookshelf(current: Option<&str>) -> anyhow::Result<Option<String>> {
     if !yes(
         "Do you have an Audiobookshelf server for audiobooks?",
@@ -313,6 +328,13 @@ pub async fn setup(options: SetupOptions) -> anyhow::Result<()> {
         &current_name.unwrap_or_else(|| name_from_host(&ssh.host)),
     )?;
 
+    let current_bitrate = existing
+        .as_ref()
+        .and_then(|t| t.get("bitrate"))
+        .and_then(|v| v.as_integer())
+        .unwrap_or(320);
+    let bitrate = choose_quality(current_bitrate)?;
+
     step(3, STEPS, "Spotify");
     let client_id = spotify_client_id()?;
     let spotify_dir = store::device_dir(&ssh.host)?;
@@ -353,6 +375,7 @@ pub async fn setup(options: SetupOptions) -> anyhow::Result<()> {
     }
     let config = devconfig::new_config(&devconfig::Choices {
         device_name: device_name.clone(),
+        bitrate,
         audiobookshelf_url: audiobookshelf_url.clone(),
         voice: voice.clone(),
     });
@@ -460,6 +483,11 @@ pub fn config(host: &str) -> anyhow::Result<()> {
             {
                 say("Turn voice control on first.");
                 continue;
+            }
+            Setting::Quality => {
+                let current = t.get("bitrate").and_then(|v| v.as_integer()).unwrap_or(320);
+                let kbps = choose_quality(current)?;
+                t.insert("bitrate".into(), toml::Value::Integer(i64::from(kbps)));
             }
             Setting::Volume | Setting::DimAfter | Setting::OffAfter => {
                 let key = setting.key().expect("a key");

@@ -233,6 +233,7 @@ mod tests {
         let r = FakeRemote::default();
         let mut t = devconfig::new_config(&devconfig::Choices {
             device_name: "Den".into(),
+            bitrate: 320,
             audiobookshelf_url: None,
             voice: None,
         });
