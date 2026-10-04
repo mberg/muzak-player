@@ -13,6 +13,9 @@ export component TrackRow inherits Rectangle {
         spacing: 12px;
         VerticalLayout {
             alignment: center;
+            // Take all the width the duration does not, so the duration sits at the right edge.
+            horizontal-stretch: 1;
+            min-width: 0;
             Text {
                 text: root.data.title;
                 color: root.data.current ? Theme.accent : Theme.text;
@@ -32,7 +35,8 @@ export component TrackRow inherits Rectangle {
             color: Theme.text-dim;
             font-size: Theme.font-small;
             vertical-alignment: center;
-            horizontal-stretch: 0;
+            horizontal-alignment: right;
+            width: 64px;
         }
     }
     touch := TouchArea {

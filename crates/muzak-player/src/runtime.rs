@@ -80,11 +80,22 @@ async fn run(
             session_tx,
             inputs.clone(),
         );
-        let source = Arc::new(crate::library::web_api::WebApi::new(
-            crate::library::web_api::ReqwestHttp::new()?,
-            crate::library::session_tokens::SessionTokens::new(session_rx),
-        ));
-        (player, spawn_library(source, cache, inputs.clone()))
+        let http = crate::library::web_api::ReqwestHttp::new()?;
+        let web_auth = config
+            .state_dir
+            .join(crate::library::refresh_tokens::FILE_NAME);
+        let library = if web_auth.is_file() {
+            // Contingency A: library requests use the parent's own developer app.
+            tracing::info!("using developer-app tokens from {}", web_auth.display());
+            let tokens = crate::library::refresh_tokens::RefreshTokens::load(&web_auth)?;
+            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            spawn_library(source, cache, inputs.clone())
+        } else {
+            let tokens = crate::library::session_tokens::SessionTokens::new(session_rx);
+            let source = Arc::new(crate::library::web_api::WebApi::new(http, tokens));
+            spawn_library(source, cache, inputs.clone())
+        };
+        (player, library)
     };
     spawn_image_loader(
         Arc::new(ImageLoader::new(config.images_dir(), 300)?),
