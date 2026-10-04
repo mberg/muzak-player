@@ -125,6 +125,8 @@ pub struct SettingsView {
     pub speakers: Vec<SpeakerRowView>,
     /// A line under the speaker list: a failure or "Restarting…".
     pub message: String,
+    /// Why there's no Bluetooth, shown instead of the speaker buttons.
+    pub bluetooth_note: String,
     pub restarting: bool,
 }
 
@@ -304,6 +306,16 @@ fn settings(state: &AppState) -> SettingsView {
         on_speaker: d.speaker.is_some(),
         speaker_connected: state.speaker_connected,
         bluetooth: d.bluetooth,
+        bluetooth_note: if d.bluetooth {
+            String::new()
+        } else if cfg!(target_os = "linux") {
+            "Bluetooth isn't working on this player. Restarting the device usually fixes it."
+                .into()
+        } else {
+            "Bluetooth speakers are paired on the Raspberry Pi, from this screen. This computer \
+             can't pair them; run with --fake to try the screen here."
+                .into()
+        },
         scanning: d.scanning,
         speakers,
         message,

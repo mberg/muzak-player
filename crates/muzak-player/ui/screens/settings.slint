@@ -95,6 +95,7 @@ export component SettingsScreen inherits Rectangle {
     in property <bool> scanning;
     in property <[SpeakerRowData]> speakers;
     in property <string> message;
+    in property <string> bluetooth-note;
     in property <bool> restarting;
     callback rename-device();
     callback find-speakers();
@@ -214,7 +215,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
                 if !root.bluetooth: Text {
-                    text: "Bluetooth speakers are paired on the Raspberry Pi, from this screen. This computer can't pair them; run with --fake to try the screen here.";
+                    text: root.bluetooth-note;
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;

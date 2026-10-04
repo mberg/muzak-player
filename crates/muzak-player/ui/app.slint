@@ -62,6 +62,7 @@ export component AppWindow inherits Window {
     in property <bool> scanning;
     in property <[SpeakerRowData]> speakers;
     in property <string> settings-message;
+    in property <string> bluetooth-note;
     in property <bool> restarting;
     in property <string> search-query;
     in property <bool> keyboard-open;
@@ -225,6 +226,7 @@ export component AppWindow inherits Window {
         scanning: root.scanning;
         speakers: root.speakers;
         message: root.settings-message;
+        bluetooth-note: root.bluetooth-note;
         restarting: root.restarting;
         rename-device => { root.rename-device(); }
         find-speakers => { root.find-speakers(); }

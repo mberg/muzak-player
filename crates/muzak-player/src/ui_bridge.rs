@@ -400,6 +400,7 @@ impl Bridge {
         w.set_bluetooth(s.bluetooth);
         w.set_scanning(s.scanning);
         w.set_settings_message(s.message.as_str().into());
+        w.set_bluetooth_note(s.bluetooth_note.as_str().into());
         w.set_restarting(s.restarting);
         let speakers: Vec<SpeakerRowData> = s
             .speakers
