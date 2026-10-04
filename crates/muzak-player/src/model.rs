@@ -93,6 +93,9 @@ pub struct Collection {
     /// An album's first artist, so the album page can lead to the artist.
     #[serde(default)]
     pub artist_uri: Option<String>,
+    /// The year an album came out.
+    #[serde(default)]
+    pub year: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

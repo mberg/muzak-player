@@ -233,6 +233,8 @@ struct AlbumObj {
     #[serde(default)]
     artists: Vec<ArtistObj>,
     tracks: Option<Page<TrackObj>>,
+    /// "1986-08-25", "1986-08" or "1986".
+    release_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -326,6 +328,7 @@ fn playlist_collection(p: PlaylistObj) -> Collection {
         owner_id,
         snapshot_id: p.snapshot_id,
         artist_uri: None,
+        year: None,
     }
 }
 
@@ -388,6 +391,11 @@ fn album_collection(a: &AlbumObj) -> Collection {
         subtitle: join_artists(&a.artists),
         image_url: pick_image(images(&a.images)),
         artist_uri: a.artists.first().and_then(|r| r.uri.clone()),
+        year: a
+            .release_date
+            .as_deref()
+            .and_then(|d| d.get(..4))
+            .and_then(|y| y.parse().ok()),
         ..Default::default()
     }
 }
@@ -1245,6 +1253,23 @@ mod tests {
             api(http).tracks("spotify:playlist:p1").await,
             Err(FetchError::Forbidden)
         );
+    }
+
+    #[test]
+    fn albums_take_the_year_from_any_release_date_precision() {
+        let album = |date: &str| {
+            album_collection(&AlbumObj {
+                uri: "spotify:album:a".into(),
+                name: "A".into(),
+                images: None,
+                artists: vec![],
+                tracks: None,
+                release_date: Some(date.into()),
+            })
+        };
+        assert_eq!(album("1986-08-25").year, Some(1986));
+        assert_eq!(album("1969").year, Some(1969));
+        assert_eq!(album("").year, None);
     }
 
     #[tokio::test]

@@ -81,11 +81,13 @@ fn ui_clicks() {
         assert_eq!(theme.get(), 1);
 
         // Scroll Settings down like a person would, then pick the sleep timer length.
-        window.window().dispatch_event(WindowEvent::PointerScrolled {
-            position: LogicalPosition::new(400.0, 300.0),
-            delta_x: 0.0,
-            delta_y: -400.0,
-        });
+        window
+            .window()
+            .dispatch_event(WindowEvent::PointerScrolled {
+                position: LogicalPosition::new(400.0, 300.0),
+                delta_x: 0.0,
+                delta_y: -400.0,
+            });
         slint::platform::update_timers_and_animations();
         let length = Rc::new(Cell::new(0));
         let l = length.clone();

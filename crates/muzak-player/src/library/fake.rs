@@ -40,10 +40,10 @@ impl FakeCatalog {
             "A Very Long Playlist Name That Should Be Cut Off Nicely",
         ];
         let album_names = [
-            ("Moana", "Various Artists"),
-            ("Encanto", "Various Artists"),
-            ("Abbey Road", "The Beatles"),
-            ("Rumours", "Fleetwood Mac"),
+            ("Moana", "Various Artists", 2016),
+            ("Encanto", "Various Artists", 2021),
+            ("Abbey Road", "The Beatles", 1969),
+            ("Rumours", "Fleetwood Mac", 1977),
         ];
         let playlists: Vec<Collection> = playlist_names
             .iter()
@@ -60,19 +60,21 @@ impl FakeCatalog {
                     owner_id: Some(if mine { FAKE_ACCOUNT_ID } else { "someone" }.into()),
                     snapshot_id: None,
                     artist_uri: None,
+                    year: None,
                 }
             })
             .collect();
         let albums: Vec<Collection> = album_names
             .iter()
             .enumerate()
-            .map(|(i, (name, artist))| Collection {
+            .map(|(i, (name, artist, year))| Collection {
                 uri: format!("spotify:album:fake{i}"),
                 kind: CollectionKind::Album,
                 name: name.to_string(),
                 subtitle: artist.to_string(),
                 image_url: None,
                 artist_uri: Some(fake_artist().uri),
+                year: Some(*year),
                 ..Default::default()
             })
             .collect();
@@ -179,6 +181,7 @@ impl FakeCatalog {
                     owner_id: Some(FAKE_ACCOUNT_ID.into()),
                     snapshot_id: None,
                     artist_uri: None,
+                    year: None,
                 };
                 data.playlists.insert(0, created.clone());
                 data.tracks.insert(created.uri.clone(), vec![track]);
