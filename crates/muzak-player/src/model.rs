@@ -55,8 +55,9 @@ impl Section {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CollectionKind {
+    #[default]
     Playlist,
     Album,
     Liked,
@@ -64,7 +65,7 @@ pub enum CollectionKind {
 }
 
 /// Something you can open and play as a whole: a playlist, an album, or Liked Songs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Collection {
     pub uri: String,
     pub kind: CollectionKind,
@@ -72,6 +73,12 @@ pub struct Collection {
     /// Owner for playlists, artists for albums.
     pub subtitle: String,
     pub image_url: Option<String>,
+    /// Spotify ID of a playlist's owner. Only owned playlists can be edited.
+    #[serde(default)]
+    pub owner_id: Option<String>,
+    /// A playlist's version, sent with edits so Spotify can detect conflicts.
+    #[serde(default)]
+    pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -138,5 +145,6 @@ pub fn liked_collection() -> Collection {
         name: Section::Liked.title().to_string(),
         subtitle: String::new(),
         image_url: None,
+        ..Default::default()
     }
 }

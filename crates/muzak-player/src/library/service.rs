@@ -173,6 +173,7 @@ mod tests {
             name: name.into(),
             subtitle: String::new(),
             image_url: None,
+            ..Default::default()
         }
     }
 

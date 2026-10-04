@@ -40,6 +40,7 @@ impl FakeCatalog {
                 name: name.to_string(),
                 subtitle: "Mum".into(),
                 image_url: None,
+                ..Default::default()
             })
             .collect();
         let albums: Vec<Collection> = album_names
@@ -51,6 +52,7 @@ impl FakeCatalog {
                 name: name.to_string(),
                 subtitle: artist.to_string(),
                 image_url: None,
+                ..Default::default()
             })
             .collect();
         let mut tracks = HashMap::new();
@@ -104,6 +106,7 @@ pub fn fake_artist() -> Collection {
         name: "The Fake Band".into(),
         subtitle: "Artist".into(),
         image_url: None,
+        ..Default::default()
     }
 }
 

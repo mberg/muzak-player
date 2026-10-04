@@ -20,6 +20,7 @@ pub(crate) fn playlist(n: u32) -> Collection {
         name: format!("Playlist {n}"),
         subtitle: "Mum".into(),
         image_url: Some(format!("https://i.scdn.co/image/p{n}")),
+        ..Default::default()
     }
 }
 

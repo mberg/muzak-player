@@ -232,6 +232,7 @@ fn playlist_collection(p: PlaylistObj) -> Collection {
         kind: CollectionKind::Playlist,
         name: p.name,
         subtitle: p.owner.and_then(|o| o.display_name).unwrap_or_default(),
+        ..Default::default()
     }
 }
 
@@ -242,6 +243,7 @@ fn artist_collection(a: ArtistFull) -> Collection {
         kind: CollectionKind::Artist,
         name: a.name,
         subtitle: "Artist".into(),
+        ..Default::default()
     }
 }
 
@@ -282,6 +284,7 @@ fn album_collection(a: &AlbumObj) -> Collection {
         name: a.name.clone(),
         subtitle: join_artists(&a.artists),
         image_url: pick_image(images(&a.images)),
+        ..Default::default()
     }
 }
 
@@ -335,6 +338,7 @@ fn recent_collections(items: Vec<RecentItem>, known_playlists: &[Collection]) ->
                     name: a.name.clone().unwrap_or_default(),
                     subtitle: join_artists(&a.artists),
                     image_url: pick_image(images(&a.images)),
+                    ..Default::default()
                 })
             }),
         };
