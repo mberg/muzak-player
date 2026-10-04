@@ -3960,6 +3960,7 @@ dependencies = [
  "image",
  "librespot",
  "reqwest 0.13.5",
+ "ring",
  "roxmltree 0.18.1",
  "rupnp",
  "rusqlite",
