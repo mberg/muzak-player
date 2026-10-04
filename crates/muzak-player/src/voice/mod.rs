@@ -2,6 +2,7 @@
 
 pub mod bpe;
 pub mod gemini;
+pub mod google_auth;
 pub mod listen;
 pub mod mic;
 pub mod service;

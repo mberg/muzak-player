@@ -40,7 +40,14 @@ pub struct Config {
     /// Gemini API key for voice requests; GEMINI_API_KEY in the environment also works.
     #[serde(default)]
     pub gemini_api_key: Option<String>,
-    /// Defaults to gemini-3.8-flash.
+    /// A Google Cloud service account key file: voice requests go to Vertex AI instead,
+    /// paid from the project's billing (and its credits).
+    #[serde(default)]
+    pub vertex_key_file: Option<PathBuf>,
+    /// Vertex AI location; defaults to "global".
+    #[serde(default)]
+    pub vertex_location: Option<String>,
+    /// Defaults to gemini-3.5-flash-lite.
     #[serde(default)]
     pub gemini_model: Option<String>,
 }

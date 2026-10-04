@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::gemini::Gemini;
+use super::gemini::{Backend, Gemini};
 use super::listen::{Heard, Listener};
 use super::wake::SherpaWake;
 use crate::app::{Input, VoiceContext, VoiceUpdate};
@@ -18,6 +18,9 @@ pub struct VoiceSettings {
     pub threshold: f32,
     pub microphone: Option<String>,
     pub gemini_key: Option<String>,
+    /// A Google Cloud service account key file; Vertex AI is used instead of the key.
+    pub vertex_key_file: Option<PathBuf>,
+    pub vertex_location: Option<String>,
     pub gemini_model: Option<String>,
 }
 
@@ -30,10 +33,27 @@ pub fn spawn_voice(
     context: SharedContext,
     runtime: tokio::runtime::Handle,
 ) {
-    let gemini = settings
-        .gemini_key
-        .clone()
-        .map(|key| Arc::new(Gemini::new(key, settings.gemini_model.clone())));
+    let backend = match (&settings.vertex_key_file, &settings.gemini_key) {
+        (Some(path), _) => match super::google_auth::ServiceAccount::load(path) {
+            Ok(account) => {
+                tracing::info!("voice: using Vertex AI in project {}", account.project_id);
+                Some(Backend::Vertex {
+                    account: Box::new(account),
+                    location: settings
+                        .vertex_location
+                        .clone()
+                        .unwrap_or_else(|| "global".into()),
+                })
+            }
+            Err(e) => {
+                tracing::error!("voice: {e:#}");
+                None
+            }
+        },
+        (None, Some(key)) => Some(Backend::ApiKey(key.clone())),
+        (None, None) => None,
+    };
+    let gemini = backend.map(|b| Arc::new(Gemini::new(b, settings.gemini_model.clone())));
     std::thread::Builder::new()
         .name("voice".into())
         .spawn(move || {
@@ -106,7 +126,8 @@ pub fn spawn_voice(
                                         "voice: no Gemini key, so the request can't be answered"
                                     );
                                     send(VoiceUpdate::Failed(
-                                        "Voice needs a Gemini key in the config".into(),
+                                        "Voice needs a Gemini key or Vertex key file in the config"
+                                            .into(),
                                     ));
                                     continue;
                                 };

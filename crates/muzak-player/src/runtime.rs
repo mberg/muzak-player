@@ -177,6 +177,8 @@ async fn run(
                     .clone()
                     .or_else(|| std::env::var("GEMINI_API_KEY").ok())
                     .filter(|k| !k.trim().is_empty()),
+                vertex_key_file: config.vertex_key_file.clone(),
+                vertex_location: config.vertex_location.clone(),
                 gemini_model: config.gemini_model.clone(),
             },
             inputs.clone(),

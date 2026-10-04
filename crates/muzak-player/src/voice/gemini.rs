@@ -7,8 +7,10 @@ use serde_json::{Value, json};
 
 use crate::app::{SearchKind, VoiceCommand, VoiceContext};
 
-pub const DEFAULT_MODEL: &str = "gemini-3.8-flash";
+/// Fastest of the models tested (about 1.1–1.6 s through Vertex) and as accurate on requests.
+pub const DEFAULT_MODEL: &str = "gemini-3.5-flash-lite";
 const ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+const VERTEX_HOST: &str = "https://aiplatform.googleapis.com/v1";
 
 /// 16 kHz mono 16-bit PCM in a WAV container.
 pub fn wav(samples: &[f32]) -> Vec<u8> {
@@ -193,22 +195,38 @@ pub enum AskError {
     Http(u16),
 }
 
+/// How requests reach Gemini.
+pub enum Backend {
+    /// The Gemini API with a key from Google AI Studio.
+    ApiKey(String),
+    /// Vertex AI on Google Cloud, as a service account; Cloud credits pay for it.
+    Vertex {
+        account: Box<super::google_auth::ServiceAccount>,
+        /// "global", or a region such as "europe-west4".
+        location: String,
+    },
+}
+
 pub struct Gemini {
     http: reqwest::Client,
-    key: String,
+    backend: Backend,
     model: String,
 }
 
 impl Gemini {
-    pub fn new(key: String, model: Option<String>) -> Self {
+    pub fn new(backend: Backend, model: Option<String>) -> Self {
         Self {
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(15))
                 .build()
                 .expect("HTTP client"),
-            key,
+            backend,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
         }
+    }
+
+    fn post(&self, url: String) -> reqwest::RequestBuilder {
+        self.http.post(url)
     }
 
     pub async fn ask(
@@ -216,10 +234,29 @@ impl Gemini {
         context: &VoiceContext,
         audio: &[f32],
     ) -> Result<Option<VoiceCommand>, AskError> {
-        let response = self
-            .http
-            .post(format!("{ENDPOINT}/{}:generateContent", self.model))
-            .header("x-goog-api-key", &self.key)
+        let model = &self.model;
+        let builder = match &self.backend {
+            Backend::ApiKey(key) => self
+                .post(format!("{ENDPOINT}/{model}:generateContent"))
+                .header("x-goog-api-key", key),
+            Backend::Vertex { account, location } => {
+                let token = account.token(&self.http).await.map_err(|e| {
+                    tracing::warn!("Vertex AI sign-in failed: {e:#}");
+                    AskError::Offline
+                })?;
+                let host = if location == "global" {
+                    VERTEX_HOST.to_string()
+                } else {
+                    format!("https://{location}-aiplatform.googleapis.com/v1")
+                };
+                self.post(format!(
+                    "{host}/projects/{}/locations/{location}/publishers/google/models/{model}:generateContent",
+                    account.project_id
+                ))
+                .bearer_auth(token)
+            }
+        };
+        let response = builder
             .json(&request(context, audio))
             .send()
             .await
@@ -340,12 +377,22 @@ mod tests {
         assert_eq!(parse_reply(&text_only), None);
     }
 
-    /// With a real key: `GEMINI_API_KEY=… cargo test -- --ignored live_gemini --nocapture`.
-    /// Speaks a request with the Mac's `say` command.
+    /// With a real key: `GEMINI_API_KEY=… cargo test -- --ignored live_gemini --nocapture`,
+    /// or `VERTEX_KEY_FILE=…` for Vertex AI. Speaks requests with the Mac's `say` command.
     #[tokio::test]
     #[ignore]
     async fn live_gemini() {
-        let Ok(key) = std::env::var("GEMINI_API_KEY") else {
+        let backend = if let Ok(path) = std::env::var("VERTEX_KEY_FILE") {
+            Backend::Vertex {
+                account: Box::new(
+                    crate::voice::google_auth::ServiceAccount::load(std::path::Path::new(&path))
+                        .unwrap(),
+                ),
+                location: "global".into(),
+            }
+        } else if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+            Backend::ApiKey(key)
+        } else {
             return;
         };
         let dir = tempfile::tempdir().unwrap();
@@ -358,7 +405,7 @@ mod tests {
             ("skip this song", Some(VoiceCommand::Next)),
             ("what's the capital of france", None),
         ];
-        let gemini = Gemini::new(key, std::env::var("GEMINI_MODEL").ok());
+        let gemini = Gemini::new(backend, std::env::var("GEMINI_MODEL").ok());
         for (said, want) in cases {
             let status = std::process::Command::new("say")
                 .args([
