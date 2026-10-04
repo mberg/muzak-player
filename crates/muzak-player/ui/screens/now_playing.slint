@@ -76,11 +76,28 @@ export component NowPlayingScreen inherits Rectangle {
                 overflow: elide;
                 max-height: 80px;
             }
-            Text {
-                text: root.loading ? "Loading…" : root.artists;
-                color: Theme.text-dim;
-                font-size: Theme.font-body;
-                overflow: elide;
+            // The artist, with like and add-to-playlist on the same line.
+            HorizontalLayout {
+                spacing: 4px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.loading ? "Loading…" : root.artists;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.can-add: IconButton {
+                    size: 52px;
+                    icon: root.liked ? @image-url("../icons/heart.svg") : @image-url("../icons/heart-outline.svg");
+                    active: root.liked;
+                    clicked => { root.toggle-like(); }
+                }
+                if root.can-add: IconButton {
+                    size: 52px;
+                    icon: @image-url("../icons/plus.svg");
+                    clicked => { root.add(); }
+                }
             }
             Scrubber {
                 value: root.progress;
@@ -147,18 +164,5 @@ export component NowPlayingScreen inherits Rectangle {
                 }
             }
         }
-    }
-    if root.can-add: IconButton {
-        x: root.width - 2 * self.width - 20px;
-        y: 16px;
-        icon: root.liked ? @image-url("../icons/heart.svg") : @image-url("../icons/heart-outline.svg");
-        active: root.liked;
-        clicked => { root.toggle-like(); }
-    }
-    if root.can-add: IconButton {
-        x: root.width - self.width - 16px;
-        y: 16px;
-        icon: @image-url("../icons/plus.svg");
-        clicked => { root.add(); }
     }
 }
