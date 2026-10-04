@@ -10,7 +10,7 @@ Let the user find any song on Spotify and build their own playlists from the tou
 
 Success means:
 
-- The user can type a search on the screen and play a song, album or playlist from the results.
+- The user can type one search on the screen and get matches from their own library and from all of Spotify, then play or open any song, album or playlist in the results.
 - From any track list or Now Playing, the user can add the song to one of their playlists, or to a new one they name on the screen.
 - On a playlist they own, the user can remove songs, reorder them, rename the playlist and delete it.
 - Every edit shows on screen at once and survives a restart. If Spotify refuses an edit, the screen goes back to how it was and says so.
@@ -22,7 +22,7 @@ The audience is anyone with a Spotify Premium account, adults included. Screens,
 In:
 
 - An on-screen keyboard.
-- A Search rail item with Songs, Albums and Playlists results.
+- A Search rail item. One global search covers the user's own library and the whole Spotify catalog, with Songs, Albums and Playlists results.
 - Add a song to a playlist, from track rows and Now Playing.
 - Create a playlist, named with the keyboard.
 - On playlists the user owns: remove a song, reorder by drag, rename, delete.
@@ -73,6 +73,8 @@ New `UiAction`s:
 - Search: `OpenSearchResult { uri }`, `PlaySearchTrack { index }`.
 - Playlists: `OpenPicker { track_uri }`, `PickPlaylist { playlist_uri }`, `ClosePicker`, `EditPlaylist(uri)`, `FinishEditing`, `RemoveTrack { index }`, `MoveTrack { from, to }`, `RenamePlaylist`, `AskDelete`, `ConfirmDelete`, `CancelDelete`.
 
+Search is global. One query gives two sets of results: library matches, computed locally and shown as soon as a key is pressed, and catalog results from the Web API after the debounce. Library matches never need the network, so they also work offline.
+
 Search timing: `KeyPressed` and `Backspace` update the text and record the time. `Tick` is once a second, which is too slow, so the runtime adds a 100ms `SearchTick` while the keyboard is open for search. The core sends `LibraryRequest::Search(query)` when the text has been unchanged for 400ms and differs from the last query sent. Empty text clears the results without a request. Results for a query that is no longer current are dropped.
 
 Edits are optimistic. For each edit the core:
@@ -95,7 +97,8 @@ Delete removes the playlist from the Playlists and Recent sections, leaves edit 
 
 - `Collection` gains `owner_id: Option<String>` and `snapshot_id: Option<String>`. Both are `#[serde(default)]`, so existing caches still load.
 - `CollectionKind::Playlist` collections are editable when `owner_id == me`.
-- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 20 of each.
+- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 20 of each, from the Spotify catalog.
+- Library matches are not stored. `view` computes them from state on each build: the user's playlists, saved albums and loaded Liked Songs whose name, or artist for songs, contains the query, ignoring case and accents. At most 5 of each kind.
 - New `PlaylistEdit` enum: `Add { playlist_uri, track_uri }`, `CreateAndAdd { name, track_uri }`, `Remove { playlist_uri, track_uri, position, snapshot_id }`, `Move { playlist_uri, from, to, snapshot_id }`, `Rename { playlist_uri, name }`, `Delete { playlist_uri }`.
 
 ### Library
@@ -131,7 +134,7 @@ Responses that return a new `snapshot_id` update the stored collection, so the n
 All sizes fit 800×480 with 48px touch targets or larger.
 
 - **Keyboard.** Fills the bottom 240px of the screen, over the content and mini player. Four rows: digits, then three QWERTY letter rows, then a bottom row of space, backspace and Done. A text field sits above it with a Cancel button. Keys show a pressed state. On the Mac a hidden `TextInput` takes the physical keyboard and sends `TextChanged`.
-- **Search screen.** Opening it opens the keyboard. Results show in the top 240px while typing, and fill the screen after Done. Songs are rows with play-on-tap and a plus button; albums and playlists are a horizontal row of tiles each. Empty results say "Nothing found". A failed search says "Can't search right now".
+- **Search screen.** Opening it opens the keyboard. Results show in the top 240px while typing, and fill the screen after Done. Results come in two groups. "In your library" comes first, then "On Spotify". Each group lists Songs as rows with play-on-tap and a plus button, then Albums and Playlists as a horizontal row of tiles each. A catalog item already shown under "In your library" is not repeated. Tapping a song plays it; tapping an album or playlist opens its track list, where Play, shuffle and the plus button work as usual. Empty results say "Nothing found"; offline, "On Spotify" says "No internet right now" and library matches still show. A failed search says "Can't search right now".
 - **Track rows** gain a plus button before the duration. In edit mode it becomes a remove button, and a drag handle appears at the left. The duration column from the recent fix stays aligned.
 - **Now Playing** gains a plus button beside shuffle and repeat.
 - **Picker.** A sheet over the screen titled "Add to playlist", with "New playlist" first and the user's playlists as a scrolling list of name rows with small covers. Tapping outside closes it.
@@ -153,6 +156,7 @@ All sizes fit 800×480 with 48px touch targets or larger.
 
 ## Testing
 
+- **View:** library matching (case, accents, artist names for songs, limits, de-duplication against catalog results).
 - **App core:** keyboard text editing and targets; search debounce, empty query, stale results dropped; each edit's immediate change, success, and undo on failure; duplicate add; offline refusal; picker filtering by owner; create placeholder replaced by the real URI; delete leaving edit mode and the grid.
 - **Web API:** each endpoint with the fake HTTP layer, including the `items` 404 fallback, the create fallback to `/users/{me}/playlists`, snapshot updates, and the 401 retry on writes.
 - **Library service:** cache rewrites after each edit kind; edits not deduplicated.
