@@ -49,11 +49,12 @@ export component Rail inherits Rectangle {
             padding-top: 8px;
             padding-bottom: 8px;
             alignment: start;
+            // Search first, above Playlists.
+            RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
             RailItem { icon: @image-url("../icons/playlists.svg"); label: "Playlists"; active: root.selected == 0; clicked => { root.select(0); } }
             RailItem { icon: @image-url("../icons/album.svg"); label: "Albums"; active: root.selected == 1; clicked => { root.select(1); } }
             RailItem { icon: @image-url("../icons/artist.svg"); label: "Artists"; active: root.selected == 2; clicked => { root.select(2); } }
             RailItem { icon: @image-url("../icons/heart.svg"); label: "Liked"; active: root.selected == 3; clicked => { root.select(3); } }
-            RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
             RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 5; clicked => { root.select(5); } }
             // Settings: small, at the end of the list.
             Rectangle {

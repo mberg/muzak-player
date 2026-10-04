@@ -6,6 +6,11 @@ edition.workspace = true
 [dependencies]
 # Play history on the device; bundled so the Pi build needs no system SQLite.
 rusqlite = { version = "0.37", features = ["bundled"] }
+# Sonos control over the home network (UPnP), and its event subscriptions.
+sonor = "2"
+rupnp = "2"
+roxmltree = "0.18"
+futures-util = "0.3"
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }

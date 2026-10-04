@@ -1162,7 +1162,10 @@ fn unchanged_device_name_is_not_saved() {
 fn scanning_then_connecting_saves_the_speaker() {
     let mut c = core();
     let fx = c.handle(ui(UiAction::FindSpeakers), 0);
-    assert_eq!(fx, vec![Effect::Bluetooth(BtCommand::Scan)]);
+    assert_eq!(
+        fx,
+        vec![Effect::ScanSonos, Effect::Bluetooth(BtCommand::Scan)]
+    );
     assert!(c.state().device.scanning);
     // A second tap while scanning does nothing.
     assert!(c.handle(ui(UiAction::FindSpeakers), 0).is_empty());
@@ -1215,7 +1218,11 @@ fn no_bluetooth_means_no_scan() {
     let mut cfg = config();
     cfg.bluetooth = false;
     let mut c = Core::new(cfg, 0).0;
-    assert!(c.handle(ui(UiAction::FindSpeakers), 0).is_empty());
+    // Only the Sonos scan: there's no Bluetooth here.
+    assert_eq!(
+        c.handle(ui(UiAction::FindSpeakers), 0),
+        vec![Effect::ScanSonos]
+    );
 }
 
 // ---- Library saves ----
@@ -1661,4 +1668,53 @@ fn a_recent_song_plays_from_where_it_was_heard() {
         start_uri: Some("spotify:track:t4".into()),
         shuffle: false,
     })));
+}
+
+// ---- Sonos ----
+
+fn kitchen() -> crate::settings::SonosRoom {
+    crate::settings::SonosRoom {
+        uuid: "RINCON_K".into(),
+        name: "Kitchen".into(),
+    }
+}
+
+#[test]
+fn find_speakers_also_scans_for_sonos_rooms_on_any_device() {
+    let mut cfg = config();
+    cfg.bluetooth = false;
+    let mut c = Core::new(cfg, 0).0;
+    let fx = c.handle(ui(UiAction::FindSpeakers), 0);
+    assert_eq!(fx, vec![Effect::ScanSonos]);
+    assert!(crate::view::build(c.state()).settings.scanning);
+    c.handle(Input::SonosRooms(vec![kitchen()]), 0);
+    let v = crate::view::build(c.state());
+    assert!(!v.settings.scanning);
+    assert_eq!(v.settings.sonos_rooms[0].name, "Kitchen");
+}
+
+#[test]
+fn choosing_a_room_saves_it_and_restarts_into_sonos() {
+    let mut c = core();
+    c.handle(Input::SonosRooms(vec![kitchen()]), 0);
+    let fx = c.handle(ui(UiAction::ChooseSonos("RINCON_K".into())), 0);
+    assert_eq!(
+        settings_effects(&fx)[0].output,
+        Some(Output::Sonos(kitchen()))
+    );
+    assert!(c.state().device.restarting);
+}
+
+#[test]
+fn playing_on_sonos_shows_the_room_and_can_switch_back() {
+    let mut cfg = config();
+    cfg.saved.output = Some(Output::Sonos(kitchen()));
+    let mut c = Core::new(cfg, 0).0;
+    c.handle(Input::SonosRooms(vec![kitchen()]), 0);
+    let v = crate::view::build(c.state());
+    assert_eq!(v.settings.output, "Sonos: Kitchen");
+    assert!(v.settings.on_sonos);
+    assert_eq!(v.settings.sonos_rooms[0].status, "In use");
+    let fx = c.handle(ui(UiAction::UseJack), 0);
+    assert_eq!(settings_effects(&fx)[0].output, Some(Output::Jack));
 }

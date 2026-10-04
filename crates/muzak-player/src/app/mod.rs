@@ -65,6 +65,16 @@ pub struct CoreConfig {
     pub bluetooth: bool,
 }
 
+impl CoreConfig {
+    /// The Sonos room playing instead of this device, if one is chosen.
+    pub fn sonos_room(&self) -> Option<&crate::settings::SonosRoom> {
+        match &self.saved.output {
+            Some(Output::Sonos(room)) => Some(room),
+            _ => None,
+        }
+    }
+}
+
 /// Where a newly loaded context starts playing.
 #[derive(Debug, Clone, PartialEq)]
 enum Start {
@@ -197,6 +207,10 @@ impl Core {
                 self.on_sleep_tick(now_ms, &mut fx);
             }
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
+            Input::SonosRooms(rooms) => {
+                self.state.device.sonos_rooms = rooms;
+                self.state.device.sonos_scanning = false;
+            }
             Input::HistoryRecent(plays) => {
                 if plays.is_empty() && !self.asked_spotify_recent {
                     // A new device has no history yet: borrow Spotify's list meanwhile.
@@ -562,6 +576,10 @@ impl Core {
     }
 
     // ---- Settings ----
+
+    fn playing_on_sonos(&self) -> bool {
+        matches!(self.state.device.saved.output, Some(Output::Sonos(_)))
+    }
 
     /// Saves a change to the settings; the player then restarts to apply it.
     fn apply_settings(&mut self, change: impl FnOnce(&mut Settings), fx: &mut Vec<Effect>) {
@@ -1071,6 +1089,11 @@ impl Core {
                 });
             }
             UiAction::FindSpeakers => {
+                // Sonos rooms are found over the network on any device.
+                if !self.state.device.sonos_scanning && !self.state.device.restarting {
+                    self.state.device.sonos_scanning = true;
+                    fx.push(Effect::ScanSonos);
+                }
                 let device = &mut self.state.device;
                 if device.bluetooth && !device.scanning && !device.restarting {
                     device.scanning = true;
@@ -1087,8 +1110,20 @@ impl Core {
                     fx.push(Effect::Bluetooth(BtCommand::Connect(address)));
                 }
             }
+            UiAction::ChooseSonos(uuid) => {
+                if let Some(room) = self
+                    .state
+                    .device
+                    .sonos_rooms
+                    .iter()
+                    .find(|r| r.uuid == uuid)
+                    .cloned()
+                {
+                    self.apply_settings(|s| s.output = Some(Output::Sonos(room)), fx);
+                }
+            }
             UiAction::UseJack => {
-                if self.state.device.speaker.is_some() {
+                if self.state.device.speaker.is_some() || self.playing_on_sonos() {
                     self.apply_settings(|s| s.output = Some(Output::Jack), fx);
                 }
             }

@@ -135,6 +135,9 @@ pub struct DeviceSettings {
     pub failed: Option<String>,
     /// Settings were saved and the player is restarting.
     pub restarting: bool,
+    /// Sonos rooms found on the network by the last scan.
+    pub sonos_rooms: Vec<crate::settings::SonosRoom>,
+    pub sonos_scanning: bool,
 }
 
 /// What the on-screen text field is for, apart from search.

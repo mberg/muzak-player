@@ -127,6 +127,10 @@ export component SettingsScreen inherits Rectangle {
     in property <string> device-name;
     in property <string> output;
     in property <bool> on-speaker;
+    // A Sonos room plays instead of this device.
+    in property <bool> on-sonos;
+    in property <[SpeakerRowData]> sonos-rooms;
+    callback choose-sonos(string);
     in property <bool> speaker-connected;
     in property <bool> bluetooth;
     in property <bool> scanning;
@@ -267,7 +271,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
                 }
-                if root.bluetooth: HorizontalLayout {
+                // Sonos rooms are found on any device; Bluetooth only on the Pi.
+                HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
                     SmallPill {
@@ -275,6 +280,11 @@ export component SettingsScreen inherits Rectangle {
                         primary: true;
                         enabled: !root.scanning && !root.restarting;
                         clicked => { root.find-speakers(); }
+                    }
+                    if root.on-sonos: SmallPill {
+                        label: "Play on this player";
+                        enabled: !root.restarting;
+                        clicked => { root.use-jack(); }
                     }
                     if root.on-speaker: SmallPill {
                         label: "Use headphone jack";
@@ -297,6 +307,16 @@ export component SettingsScreen inherits Rectangle {
                 for speaker in root.speakers: SpeakerRow {
                     data: speaker;
                     clicked => { root.connect-speaker(speaker.address); }
+                }
+                if root.sonos-rooms.length > 0: Text {
+                    text: "Sonos rooms";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    font-weight: 800;
+                }
+                for room in root.sonos-rooms: SpeakerRow {
+                    data: room;
+                    clicked => { root.choose-sonos(room.address); }
                 }
                 if root.message != "": Text {
                     text: root.message;

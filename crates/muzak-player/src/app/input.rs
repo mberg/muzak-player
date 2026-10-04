@@ -20,6 +20,8 @@ pub enum Input {
     Bluetooth(BtUpdate),
     /// Plays on this device for Recent, newest first.
     HistoryRecent(Vec<crate::model::PlayRecord>),
+    /// Sonos rooms found on the network.
+    SonosRooms(Vec<crate::settings::SonosRoom>),
 }
 
 /// Work for the play-history store.
@@ -149,6 +151,8 @@ pub enum UiAction {
     RenameDevice,
     FindSpeakers,
     ConnectSpeaker(String),
+    /// Play through this Sonos room (by uuid) instead of this device.
+    ChooseSonos(String),
     UseJack,
     ForgetSpeaker,
 }
@@ -254,6 +258,8 @@ pub enum Effect {
     /// Save the settings; nothing needs a restart.
     SaveSettings(crate::settings::Settings),
     History(HistoryCommand),
+    /// Look for Sonos rooms on the network.
+    ScanSonos,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -182,6 +182,14 @@ Check:
 - [ ] Settings → Sleep timer switches between 30 and 60 minutes without restarting the player.
 - [ ] Settings → Colours switches between Midnight (default), Ocean, Forest and Daylight at once, and the choice survives a restart.
 
+### Sonos (at home, with Sonos speakers on the same network)
+
+- [ ] Settings → Speaker → Find speakers lists your Sonos rooms (with `--fake`: Kitchen, Living Room, Office).
+- [ ] Tapping a room restarts the player; Settings shows "Sonos: <room>". The Spotify account linked in the Sonos app plays.
+- [ ] Playing an album, playlist, song, Liked Songs or an artist starts it in that room. Play, pause, skip, seek, volume, shuffle and repeat work.
+- [ ] Changing the song or volume from the Sonos app or a phone shows on the player within a second (events, not polling).
+- [ ] "Play on this player" switches back.
+
 ### 6. Settings
 
 The gear at the bottom of the left rail opens Settings.

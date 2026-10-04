@@ -70,7 +70,7 @@ async fn run(
     saved.apply(&mut config);
     let speaker = match &saved.output {
         Some(crate::settings::Output::Bluetooth(speaker)) => Some(speaker.clone()),
-        Some(crate::settings::Output::Jack) => None,
+        Some(crate::settings::Output::Jack | crate::settings::Output::Sonos(_)) => None,
         None => config
             .bluetooth_speaker
             .clone()
@@ -90,6 +90,10 @@ async fn run(
         inputs.clone(),
     );
     let cache = Arc::new(DiskCache::new(config.cache_dir())?);
+    let sonos_room = match &saved.output {
+        Some(crate::settings::Output::Sonos(room)) => Some(room.clone()),
+        _ => None,
+    };
     let (player, library) = if fake {
         let catalog = Arc::new(FakeCatalog::sample());
         let library = spawn_library(
@@ -100,11 +104,15 @@ async fn run(
         (spawn_fake_player(catalog, inputs.clone()), library)
     } else {
         let (session_tx, session_rx) = tokio::sync::watch::channel(None);
-        let player = crate::player::librespot::spawn(
-            crate::player::librespot::PlayerSettings::from_config(&config),
-            session_tx,
-            inputs.clone(),
-        );
+        let player = match &sonos_room {
+            // A Sonos room plays; this device's own player doesn't start.
+            Some(room) => crate::player::sonos::spawn(room.clone(), cache.clone(), inputs.clone()),
+            None => crate::player::librespot::spawn(
+                crate::player::librespot::PlayerSettings::from_config(&config),
+                session_tx,
+                inputs.clone(),
+            ),
+        };
         let http = crate::library::web_api::ReqwestHttp::new()?;
         // Endpoints Spotify told us to leave alone, remembered across restarts.
         let block_file = config.cache_dir().join("rate-limits.json");
@@ -152,6 +160,8 @@ async fn run(
     let history =
         crate::history::spawn_history(config.state_dir.join("history.db"), inputs.clone());
     let outputs = Outputs {
+        inputs: inputs.clone(),
+        fake,
         player,
         library,
         history,
@@ -185,6 +195,9 @@ async fn run(
 
 /// Where effects go.
 struct Outputs {
+    inputs: UnboundedSender<Input>,
+    /// `--fake`: pretend Sonos rooms instead of scanning the network.
+    fake: bool,
     player: UnboundedSender<PlayerCommand>,
     library: UnboundedSender<LibraryRequest>,
     history: UnboundedSender<crate::app::HistoryCommand>,
@@ -202,6 +215,26 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                 let _ = outputs.library.send(request);
             }
             Effect::Display(mode) => platform.set_display(mode),
+            Effect::ScanSonos => {
+                let inputs = outputs.inputs.clone();
+                let fake = outputs.fake;
+                tokio::spawn(async move {
+                    let rooms = if fake {
+                        tokio::time::sleep(Duration::from_millis(800)).await;
+                        ["Kitchen", "Living Room", "Office"]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, name)| crate::settings::SonosRoom {
+                                uuid: format!("RINCON_FAKE{i}"),
+                                name: name.into(),
+                            })
+                            .collect()
+                    } else {
+                        crate::player::sonos::discover_rooms().await
+                    };
+                    let _ = inputs.send(Input::SonosRooms(rooms));
+                });
+            }
             Effect::History(command) => {
                 let _ = outputs.history.send(command);
             }
