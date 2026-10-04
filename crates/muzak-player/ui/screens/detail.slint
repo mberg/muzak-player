@@ -57,8 +57,9 @@ export component DetailScreen inherits Rectangle {
     // "23 songs · 1 hr 12 min"
     in property <string> summary;
     // Albums: whether it's in the library, toggled by the heart.
-    // The artist to go back to, inside the artist drill-down.
-    in property <string> back-label;
+    // The artist name under the title opens the artist's page.
+    in property <bool> artist-link;
+    callback open-artist();
     in property <bool> saveable;
     in property <bool> saved;
     callback toggle-save();
@@ -86,7 +87,6 @@ export component DetailScreen inherits Rectangle {
         VerticalLayout {
             width: root.art;
             spacing: 10px;
-            alignment: start;
             Rectangle {
                 width: root.art;
                 height: root.art;
@@ -120,50 +120,51 @@ export component DetailScreen inherits Rectangle {
                     overflow: elide;
                     max-height: 52px;
                 }
-                // Inside the artist drill-down the artist's name is the way back to them.
-                if root.back-label == "": Text {
+                if !root.artist-link: Text {
                     text: root.header.subtitle;
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     overflow: elide;
                     visible: root.header.subtitle != "";
                 }
-                if root.back-label != "": Rectangle {
-                    height: artist-link.preferred-height + 8px;
-                    artist-link := HorizontalLayout {
-                        spacing: 2px;
-                        alignment: start;
-                        Image {
-                            source: @image-url("../icons/back.svg");
-                            width: 16px;
-                            height: 16px;
-                            y: (parent.height - self.height) / 2;
-                            colorize: Theme.accent;
-                        }
-                        Text {
-                            text: root.back-label;
-                            color: back-touch.pressed ? Theme.accent.darker(0.2) : Theme.accent;
-                            font-size: Theme.font-small;
-                            font-weight: 800;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
+                // Albums: the artist's name opens their page.
+                if root.artist-link: Rectangle {
+                    height: artist-text.preferred-height + 8px;
+                    accessible-role: button;
+                    accessible-label: root.header.subtitle;
+                    accessible-action-default => { root.open-artist(); }
+                    artist-text := Text {
+                        x: 0;
+                        width: Math.min(self.preferred-width, parent.width);
+                        text: root.header.subtitle;
+                        color: artist-touch.pressed ? Theme.accent.darker(0.2) : Theme.accent;
+                        font-size: Theme.font-small;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                        overflow: elide;
                     }
-                    back-touch := TouchArea {
-                        clicked => { root.back(); }
+                    artist-touch := TouchArea {
+                        clicked => { root.open-artist(); }
                     }
                 }
             }
+            // Pushes Play and shuffle to the bottom of the column.
+            Rectangle {
+                vertical-stretch: 1;
+            }
             HorizontalLayout {
-                spacing: 8px;
+                spacing: 12px;
                 alignment: start;
                 PillButton {
+                    height: 72px;
+                    min-width: 124px;
                     label: "Play";
                     icon: @image-url("../icons/play.svg");
                     primary: true;
                     clicked => { root.play(false); }
                 }
                 IconButton {
+                    size: 72px;
                     icon: @image-url("../icons/shuffle.svg");
                     clicked => { root.play(true); }
                 }

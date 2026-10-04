@@ -1,0 +1,49 @@
+//! Clicks through the real Slint UI with Slint's headless testing backend.
+
+use std::cell::Cell;
+use std::rc::Rc;
+
+use i_slint_backend_testing::ElementHandle;
+use muzak_player::{AppWindow, ScreenKind, TileData};
+use slint::ComponentHandle;
+use slint::platform::PointerEventButton;
+
+fn visible_by_label(window: &AppWindow, label: &str) -> ElementHandle {
+    let found: Vec<ElementHandle> =
+        ElementHandle::find_by_accessible_label(window, label).collect();
+    assert!(!found.is_empty(), "no element labelled {label:?}");
+    found.into_iter().next().unwrap()
+}
+
+#[test]
+fn ui_clicks() {
+    i_slint_backend_testing::init_integration_test_with_system_time();
+    slint::spawn_local(async move {
+        let window = AppWindow::new().unwrap();
+        window.show().unwrap();
+
+        // Album page: the artist's name under the title opens the artist.
+        window.set_screen(ScreenKind::Detail);
+        window.set_detail(TileData {
+            uri: "spotify:album:a1".into(),
+            title: "Graceland".into(),
+            subtitle: "Paul Simon".into(),
+            ..Default::default()
+        });
+        window.set_detail_artist_link(true);
+        let opened = Rc::new(Cell::new(0));
+        let o = opened.clone();
+        window.on_open_album_artist(move |uri| {
+            assert_eq!(uri, "spotify:album:a1");
+            o.set(o.get() + 1);
+        });
+        visible_by_label(&window, "Paul Simon")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(opened.get(), 1, "tapping the artist name opens the artist");
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}

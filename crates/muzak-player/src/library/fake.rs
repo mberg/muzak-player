@@ -59,6 +59,7 @@ impl FakeCatalog {
                     image_url: None,
                     owner_id: Some(if mine { FAKE_ACCOUNT_ID } else { "someone" }.into()),
                     snapshot_id: None,
+                    artist_uri: None,
                 }
             })
             .collect();
@@ -71,6 +72,7 @@ impl FakeCatalog {
                 name: name.to_string(),
                 subtitle: artist.to_string(),
                 image_url: None,
+                artist_uri: Some(fake_artist().uri),
                 ..Default::default()
             })
             .collect();
@@ -176,6 +178,7 @@ impl FakeCatalog {
                     image_url: None,
                     owner_id: Some(FAKE_ACCOUNT_ID.into()),
                     snapshot_id: None,
+                    artist_uri: None,
                 };
                 data.playlists.insert(0, created.clone());
                 data.tracks.insert(created.uri.clone(), vec![track]);

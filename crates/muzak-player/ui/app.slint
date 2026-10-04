@@ -79,7 +79,7 @@ export component AppWindow inherits Window {
     in property <string> detail-summary;
     in property <bool> detail-saveable;
     in property <bool> detail-saved;
-    in property <string> detail-back-label;
+    in property <bool> detail-artist-link;
     in property <bool> artist-followed;
     in property <string> artist-back-label;
     in property <string> now-track-uri;
@@ -120,6 +120,7 @@ export component AppWindow inherits Window {
     callback keyboard-done();
     callback toggle-like();
     callback open-playing-artist();
+    callback open-album-artist(string);
     callback toggle-list-view();
     callback toggle-save-album(string);
     callback toggle-follow(string);
@@ -185,7 +186,8 @@ export component AppWindow inherits Window {
         summary: root.detail-summary;
         saveable: root.detail-saveable;
         saved: root.detail-saved;
-        back-label: root.detail-back-label;
+        artist-link: root.detail-artist-link;
+        open-artist => { root.open-album-artist(root.detail.uri); }
         toggle-save => { root.toggle-save-album(root.detail.uri); }
         add(uri) => { root.open-picker(uri); }
         edit => { root.edit-playlist(root.detail.uri); }

@@ -244,6 +244,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_open_album_artist(move |uri| s(UiAction::OpenAlbumArtist(uri.to_string())));
+    let s = send.clone();
     window.on_open_playing_artist(move || s(UiAction::OpenPlayingArtist));
     let s = send.clone();
     window.on_toggle_like(move || s(UiAction::ToggleLike));
@@ -321,7 +323,7 @@ impl Bridge {
             w.set_detail_summary(detail.summary.as_str().into());
             w.set_detail_saveable(detail.saveable);
             w.set_detail_saved(detail.saved);
-            w.set_detail_back_label(detail.back_label.as_str().into());
+            w.set_detail_artist_link(detail.artist_link);
         }
 
         let art = self.images.get(&v.now.image_url);

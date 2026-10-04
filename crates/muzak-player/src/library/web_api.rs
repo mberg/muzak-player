@@ -324,6 +324,7 @@ fn playlist_collection(p: PlaylistObj) -> Collection {
         subtitle: owner_name.unwrap_or_default(),
         owner_id,
         snapshot_id: p.snapshot_id,
+        artist_uri: None,
     }
 }
 
@@ -385,6 +386,7 @@ fn album_collection(a: &AlbumObj) -> Collection {
         name: a.name.clone(),
         subtitle: join_artists(&a.artists),
         image_url: pick_image(images(&a.images)),
+        artist_uri: a.artists.first().and_then(|r| r.uri.clone()),
         ..Default::default()
     }
 }

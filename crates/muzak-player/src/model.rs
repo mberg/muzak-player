@@ -90,6 +90,9 @@ pub struct Collection {
     /// A playlist's version, sent with edits so Spotify can detect conflicts.
     #[serde(default)]
     pub snapshot_id: Option<String>,
+    /// An album's first artist, so the album page can lead to the artist.
+    #[serde(default)]
+    pub artist_uri: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

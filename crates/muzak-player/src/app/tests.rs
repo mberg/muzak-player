@@ -1364,3 +1364,37 @@ fn the_playing_songs_artist_opens_their_page_with_a_name() {
     c.handle(ui(UiAction::Back), 0);
     assert_eq!(c.state().screen, Screen::NowPlaying);
 }
+
+#[test]
+fn album_artist_opens_the_artist_or_steps_back_to_them() {
+    let mut c = core();
+    let album = Collection {
+        uri: "spotify:album:x".into(),
+        kind: CollectionKind::Album,
+        name: "Graceland".into(),
+        subtitle: "Paul Simon".into(),
+        artist_uri: Some("spotify:artist:ps".into()),
+        ..Default::default()
+    };
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Albums,
+            items: vec![album.clone()],
+        }),
+        0,
+    );
+    // From Albums: opens the artist page, titled with their name.
+    c.handle(ui(UiAction::OpenCollection(album.uri.clone())), 0);
+    c.handle(ui(UiAction::OpenAlbumArtist(album.uri.clone())), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:ps".into()));
+    assert_eq!(
+        crate::view::build(c.state()).artist.unwrap().header.title,
+        "Paul Simon"
+    );
+    // From that artist page into the album and back up: no second artist page.
+    c.handle(ui(UiAction::OpenCollection(album.uri.clone())), 0);
+    let depth = c.state().back_stack.len();
+    c.handle(ui(UiAction::OpenAlbumArtist(album.uri.clone())), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:ps".into()));
+    assert_eq!(c.state().back_stack.len(), depth - 1);
+}

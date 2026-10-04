@@ -744,6 +744,22 @@ impl Core {
         self.state.screen = Screen::Grid(Section::Playlists);
     }
 
+    /// Keeps an artist's name so their page has a title even if no list holds them.
+    fn remember_artist(&mut self, uri: &str, name: String) {
+        if self.find_collection(uri).is_none() {
+            self.state.artists_seen.insert(
+                uri.to_string(),
+                Collection {
+                    uri: uri.to_string(),
+                    kind: crate::model::CollectionKind::Artist,
+                    name,
+                    subtitle: "Artist".into(),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+
     /// Finds a song by URI in search results or any loaded track list.
     fn find_track(&self, uri: &str) -> Option<Track> {
         let from_search = self
@@ -1022,6 +1038,27 @@ impl Core {
                     artist_uri: uri,
                 }));
             }
+            UiAction::OpenAlbumArtist(album_uri) => {
+                let Some(album) = self.find_collection(&album_uri) else {
+                    return;
+                };
+                let Some(artist_uri) = album.artist_uri.clone() else {
+                    return;
+                };
+                // Already came from this artist's page: step back rather than stack it again.
+                if self.state.back_stack.last() == Some(&Screen::Artist(artist_uri.clone())) {
+                    self.on_ui(UiAction::Back, now_ms, fx);
+                    return;
+                }
+                let name = album
+                    .subtitle
+                    .split(", ")
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
+                self.remember_artist(&artist_uri, name);
+                self.on_ui(UiAction::OpenArtist(artist_uri), now_ms, fx);
+            }
             UiAction::OpenPlayingArtist => {
                 let Some(track) = self.state.playback.track.clone() else {
                     return;
@@ -1035,16 +1072,7 @@ impl Core {
                     .next()
                     .unwrap_or_default()
                     .to_string();
-                self.state.artists_seen.insert(
-                    uri.clone(),
-                    Collection {
-                        uri: uri.clone(),
-                        kind: crate::model::CollectionKind::Artist,
-                        name,
-                        subtitle: "Artist".into(),
-                        ..Default::default()
-                    },
-                );
+                self.remember_artist(&uri, name);
                 self.on_ui(UiAction::OpenArtist(uri), now_ms, fx);
             }
             UiAction::PlayArtist(uri) => {

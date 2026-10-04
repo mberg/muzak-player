@@ -86,6 +86,8 @@ pub enum UiAction {
     OpenArtist(String),
     /// From Now Playing: open the playing song's artist.
     OpenPlayingArtist,
+    /// From an album page: open the album's artist (or go back to them in a drill-down).
+    OpenAlbumArtist(String),
     PlayArtist(String),
     /// Play one song picked from search results, by track URI.
     PlaySong(String),

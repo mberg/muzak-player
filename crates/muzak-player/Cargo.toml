@@ -36,3 +36,5 @@ slint-build = "1.18"
 
 [dev-dependencies]
 tempfile = "3"
+# Headless Slint for tests that click through the real UI.
+i-slint-backend-testing = "=1.18.1"

@@ -103,8 +103,8 @@ pub struct DetailView {
     /// An album, which can be saved to or removed from the library.
     pub saveable: bool,
     pub saved: bool,
-    /// Inside the artist drill-down: the artist to go back to. Empty otherwise.
-    pub back_label: String,
+    /// The artist name under an album's title opens the artist (Back inside a drill-down).
+    pub artist_link: bool,
 }
 
 /// A Bluetooth speaker found by a scan.
@@ -607,14 +607,7 @@ fn detail(state: &AppState) -> Option<DetailView> {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
         summary,
-        back_label: match state.back_stack.last() {
-            Some(Screen::Artist(artist)) if state.screen == Screen::Detail(uri.clone()) => {
-                find_collection(state, artist)
-                    .map(|a| a.name)
-                    .unwrap_or_default()
-            }
-            _ => String::new(),
-        },
+        artist_link: find_collection(state, &uri).is_some_and(|c| c.artist_uri.is_some()),
         saveable: uri.starts_with("spotify:album:"),
         saved: state.liked.get(&uri).copied().unwrap_or_else(|| {
             section_items(state, Section::Albums)
