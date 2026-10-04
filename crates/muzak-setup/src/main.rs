@@ -40,6 +40,10 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // librespot and reqwest pull in different rustls crypto backends, so pick one explicitly.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow!("rustls crypto provider already installed"))?;
     match Cli::parse().command {
         Command::Auth { state_dir } => auth(&state_dir).await,
         Command::Probe { state_dir } => probe(&state_dir).await,

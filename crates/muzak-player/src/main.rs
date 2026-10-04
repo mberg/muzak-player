@@ -19,6 +19,10 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // librespot and reqwest pull in different rustls crypto backends, so pick one explicitly.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("rustls crypto provider already installed"))?;
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()

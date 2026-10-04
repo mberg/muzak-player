@@ -3617,6 +3617,7 @@ dependencies = [
  "image",
  "librespot",
  "reqwest 0.13.5",
+ "rustls 0.23.45",
  "serde",
  "serde_json",
  "sha1",
@@ -3638,6 +3639,7 @@ dependencies = [
  "clap",
  "librespot",
  "reqwest 0.13.5",
+ "rustls 0.23.45",
  "serde_json",
  "tokio",
 ]
