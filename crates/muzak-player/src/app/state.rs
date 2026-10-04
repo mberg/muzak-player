@@ -35,6 +35,39 @@ impl<T> Default for Slot<T> {
     }
 }
 
+/// Which kinds of results the search screen shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchFilter {
+    #[default]
+    All,
+    Songs,
+    Artists,
+    Albums,
+    Playlists,
+}
+
+impl SearchFilter {
+    pub fn index(self) -> i32 {
+        match self {
+            SearchFilter::All => 0,
+            SearchFilter::Songs => 1,
+            SearchFilter::Artists => 2,
+            SearchFilter::Albums => 3,
+            SearchFilter::Playlists => 4,
+        }
+    }
+
+    pub fn from_index(index: i32) -> SearchFilter {
+        match index {
+            1 => SearchFilter::Songs,
+            2 => SearchFilter::Artists,
+            3 => SearchFilter::Albums,
+            4 => SearchFilter::Playlists,
+            _ => SearchFilter::All,
+        }
+    }
+}
+
 /// The search box and its catalog results.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SearchState {
@@ -44,6 +77,7 @@ pub struct SearchState {
     /// When `query` last changed.
     pub edited_ms: u64,
     pub results: Slot<SearchResults>,
+    pub filter: SearchFilter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

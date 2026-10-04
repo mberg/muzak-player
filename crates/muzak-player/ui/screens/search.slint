@@ -19,7 +19,10 @@ export component SearchScreen inherits Rectangle {
     callback clear();
     callback open-keyboard();
     callback close();
-    property <length> bar: 76px;
+    // 0 all, 1 songs, 2 artists, 3 albums, 4 playlists.
+    in property <int> filter;
+    callback set-filter(int);
+    property <length> bar: 116px;
     property <length> results-height: root.height - root.bar - (root.keyboard ? root.keyboard-height : 0px);
     background: Theme.bg;
     // Closes search and returns to the previous section.
@@ -74,6 +77,27 @@ export component SearchScreen inherits Rectangle {
                     height: 22px;
                     colorize: clear-touch.pressed ? Theme.text : Theme.text-dim;
                 }
+            }
+        }
+    }
+    HorizontalLayout {
+        x: 16px;
+        y: 72px;
+        height: 36px;
+        spacing: 8px;
+        alignment: start;
+        for label[i] in ["All", "Songs", "Artists", "Albums", "Playlists"]: Rectangle {
+            width: chip-text.preferred-width + 28px;
+            border-radius: 18px;
+            background: root.filter == i ? Theme.accent : (chip-touch.pressed ? Theme.surface-hi : Theme.surface);
+            chip-text := Text {
+                text: label;
+                color: root.filter == i ? Theme.accent-text : Theme.text;
+                font-size: Theme.font-small;
+                font-weight: 800;
+            }
+            chip-touch := TouchArea {
+                clicked => { root.set-filter(i); }
             }
         }
     }

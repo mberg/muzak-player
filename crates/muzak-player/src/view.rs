@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::app::{AppState, DisplayMode, Notice, PlayStatus, Screen, Slot};
+use crate::app::{AppState, DisplayMode, Notice, PlayStatus, Screen, SearchFilter, Slot};
 use crate::library::matching::matches;
 use crate::model::{Collection, LIKED_URI, Repeat, Section, Track, liked_collection};
 
@@ -55,6 +55,7 @@ pub struct SearchView {
     pub status: LoadStatus,
     /// Shown under library matches when the Spotify search could not run.
     pub note: String,
+    pub filter: SearchFilter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -239,11 +240,26 @@ fn library_rows(state: &AppState, query: &str) -> Vec<SearchRowView> {
     rows
 }
 
+/// Whether a result row of `kind` passes the filter.
+fn shows(filter: SearchFilter, kind: RowKind) -> bool {
+    matches!(
+        (filter, kind),
+        (SearchFilter::All, _)
+            | (SearchFilter::Songs, RowKind::Song)
+            | (SearchFilter::Artists, RowKind::Artist)
+            | (SearchFilter::Albums, RowKind::Album)
+            | (SearchFilter::Playlists, RowKind::Playlist)
+    )
+}
+
 fn search(state: &AppState) -> SearchView {
     let s = &state.search;
     let query = s.query.trim();
     let mut rows = Vec::new();
-    let library = library_rows(state, query);
+    let library: Vec<SearchRowView> = library_rows(state, query)
+        .into_iter()
+        .filter(|r| shows(s.filter, r.kind))
+        .collect();
     let has_library = !library.is_empty();
     if has_library {
         rows.push(header_row("In your library"));
@@ -263,6 +279,7 @@ fn search(state: &AppState) -> SearchView {
             .chain(found.albums.iter().map(|c| row(RowKind::Album, c)))
             .chain(found.playlists.iter().map(|c| row(RowKind::Playlist, c)))
             .filter(fresh)
+            .filter(|r| shows(s.filter, r.kind))
             .collect();
         if !catalog_rows.is_empty() {
             rows.push(header_row("On Spotify"));
@@ -290,6 +307,7 @@ fn search(state: &AppState) -> SearchView {
         rows,
         status,
         note,
+        filter: s.filter,
     }
 }
 
@@ -684,6 +702,38 @@ mod tests {
             ]
         );
         assert_eq!(v.search.status, LoadStatus::Ready);
+    }
+
+    #[test]
+    fn filter_keeps_only_one_kind_and_its_headers() {
+        let mut c = core();
+        c.handle(
+            Input::Library(LibraryUpdate::Section {
+                section: Section::Playlists,
+                items: vec![playlist(1)],
+            }),
+            0,
+        );
+        search_for(&mut c, "1");
+        catalog(
+            &mut c,
+            "1",
+            crate::model::SearchResults {
+                tracks: vec![track(1)],
+                playlists: vec![playlist(9)],
+                ..Default::default()
+            },
+        );
+        c.handle(ui(UiAction::SetSearchFilter(SearchFilter::Songs)), 1_000);
+        assert_eq!(
+            kinds(&build(c.state())),
+            [
+                (RowKind::Header, "On Spotify".to_string()),
+                (RowKind::Song, "Song 1".to_string()),
+            ]
+        );
+        c.handle(ui(UiAction::SetSearchFilter(SearchFilter::Artists)), 1_000);
+        assert_eq!(build(c.state()).search.status, LoadStatus::Empty);
     }
 
     #[test]

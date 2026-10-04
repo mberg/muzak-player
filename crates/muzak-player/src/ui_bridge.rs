@@ -200,6 +200,12 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_close_keyboard(move || s(UiAction::CloseKeyboard));
     let s = send.clone();
+    window.on_set_search_filter(move |i| {
+        s(UiAction::SetSearchFilter(
+            crate::app::SearchFilter::from_index(i),
+        ))
+    });
+    let s = send.clone();
     window.on_close_search(move || s(UiAction::CloseSearch));
     let s = send.clone();
     window.on_open_artist(move |uri| s(UiAction::OpenArtist(uri.to_string())));
@@ -272,6 +278,7 @@ impl Bridge {
         w.set_search_query(v.search.query.as_str().into());
         w.set_search_state(load_state(v.search.status));
         w.set_search_note(v.search.note.as_str().into());
+        w.set_search_filter(v.search.filter.index());
         if v.screen == ScreenView::Search {
             let rows = v
                 .search

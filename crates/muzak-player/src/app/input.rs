@@ -52,6 +52,7 @@ pub enum UiAction {
     CloseKeyboard,
     /// Leave search and go back to the section that was open before.
     CloseSearch,
+    SetSearchFilter(crate::app::state::SearchFilter),
     OpenArtist(String),
     PlayArtist(String),
     /// Play one song picked from search results, by track URI.

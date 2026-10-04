@@ -54,6 +54,7 @@ export component AppWindow inherits Window {
     in property <[SearchRowData]> search-rows;
     in property <LoadState> search-state;
     in property <string> search-note;
+    in property <int> search-filter;
     in property <TileData> artist;
     in property <[TileData]> artist-albums;
     in property <LoadState> artist-state;
@@ -78,6 +79,7 @@ export component AppWindow inherits Window {
     callback open-keyboard();
     callback close-keyboard();
     callback close-search();
+    callback set-search-filter(int);
     callback open-artist(string);
     callback play-artist(string);
     callback play-song(string);
@@ -136,6 +138,8 @@ export component AppWindow inherits Window {
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
         close => { root.close-search(); }
+        filter: root.search-filter;
+        set-filter(i) => { root.set-search-filter(i); }
     }
     ArtistScreen {
         x: Theme.rail-width;

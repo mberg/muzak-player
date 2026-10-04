@@ -293,6 +293,7 @@ impl Core {
                 self.state.keyboard_open = self.state.screen == Screen::Search;
             }
             UiAction::CloseKeyboard => self.state.keyboard_open = false,
+            UiAction::SetSearchFilter(filter) => self.state.search.filter = filter,
             UiAction::CloseSearch => {
                 let previous = self.before_search;
                 self.on_ui(UiAction::ShowSection(previous), now_ms, fx);
