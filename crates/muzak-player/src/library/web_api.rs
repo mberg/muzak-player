@@ -29,6 +29,9 @@ pub enum HttpError {
     Network(String),
     #[error("invalid response: {0}")]
     Decode(String),
+    /// HTTP 429, with the seconds Spotify asked us to wait, if it said.
+    #[error("rate limited")]
+    RateLimited(Option<u64>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +80,17 @@ impl ReqwestHttp {
     }
 }
 
+fn retry_after(response: &reqwest::Response) -> Option<u64> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 impl Http for ReqwestHttp {
     async fn get_json(&self, url: &str, token: &str) -> Result<Value, HttpError> {
         let response = self
@@ -87,6 +101,9 @@ impl Http for ReqwestHttp {
             .await
             .map_err(|e| HttpError::Network(e.to_string()))?;
         let status = response.status();
+        if status.as_u16() == 429 {
+            return Err(HttpError::RateLimited(retry_after(&response)));
+        }
         if !status.is_success() {
             return Err(HttpError::Status(status.as_u16()));
         }
@@ -121,6 +138,9 @@ impl Http for ReqwestHttp {
             .await
             .map_err(|e| HttpError::Network(e.to_string()))?;
         let status = response.status();
+        if status.as_u16() == 429 {
+            return Err(HttpError::RateLimited(retry_after(&response)));
+        }
         if !status.is_success() {
             return Err(HttpError::Status(status.as_u16()));
         }
@@ -432,7 +452,15 @@ pub struct WebApi<H, T> {
     http: H,
     tokens: T,
     base: String,
+    /// The playlist list, shared by the Playlists and Recent sections for a short while so
+    /// a refresh fetches it once. Locked during the fetch so concurrent callers wait for it.
+    playlists_memo: tokio::sync::Mutex<Option<(std::time::Instant, Vec<Collection>)>>,
 }
+
+/// How long one fetch of the playlist list serves both sections.
+const PLAYLISTS_MEMO: Duration = Duration::from_secs(30);
+/// The longest Retry-After worth waiting for before giving up on a request.
+const MAX_RETRY_AFTER_SECS: u64 = 10;
 
 impl<H: Http, T: TokenSource> WebApi<H, T> {
     pub fn new(http: H, tokens: T) -> Self {
@@ -444,6 +472,7 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
             http,
             tokens,
             base: base.to_string(),
+            playlists_memo: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -472,6 +501,7 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
             format!("{}{}", self.base, path_or_url)
         };
         let mut retried = false;
+        let mut waited = false;
         loop {
             let token = self.tokens.token().await?;
             let result = match method {
@@ -489,6 +519,19 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
                     self.tokens.invalidate();
                 }
                 Err(HttpError::Status(401)) => return Err(FetchError::Auth),
+                // Spotify asks clients to slow down; wait once if the wait is short.
+                Err(HttpError::RateLimited(secs)) if !waited => {
+                    let secs = secs.unwrap_or(2);
+                    if secs > MAX_RETRY_AFTER_SECS {
+                        return Err(FetchError::Other(format!("rate limited for {secs}s: {url}")));
+                    }
+                    tracing::info!("rate limited; retrying {url} in {secs}s");
+                    waited = true;
+                    tokio::time::sleep(Duration::from_secs(secs)).await;
+                }
+                Err(HttpError::RateLimited(_)) => {
+                    return Err(FetchError::Other(format!("rate limited: {url}")));
+                }
                 Err(HttpError::Status(403)) => return Err(FetchError::Forbidden),
                 Err(HttpError::Status(404)) => return Err(FetchError::NotFound),
                 Err(HttpError::Status(code)) => {
@@ -518,8 +561,16 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
     }
 
     async fn playlists(&self) -> Result<Vec<Collection>, FetchError> {
+        let mut memo = self.playlists_memo.lock().await;
+        if let Some((at, lists)) = memo.as_ref()
+            && at.elapsed() < PLAYLISTS_MEMO
+        {
+            return Ok(lists.clone());
+        }
         let items = self.pages::<PlaylistObj>("/me/playlists?limit=50").await?;
-        Ok(items.into_iter().map(playlist_collection).collect())
+        let lists: Vec<Collection> = items.into_iter().map(playlist_collection).collect();
+        *memo = Some((std::time::Instant::now(), lists.clone()));
+        Ok(lists)
     }
 
     async fn albums(&self) -> Result<Vec<Collection>, FetchError> {
@@ -636,6 +687,8 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
     }
 
     async fn apply(&self, edit: PlaylistEdit) -> Result<EditOutcome, FetchError> {
+        // The reload after an edit must see the change.
+        *self.playlists_memo.lock().await = None;
         match edit {
             PlaylistEdit::Add {
                 playlist_uri,
@@ -1173,6 +1226,48 @@ mod tests {
         assert!(api.is_liked(&track_uri).await.unwrap());
         let methods: Vec<Method> = api.http.sent().iter().map(|s| s.0).collect();
         assert_eq!(methods, [Method::Put, Method::Delete]);
+    }
+
+    #[tokio::test]
+    async fn playlists_and_recent_share_one_fetch() {
+        let http = FakeHttp::default()
+            .on(
+                "/me/playlists?limit=50",
+                Ok(json!({"items": [], "next": null})),
+            )
+            .on(
+                "/me/player/recently-played?limit=50",
+                Ok(json!({"items": [], "next": null})),
+            );
+        let api = api(http);
+        api.section(Section::Playlists).await.unwrap();
+        api.section(Section::Recent).await.unwrap();
+        let fetches = api
+            .http
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(url, _)| url.contains("/me/playlists"))
+            .count();
+        assert_eq!(fetches, 1);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_waits_once_then_gives_up() {
+        let http = FakeHttp::default()
+            .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(0))))
+            .on("/me/albums?limit=50", Ok(json!({"items": [], "next": null})));
+        assert!(api(http).section(Section::Albums).await.is_ok());
+
+        let http = FakeHttp::default()
+            .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(0))))
+            .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(0))));
+        assert!(api(http).section(Section::Albums).await.is_err());
+
+        let http = FakeHttp::default()
+            .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(3600))));
+        assert!(api(http).section(Section::Albums).await.is_err());
     }
 
     #[tokio::test]
