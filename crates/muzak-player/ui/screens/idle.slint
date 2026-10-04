@@ -5,6 +5,8 @@ import { Theme } from "../theme.slint";
 export component IdleOverlay inherits Rectangle {
     in property <int> mode;
     in property <string> clock;
+    // No clock while falling asleep to a sleep timer: just dim, then dark.
+    in property <bool> show-clock: true;
     callback touched();
     // 90% darker when dim (the Pi also lowers its backlight); black when off.
     background: root.mode == 0 ? #00000000 : root.mode == 1 ? #000000e6 : #000000;
@@ -14,7 +16,7 @@ export component IdleOverlay inherits Rectangle {
         color: Theme.text;
         font-size: 96px;
         font-weight: 800;
-        opacity: root.mode == 1 ? 1 : 0;
+        opacity: root.mode == 1 && root.show-clock ? 1 : 0;
         animate opacity { duration: root.mode == 0 ? 0ms : 5s; }
     }
     // Only catches taps while dim or off, so it never blocks the screen when awake.

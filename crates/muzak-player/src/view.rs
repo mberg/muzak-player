@@ -183,6 +183,8 @@ pub struct View {
     pub mini_visible: bool,
     pub banner: Option<String>,
     pub display: DisplayMode,
+    /// The dim screen shows a clock, except while falling asleep to a sleep timer.
+    pub show_clock: bool,
     pub auth_needed: bool,
     pub search: SearchView,
     pub artist: Option<ArtistView>,
@@ -244,6 +246,7 @@ pub fn build(state: &AppState) -> View {
         mini_visible: has_playback && screen != ScreenView::NowPlaying && !keyboard,
         banner: banner(state),
         display: state.display,
+        show_clock: state.sleep_ends_ms.is_none(),
         auth_needed: state.auth_needed,
         search: search(state),
         artist: artist(state),
@@ -1068,6 +1071,14 @@ mod tests {
         tracks[0].duration_ms = 180_000 + 12 * 60_000 + 60 * 60_000 - 23 * 180_000;
         assert_eq!(track_summary(&tracks), "23 songs · 1 hr 12 min");
         assert_eq!(track_summary(&tracks[1..2]), "1 song · 3 min");
+    }
+
+    #[test]
+    fn no_clock_while_falling_asleep() {
+        let mut c = core();
+        assert!(build(c.state()).show_clock);
+        c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
+        assert!(!build(c.state()).show_clock);
     }
 
     #[test]

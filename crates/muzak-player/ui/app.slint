@@ -52,6 +52,7 @@ export component AppWindow inherits Window {
     in property <string> banner;
     in property <int> display-mode;
     in property <string> clock;
+    in property <bool> show-clock;
     in property <bool> auth-needed;
     in property <string> account-name;
     in property <string> account-id;
@@ -381,6 +382,7 @@ export component AppWindow inherits Window {
         height: root.height;
         mode: root.display-mode;
         clock: root.clock;
+        show-clock: root.show-clock;
         touched => { root.touched(); }
     }
 }
