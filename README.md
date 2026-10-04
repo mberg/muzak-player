@@ -15,6 +15,7 @@ Status: phase 1 is code-complete and the unit tests pass. It has not yet been te
 
 - Xcode command line tools: `xcode-select --install`
 - Rust 1.97.1. The repo has a `.tool-versions` file, so with asdf run `asdf install`. Without asdf, use `rustup toolchain install 1.97.1`.
+  - If `cargo` is still "command not found" after `asdf install`, the asdf shims are not on your PATH. Add `export PATH="$HOME/.asdf/shims:$PATH"` to `~/.zshrc` and open a new terminal.
 - A Spotify Premium account to test with. It can be your own or one of the kids' Family accounts.
 - Docker Desktop, needed only to build for the Pi.
 
@@ -23,7 +24,6 @@ Get the code:
 ```bash
 git clone https://github.com/mberg/muzak-player.git
 cd muzak-player
-git checkout phase1-player   # until PR #1 is merged
 cargo test --workspace       # expect 79 passed
 ```
 

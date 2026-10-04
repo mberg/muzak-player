@@ -16,11 +16,14 @@ export component PillButton inherits Rectangle {
         padding-right: 22px;
         spacing: 8px;
         alignment: center;
-        Image {
-            source: root.icon;
-            width: 26px;
-            height: 26px;
-            colorize: root.primary ? Theme.accent-text : Theme.text;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: root.icon;
+                width: 26px;
+                height: 26px;
+                colorize: root.primary ? Theme.accent-text : Theme.text;
+            }
         }
         Text {
             text: root.label;
