@@ -13,6 +13,7 @@ export component DetailScreen inherits Rectangle {
     // The signed-in account owns this playlist.
     in property <bool> editable;
     in property <bool> editing;
+    in property <bool> can-add;
     callback back();
     callback play(bool);
     callback play-track(int);
@@ -118,6 +119,7 @@ export component DetailScreen inherits Rectangle {
                 for track[i] in root.tracks: TrackRow {
                     data: track;
                     editing: root.editing;
+                    show-add: root.can-add;
                     drag-offset: i == root.drag-from ? root.drag-dy : 0px;
                     drop-marker: i != root.drag-to || i == root.drag-from ? 0 : (root.drag-to < root.drag-from ? 1 : 2);
                     clicked => { root.play-track(i); }

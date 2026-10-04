@@ -286,6 +286,7 @@ impl Bridge {
             w.set_detail_state(load_state(detail.status));
             w.set_detail_editable(detail.editable);
             w.set_detail_editing(detail.editing);
+            w.set_detail_can_add(detail.can_add);
         }
 
         let art = self.images.get(&v.now.image_url);

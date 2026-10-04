@@ -92,6 +92,8 @@ pub struct DetailView {
     /// The signed-in account owns this playlist.
     pub editable: bool,
     pub editing: bool,
+    /// Rows offer "add to playlist": on albums and Liked Songs, not on playlists.
+    pub can_add: bool,
 }
 
 /// The add-to-playlist picker: the user's own playlists.
@@ -475,6 +477,7 @@ fn detail(state: &AppState) -> Option<DetailView> {
     Some(DetailView {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
+        can_add: !uri.starts_with("spotify:playlist:") && !uri.starts_with("muzak:new:"),
         header,
         status: status(slot),
         tracks,
@@ -867,6 +870,21 @@ mod tests {
         );
         c.handle(ui(UiAction::OpenCollection(playlist(5).uri)), 1_000);
         assert_eq!(build(c.state()).detail.unwrap().header.title, "Playlist 5");
+    }
+
+    #[test]
+    fn add_buttons_show_on_albums_and_liked_but_not_playlists() {
+        let mut c = core();
+        let can_add = |c: &crate::app::Core| build(c.state()).detail.unwrap().can_add;
+        c.handle(ui(UiAction::OpenCollection("spotify:album:a1".into())), 0);
+        assert!(can_add(&c));
+        c.handle(
+            ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+            0,
+        );
+        assert!(!can_add(&c));
+        c.handle(ui(UiAction::ShowSection(Section::Liked)), 0);
+        assert!(can_add(&c));
     }
 
     #[test]

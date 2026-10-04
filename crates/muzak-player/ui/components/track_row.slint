@@ -24,6 +24,8 @@ export component TrackRow inherits Rectangle {
     in property <TrackData> data;
     // Edit mode: a drag handle on the left and a remove button instead of add.
     in property <bool> editing;
+    // Show the add-to-playlist button outside edit mode.
+    in property <bool> show-add: true;
     // While this row is being dragged, how far it has moved.
     in property <length> drag-offset;
     // 1 shows a drop line above this row, 2 below it.
@@ -89,7 +91,7 @@ export component TrackRow inherits Rectangle {
             }
             VerticalLayout {
                 alignment: center;
-                if !root.editing: SmallButton {
+                if !root.editing && root.show-add: SmallButton {
                     icon: @image-url("../icons/plus.svg");
                     clicked => { root.add(); }
                 }

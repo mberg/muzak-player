@@ -63,6 +63,7 @@ export component AppWindow inherits Window {
     in property <LoadState> artist-state;
     in property <bool> detail-editable;
     in property <bool> detail-editing;
+    in property <bool> detail-can-add;
     in property <string> now-track-uri;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
@@ -147,6 +148,7 @@ export component AppWindow inherits Window {
         play-track(i) => { root.play-track(root.detail.uri, i); }
         editable: root.detail-editable;
         editing: root.detail-editing;
+        can-add: root.detail-can-add;
         add(uri) => { root.open-picker(uri); }
         edit => { root.edit-playlist(root.detail.uri); }
         finish-editing => { root.finish-editing(); }
