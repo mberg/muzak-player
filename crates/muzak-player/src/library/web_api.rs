@@ -112,8 +112,9 @@ impl Http for ReqwestHttp {
         let mut request = self.client.request(method, url).bearer_auth(token);
         request = match &body {
             Some(body) => request.json(body),
-            // Spotify answers 411 to a bodiless PUT without `Content-Length: 0`.
-            None => request.body(Vec::<u8>::new()),
+            // Spotify answers 411 to a bodiless PUT unless `Content-Length: 0` is sent; an
+            // empty body alone doesn't make reqwest send the header.
+            None => request.header(reqwest::header::CONTENT_LENGTH, "0"),
         };
         let response = request
             .send()
