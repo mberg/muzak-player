@@ -14,6 +14,7 @@ pub(crate) fn config() -> CoreConfig {
         speaker: None,
         saved: Default::default(),
         bluetooth: true,
+        voice: true,
     }
 }
 
@@ -1742,4 +1743,313 @@ fn an_empty_playlist_can_be_made_from_playlists() {
     assert_eq!(placeholder.name, "Gym");
     assert!(track_names(&c, &placeholder.uri).is_empty());
     assert_eq!(c.state().notice, Some(Notice::Created("Gym".into())));
+}
+
+// ---- Voice ----
+
+fn voice(update: VoiceUpdate) -> Input {
+    Input::Voice(update)
+}
+
+fn volumes(fx: &[Effect]) -> Vec<u8> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::Player(PlayerCommand::SetVolume { percent }) => Some(*percent),
+            _ => None,
+        })
+        .collect()
+}
+
+fn banner(c: &Core) -> Option<String> {
+    crate::view::build(c.state()).banner
+}
+
+#[test]
+fn the_wake_word_lowers_the_music_and_passes_the_library_to_gemini() {
+    let mut c = playing_at(60);
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![playlist(1)],
+        }),
+        0,
+    );
+    let fx = c.handle(voice(VoiceUpdate::Woke), 1_000);
+    assert_eq!(volumes(&fx), [15]);
+    assert_eq!(c.state().voice.phase, VoicePhase::Listening);
+    let Some(Effect::VoiceContext(context)) =
+        fx.iter().find(|e| matches!(e, Effect::VoiceContext(_)))
+    else {
+        panic!("no context in {fx:?}")
+    };
+    assert_eq!(
+        context.volume, 60,
+        "Gemini hears the real volume, not the lowered one"
+    );
+    assert_eq!(context.now_playing.as_deref(), Some("Song 1 by Band"));
+    assert_eq!(context.items[0].uri, "spotify:playlist:p1");
+    assert_eq!(context.items[0].kind, "playlist");
+    c.handle(voice(VoiceUpdate::Thinking), 2_000);
+    assert_eq!(c.state().voice.phase, VoicePhase::Thinking);
+    // Not understood: the music comes back.
+    let fx = c.handle(voice(VoiceUpdate::NotUnderstood), 3_000);
+    assert_eq!(volumes(&fx), [60]);
+    assert_eq!(c.state().voice.phase, VoicePhase::Idle);
+    assert_eq!(banner(&c).as_deref(), Some("Didn't catch that"));
+}
+
+#[test]
+fn a_voice_request_plays_something_from_the_library() {
+    let mut c = playing_at(60);
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![playlist(1), playlist(2)],
+        }),
+        0,
+    );
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::Play(
+            "spotify:playlist:p2".into(),
+        ))),
+        0,
+    );
+    assert_eq!(volumes(&fx), [60]);
+    assert!(fx.iter().any(|e| matches!(
+        e,
+        Effect::Player(PlayerCommand::Load { context_uri, .. }) if context_uri == "spotify:playlist:p2"
+    )));
+    assert_eq!(banner(&c).as_deref(), Some("Playing Playlist 2"));
+}
+
+#[test]
+fn something_gemini_made_up_is_never_played() {
+    let mut c = playing_at(60);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::Play(
+            "spotify:album:imaginary".into(),
+        ))),
+        0,
+    );
+    assert!(
+        !fx.iter()
+            .any(|e| matches!(e, Effect::Player(PlayerCommand::Load { .. })))
+    );
+    assert_eq!(volumes(&fx), [60]);
+    assert_eq!(banner(&c).as_deref(), Some("Didn't catch that"));
+}
+
+#[test]
+fn a_voice_search_plays_the_first_result_of_its_kind() {
+    let mut c = playing_at(60);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::Search {
+            query: "The Paul Simon Songbook".into(),
+            kind: SearchKind::Album,
+        })),
+        0,
+    );
+    assert!(fx.contains(&Effect::Library(LibraryRequest::Search(
+        "The Paul Simon Songbook".into()
+    ))));
+    assert_eq!(
+        banner(&c).as_deref(),
+        Some("Looking for The Paul Simon Songbook")
+    );
+    // The search screen's own timer doesn't search again.
+    assert!(c.handle(Input::SearchTick, 5_000).is_empty());
+    let album = Collection {
+        uri: "spotify:album:songbook".into(),
+        kind: CollectionKind::Album,
+        name: "The Paul Simon Songbook".into(),
+        subtitle: "Paul Simon".into(),
+        ..Default::default()
+    };
+    let fx = c.handle(
+        Input::Library(LibraryUpdate::SearchResults {
+            query: "The Paul Simon Songbook".into(),
+            results: SearchResults {
+                tracks: vec![track(1)],
+                albums: vec![album],
+                ..Default::default()
+            },
+        }),
+        6_000,
+    );
+    assert!(fx.iter().any(|e| matches!(
+        e,
+        Effect::Player(PlayerCommand::Load { context_uri, .. }) if context_uri == "spotify:album:songbook"
+    )));
+    assert_eq!(
+        banner(&c).as_deref(),
+        Some("Playing The Paul Simon Songbook by Paul Simon")
+    );
+    assert_eq!(c.state().voice.pending_search, None);
+}
+
+#[test]
+fn louder_and_quieter_start_from_the_volume_before_listening() {
+    let mut c = playing_at(60);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::Louder)), 0);
+    assert_eq!(volumes(&fx), [75]);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::Quieter)), 0);
+    assert_eq!(volumes(&fx), [60]);
+}
+
+#[test]
+fn pause_and_resume_only_change_what_needs_changing() {
+    let mut c = playing_at(60);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::Resume)), 0);
+    assert!(!fx.contains(&Effect::Player(PlayerCommand::Pause)));
+    assert!(!fx.contains(&Effect::Player(PlayerCommand::Play)));
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::Pause)), 0);
+    assert!(fx.contains(&Effect::Player(PlayerCommand::Pause)));
+}
+
+#[test]
+fn a_lost_reply_still_brings_the_music_back() {
+    let mut c = playing_at(60);
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    c.handle(voice(VoiceUpdate::Thinking), 1_000);
+    assert!(volumes(&c.handle(Input::Tick, 10_000)).is_empty());
+    let fx = c.handle(Input::Tick, 21_000);
+    assert_eq!(volumes(&fx), [60]);
+    assert_eq!(c.state().voice.phase, VoicePhase::Idle);
+}
+
+#[test]
+fn paused_music_is_not_lowered_or_raised() {
+    let mut c = playing_at(60);
+    c.handle(ui(UiAction::TogglePlay), 0);
+    let fx = c.handle(voice(VoiceUpdate::Woke), 0);
+    assert!(volumes(&fx).is_empty());
+    let fx = c.handle(
+        voice(VoiceUpdate::Failed("No internet right now".into())),
+        0,
+    );
+    assert!(volumes(&fx).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("No internet right now"));
+}
+
+#[test]
+fn the_microphone_button_starts_listening_once() {
+    let mut c = core();
+    c.handle(ui(UiAction::OpenKeyboard), 0);
+    let fx = c.handle(ui(UiAction::Listen), 0);
+    assert_eq!(fx, vec![Effect::VoiceListen]);
+    assert!(!c.state().keyboard_open, "the keyboard gets out of the way");
+    assert!(crate::view::build(c.state()).voice_enabled);
+    // Already listening: a second tap does nothing.
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    assert!(
+        c.handle(ui(UiAction::Listen), 0)
+            .iter()
+            .all(|e| *e != Effect::VoiceListen)
+    );
+    // No voice on this device: no button, and a tap does nothing.
+    let mut cfg = config();
+    cfg.voice = false;
+    let mut c = Core::new(cfg, 0).0;
+    assert!(!crate::view::build(c.state()).voice_enabled);
+    assert!(c.handle(ui(UiAction::Listen), 0).is_empty());
+}
+
+#[test]
+fn voice_hearts_the_song_saves_the_album_and_adds_to_a_playlist() {
+    let mut c = playing_at(60);
+    c.handle(
+        Input::Library(LibraryUpdate::Account(Account {
+            id: "mum".into(),
+            name: "Mum".into(),
+        })),
+        0,
+    );
+    let mut mine = playlist(1);
+    mine.owner_id = Some("mum".into());
+    let mut theirs = playlist(2);
+    theirs.owner_id = Some("someone-else".into());
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![mine, theirs],
+        }),
+        0,
+    );
+    let edits = |fx: &[Effect]| -> Vec<PlaylistEdit> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::Library(LibraryRequest::Edit { edit, .. }) => Some(edit.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::LikeSong)), 0);
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::Like {
+            track_uri: "spotify:track:t1".into()
+        }]
+    );
+    assert_eq!(banner(&c).as_deref(), Some("Added to Liked Songs"));
+    // Hearting it again doesn't unlike it.
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::LikeSong)), 0);
+    assert!(edits(&fx).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("Already in Liked Songs"));
+
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::SaveAlbum)), 0);
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::SaveAlbum {
+            album_uri: "spotify:album:a1".into()
+        }]
+    );
+    assert_eq!(banner(&c).as_deref(), Some("Added to Albums"));
+    let fx = c.handle(voice(VoiceUpdate::Command(VoiceCommand::SaveAlbum)), 0);
+    assert!(edits(&fx).is_empty(), "saving it again doesn't remove it");
+
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p1".into(),
+            heard: "playlist 1".into(),
+        })),
+        0,
+    );
+    assert_eq!(
+        edits(&fx),
+        [PlaylistEdit::Add {
+            playlist_uri: "spotify:playlist:p1".into(),
+            track_uri: "spotify:track:t1".into()
+        }]
+    );
+    // No playlist named ("add this song"): Gemini's guess is ignored and the song is hearted,
+    // which it already is.
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p1".into(),
+            heard: "song".into(),
+        })),
+        0,
+    );
+    assert!(edits(&fx).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("Already in Liked Songs"));
+    // Someone else's playlist can't be changed, even by name.
+    let fx = c.handle(
+        voice(VoiceUpdate::Command(VoiceCommand::AddToPlaylist {
+            uri: "spotify:playlist:p2".into(),
+            heard: "playlist 2".into(),
+        })),
+        0,
+    );
+    assert!(
+        !edits(&fx)
+            .iter()
+            .any(|e| matches!(e, PlaylistEdit::Add { .. }))
+    );
 }

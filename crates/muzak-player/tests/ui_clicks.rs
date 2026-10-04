@@ -97,6 +97,35 @@ fn ui_clicks() {
             .await;
         assert_eq!(length.get(), 60);
 
+        // Voice: the pill shows while listening, in place of the message bar.
+        window.set_banner("Added to Road Trip".into());
+        slint::platform::update_timers_and_animations();
+        visible_by_label(&window, "Added to Road Trip");
+        window.set_voice_status("Listening…".into());
+        window.set_voice_listening(true);
+        slint::platform::update_timers_and_animations();
+        visible_by_label(&window, "Listening…");
+        assert!(
+            ElementHandle::find_by_accessible_label(&window, "Added to Road Trip")
+                .next()
+                .is_none(),
+            "the message bar waits while listening"
+        );
+        window.set_voice_status("".into());
+        window.set_banner("".into());
+
+        // Search: the microphone listens without the wake word.
+        window.set_screen(ScreenKind::Search);
+        window.set_voice_enabled(true);
+        let listened = Rc::new(Cell::new(false));
+        let li = listened.clone();
+        window.on_listen(move || li.set(true));
+        visible_by_label(&window, "Ask by voice")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(listened.get(), "the microphone starts listening");
+        window.set_voice_enabled(false);
+
         // Recent: the Songs chip, then a song plays.
         window.set_keyboard_open(false);
         window.set_screen(ScreenKind::Grid);

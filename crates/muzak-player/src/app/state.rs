@@ -133,6 +133,30 @@ pub enum Notice {
     RemovedFrom(String),
     /// An empty playlist with this name was made.
     Created(String),
+    /// What a voice request did, or why it didn't.
+    Voice(String),
+}
+
+/// Where a voice request is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VoicePhase {
+    #[default]
+    Idle,
+    Listening,
+    Thinking,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VoiceState {
+    /// Voice control is set up on this device.
+    pub enabled: bool,
+    pub phase: VoicePhase,
+    /// When the phase last changed, so a lost reply can't leave the music quiet.
+    pub since_ms: u64,
+    /// The volume before the music was lowered to listen.
+    pub ducked_from: Option<u8>,
+    /// A voice search waiting for results: (query, kind to play).
+    pub pending_search: Option<(String, crate::app::SearchKind)>,
 }
 
 /// The Settings screen: this device's name and speaker.
@@ -221,6 +245,7 @@ pub struct AppState {
     /// Playlists, albums and artist albums show as a list instead of tiles.
     pub list_view: bool,
     pub device: DeviceSettings,
+    pub voice: VoiceState,
     /// Artists opened from a song, so their page has a name before it loads elsewhere.
     pub artists_seen: HashMap<String, Collection>,
     /// The core's clock at the last input, so the view can show times left.

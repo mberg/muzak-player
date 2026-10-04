@@ -13,3 +13,4 @@ pub mod runtime;
 pub mod settings;
 pub mod ui_bridge;
 pub mod view;
+pub mod voice;

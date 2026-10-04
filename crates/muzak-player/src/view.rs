@@ -200,6 +200,11 @@ pub struct View {
     pub now: NowView,
     pub mini_visible: bool,
     pub banner: Option<String>,
+    /// "Listening…" or "Working on it…" during a voice request; empty otherwise.
+    pub voice_status: String,
+    pub voice_listening: bool,
+    /// Voice control is set up, so the microphone button shows.
+    pub voice_enabled: bool,
     pub display: DisplayMode,
     /// The dim screen shows a clock, except while falling asleep to a sleep timer.
     pub show_clock: bool,
@@ -270,6 +275,13 @@ pub fn build(state: &AppState) -> View {
         now: now(state),
         mini_visible: has_playback && screen != ScreenView::NowPlaying && !keyboard,
         banner: banner(state),
+        voice_status: match state.voice.phase {
+            crate::app::VoicePhase::Idle => String::new(),
+            crate::app::VoicePhase::Listening => "Listening…".into(),
+            crate::app::VoicePhase::Thinking => "Working on it…".into(),
+        },
+        voice_listening: state.voice.phase == crate::app::VoicePhase::Listening,
+        voice_enabled: state.voice.enabled,
         display: state.display,
         show_clock: state.sleep_ends_ms.is_none(),
         auth_needed: state.auth_needed,
@@ -795,6 +807,7 @@ fn banner(state: &AppState) -> Option<String> {
         Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
         Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),
         Some(Notice::Created(name)) => Some(format!("Created {name}")),
+        Some(Notice::Voice(text)) => Some(text.clone()),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }
