@@ -95,6 +95,48 @@ pub struct Track {
     pub album_uri: Option<String>,
 }
 
+/// A change to one of the user's playlists.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PlaylistEdit {
+    Add {
+        playlist_uri: String,
+        track_uri: String,
+    },
+    /// Create a private playlist and put one song in it.
+    Create {
+        name: String,
+        track_uri: String,
+    },
+    /// Removes every copy of the song; Spotify no longer removes by position.
+    Remove {
+        playlist_uri: String,
+        track_uri: String,
+        snapshot_id: Option<String>,
+    },
+    /// Moves the song at `from` so it ends up at index `to`.
+    Move {
+        playlist_uri: String,
+        from: usize,
+        to: usize,
+        snapshot_id: Option<String>,
+    },
+    Rename {
+        playlist_uri: String,
+        name: String,
+    },
+    /// Removes the playlist from the user's library.
+    Delete {
+        playlist_uri: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EditOutcome {
+    Done,
+    /// The playlist a `Create` made.
+    Created(Collection),
+}
+
 /// Catalog search results. Library matches are computed from state by the view.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SearchResults {

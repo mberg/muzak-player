@@ -9,7 +9,7 @@ pub mod web_api;
 use std::future::Future;
 
 use crate::app::FailReason;
-use crate::model::{Account, Collection, SearchResults, Section, Track};
+use crate::model::{Account, Collection, EditOutcome, PlaylistEdit, SearchResults, Section, Track};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FetchError {
@@ -61,6 +61,14 @@ pub trait LibrarySource: Send + Sync + 'static {
         artist_uri: &str,
     ) -> impl Future<Output = Result<Vec<Collection>, FetchError>> + Send {
         let _ = artist_uri;
+        async { Err(FetchError::NotFound) }
+    }
+    /// Carries out a playlist change on Spotify.
+    fn apply(
+        &self,
+        edit: PlaylistEdit,
+    ) -> impl Future<Output = Result<EditOutcome, FetchError>> + Send {
+        let _ = edit;
         async { Err(FetchError::NotFound) }
     }
     /// The signed-in account, shown in the rail.
