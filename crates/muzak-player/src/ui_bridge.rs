@@ -11,7 +11,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::app::{AppState, DisplayMode, Input, UiAction};
 use crate::model::Section;
 use crate::view::{self, LoadStatus, RowKind, ScreenView, SearchRowView, TileView, TrackRowView};
-use crate::{AppWindow, LoadState, ScreenKind, SearchRowData, TileData, TrackData};
+use crate::{AppWindow, LoadState, ScreenKind, SearchRowData, SpeakerRowData, TileData, TrackData};
 
 const IMAGE_CACHE_LIMIT: usize = 80;
 
@@ -218,6 +218,16 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_play_song(move |uri| s(UiAction::PlaySong(uri.to_string())));
     let s = send.clone();
+    window.on_rename_device(move || s(UiAction::RenameDevice));
+    let s = send.clone();
+    window.on_find_speakers(move || s(UiAction::FindSpeakers));
+    let s = send.clone();
+    window.on_connect_speaker(move |address| s(UiAction::ConnectSpeaker(address.to_string())));
+    let s = send.clone();
+    window.on_use_jack(move || s(UiAction::UseJack));
+    let s = send.clone();
+    window.on_forget_speaker(move || s(UiAction::ForgetSpeaker));
+    let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
     window.on_toggle_like(move || s(UiAction::ToggleLike));
@@ -273,6 +283,7 @@ impl Bridge {
             ScreenView::NowPlaying => ScreenKind::NowPlaying,
             ScreenView::Search => ScreenKind::Search,
             ScreenView::Artist => ScreenKind::Artist,
+            ScreenView::Settings => ScreenKind::Settings,
         });
         w.set_section(v.section.index());
         w.set_grid_title(v.grid_title.as_str().into());
@@ -373,7 +384,27 @@ impl Bridge {
             sync(&self.artist_albums, albums);
             w.set_artist_state(load_state(artist.status));
         }
-        w.set_account(v.account.as_str().into());
+        let s = &v.settings;
+        w.set_account_name(s.account_name.as_str().into());
+        w.set_account_id(s.account_id.as_str().into());
+        w.set_device_name(s.device_name.as_str().into());
+        w.set_output_name(s.output.as_str().into());
+        w.set_on_speaker(s.on_speaker);
+        w.set_speaker_connected(s.speaker_connected);
+        w.set_bluetooth(s.bluetooth);
+        w.set_scanning(s.scanning);
+        w.set_settings_message(s.message.as_str().into());
+        w.set_restarting(s.restarting);
+        let speakers: Vec<SpeakerRowData> = s
+            .speakers
+            .iter()
+            .map(|r| SpeakerRowData {
+                address: r.address.as_str().into(),
+                name: r.name.as_str().into(),
+                status: r.status.as_str().into(),
+            })
+            .collect();
+        w.set_speakers(ModelRc::new(VecModel::from(speakers)));
     }
 }
 

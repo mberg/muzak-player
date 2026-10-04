@@ -1,7 +1,7 @@
 import "fonts/Nunito-Bold.ttf";
 import "fonts/Nunito-ExtraBold.ttf";
 import { Theme } from "theme.slint";
-import { TileData, TrackData, ScreenKind, LoadState, SearchRowData } from "types.slint";
+import { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData } from "types.slint";
 import { Rail } from "components/rail.slint";
 import { MiniPlayer } from "components/mini_player.slint";
 import { Banner } from "components/banner.slint";
@@ -16,8 +16,9 @@ import { Keyboard } from "components/keyboard.slint";
 import { PlaylistPicker } from "components/picker.slint";
 import { NameDialog } from "components/name_dialog.slint";
 import { ConfirmDelete } from "components/confirm_dialog.slint";
+import { SettingsScreen } from "screens/settings.slint";
 
-export { TileData, TrackData, ScreenKind, LoadState, SearchRowData }
+export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -51,7 +52,17 @@ export component AppWindow inherits Window {
     in property <int> display-mode;
     in property <string> clock;
     in property <bool> auth-needed;
-    in property <string> account;
+    in property <string> account-name;
+    in property <string> account-id;
+    in property <string> device-name;
+    in property <string> output-name;
+    in property <bool> on-speaker;
+    in property <bool> speaker-connected;
+    in property <bool> bluetooth;
+    in property <bool> scanning;
+    in property <[SpeakerRowData]> speakers;
+    in property <string> settings-message;
+    in property <bool> restarting;
     in property <string> search-query;
     in property <bool> keyboard-open;
     in property <[SearchRowData]> search-rows;
@@ -102,6 +113,11 @@ export component AppWindow inherits Window {
     callback keyboard-done();
     callback toggle-like();
     callback toggle-list-view();
+    callback rename-device();
+    callback find-speakers();
+    callback connect-speaker(string);
+    callback use-jack();
+    callback forget-speaker();
     callback open-picker(string);
     callback close-picker();
     callback pick-playlist(string);
@@ -125,7 +141,6 @@ export component AppWindow inherits Window {
         // Search uses the whole screen.
         visible: root.screen != ScreenKind.search;
         selected: root.section;
-        account: root.account;
         select(i) => { root.show-section(i); }
     }
     GridScreen {
@@ -186,6 +201,29 @@ export component AppWindow inherits Window {
         close => { root.close-search(); }
         filter: root.search-filter;
         set-filter(i) => { root.set-search-filter(i); }
+    }
+    SettingsScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.settings;
+        account-name: root.account-name;
+        account-id: root.account-id;
+        device-name: root.device-name;
+        output: root.output-name;
+        on-speaker: root.on-speaker;
+        speaker-connected: root.speaker-connected;
+        bluetooth: root.bluetooth;
+        scanning: root.scanning;
+        speakers: root.speakers;
+        message: root.settings-message;
+        restarting: root.restarting;
+        rename-device => { root.rename-device(); }
+        find-speakers => { root.find-speakers(); }
+        connect-speaker(address) => { root.connect-speaker(address); }
+        use-jack => { root.use-jack(); }
+        forget-speaker => { root.forget-speaker(); }
     }
     ArtistScreen {
         x: Theme.rail-width;

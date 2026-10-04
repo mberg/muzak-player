@@ -11,6 +11,7 @@ pub enum Screen {
     Search,
     /// An artist's albums, by artist URI.
     Artist(String),
+    Settings,
 }
 
 /// Library data plus its loading status. Data stays visible while a refresh runs.
@@ -111,6 +112,27 @@ pub enum Notice {
     AlreadyIn(String),
 }
 
+/// The Settings screen: this device's name and speaker.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DeviceSettings {
+    /// What is saved; the Settings screen changes it and the player restarts to apply it.
+    pub saved: crate::settings::Settings,
+    /// The name Spotify Connect shows now.
+    pub device_name: String,
+    /// The Bluetooth speaker in use now; None means the headphone jack.
+    pub speaker: Option<crate::settings::Speaker>,
+    /// Bluetooth exists on this device (the Pi, or `--fake` mode).
+    pub bluetooth: bool,
+    pub scanning: bool,
+    pub found: Vec<crate::app::FoundSpeaker>,
+    /// Address being paired and connected.
+    pub connecting: Option<String>,
+    /// Name of the speaker that last failed to connect.
+    pub failed: Option<String>,
+    /// Settings were saved and the player is restarting.
+    pub restarting: bool,
+}
+
 /// What the on-screen text field is for, apart from search.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextPurpose {
@@ -121,6 +143,8 @@ pub enum TextPurpose {
     Rename {
         playlist_uri: String,
     },
+    /// This device's Spotify Connect name.
+    DeviceName,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -169,4 +193,5 @@ pub struct AppState {
     pub liked: HashMap<String, bool>,
     /// Playlists, albums and artist albums show as a list instead of tiles.
     pub list_view: bool,
+    pub device: DeviceSettings,
 }

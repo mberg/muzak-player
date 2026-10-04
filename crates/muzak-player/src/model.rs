@@ -11,6 +11,7 @@ pub enum Section {
     Liked,
     Recent,
     Search,
+    Settings,
 }
 
 impl Section {
@@ -21,6 +22,7 @@ impl Section {
             Section::Liked => 2,
             Section::Recent => 3,
             Section::Search => 4,
+            Section::Settings => 5,
         }
     }
 
@@ -30,6 +32,7 @@ impl Section {
             2 => Section::Liked,
             3 => Section::Recent,
             4 => Section::Search,
+            5 => Section::Settings,
             _ => Section::Playlists,
         }
     }
@@ -41,6 +44,7 @@ impl Section {
             Section::Liked => "Liked Songs",
             Section::Recent => "Recent",
             Section::Search => "Search",
+            Section::Settings => "Settings",
         }
     }
 
@@ -51,6 +55,7 @@ impl Section {
             Section::Liked => "section-liked",
             Section::Recent => "section-recent",
             Section::Search => "section-search",
+            Section::Settings => "section-settings",
         }
     }
 }

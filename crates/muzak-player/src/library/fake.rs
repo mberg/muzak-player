@@ -262,7 +262,7 @@ impl LibrarySource for FakeSource {
                 recent
             }
             Section::Liked => vec![liked_collection()],
-            Section::Search => Vec::new(),
+            Section::Search | Section::Settings => Vec::new(),
         })
     }
 

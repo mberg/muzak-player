@@ -37,7 +37,6 @@ component RailItem inherits Rectangle {
 
 export component Rail inherits Rectangle {
     in property <int> selected;
-    in property <string> account;
     callback select(int);
     width: Theme.rail-width;
     background: Theme.surface;
@@ -50,16 +49,22 @@ export component Rail inherits Rectangle {
         RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 3; clicked => { root.select(3); } }
         RailItem { icon: @image-url("../icons/search.svg"); label: "Search"; active: root.selected == 4; clicked => { root.select(4); } }
     }
-    // Which Spotify account this device is signed in to. Kept small and dim on purpose.
-    Text {
-        x: 8px;
-        width: root.width - 16px;
-        y: root.height - self.height - 10px;
-        text: root.account;
-        font-size: 11px;
-        color: Theme.text-dim;
-        opacity: 0.7;
-        horizontal-alignment: center;
-        overflow: elide;
+    // Settings: small and out of the way at the bottom of the rail.
+    Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - 8px;
+        width: 56px;
+        height: 48px;
+        border-radius: 12px;
+        background: root.selected == 5 ? Theme.surface-hi : (gear-touch.pressed ? Theme.surface-hi : transparent);
+        Image {
+            source: @image-url("../icons/settings.svg");
+            width: 26px;
+            height: 26px;
+            colorize: root.selected == 5 ? Theme.accent : Theme.text-dim;
+        }
+        gear-touch := TouchArea {
+            clicked => { root.select(5); }
+        }
     }
 }

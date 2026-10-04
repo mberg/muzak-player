@@ -26,6 +26,8 @@ slint = { version = "1.18", default-features = false, features = ["backend-winit
 librespot = { workspace = true, features = ["rodio-backend"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+futures = "0.3"
 slint = { version = "1.18", default-features = false, features = ["backend-linuxkms-noseat"] }
 librespot = { workspace = true, features = ["alsa-backend"] }
 

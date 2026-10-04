@@ -166,6 +166,15 @@ Check:
 - [ ] The Spotify app on your phone shows each change.
 - [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
 
+### 6. Settings
+
+The gear at the bottom of the left rail opens Settings.
+
+- [ ] It shows your Spotify account name and ID.
+- [ ] The pencil next to the device name opens the keyboard. Saving says "Restarting the player…", the player restarts, and Spotify on your phone shows the new name.
+- [ ] On the Mac, the Speaker section says Bluetooth is chosen on the player. With `--fake`, "Find speakers" lists three pretend speakers; picking "Boombox" restarts on it, and "Old Speaker" fails with a message.
+- [ ] Your choices are kept in `dev/state/settings.json`. Delete that file to go back to the config file's values.
+
 ## Testing on the Pi
 
 Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/hardware-checklist.md). In short:
@@ -183,7 +192,8 @@ Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/
    scripts/build-pi.sh
    scripts/deploy.sh muzak-<name>.local devices/<name>.toml secrets/<name>
    ```
-6. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
+6. **Pick the speaker** in Settings on the touchscreen if you use Bluetooth: Find speakers, then tap it. Put the speaker in pairing mode first.
+7. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
 
 To read logs on the Pi:
 

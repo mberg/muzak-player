@@ -10,6 +10,7 @@ pub use input::*;
 pub use state::*;
 
 use crate::model::{Collection, EditOutcome, LIKED_URI, PlaylistEdit, Section, Track};
+use crate::settings::{Output, Settings, Speaker};
 
 /// How long a notice stays on screen.
 const NOTICE_MS: u64 = 4_000;
@@ -19,6 +20,7 @@ const DOUBLE_TAP_MS: u64 = 1_000;
 const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
+const MAX_DEVICE_NAME_CHARS: usize = 40;
 
 /// What to put back if Spotify refuses an edit, and what to reload either way.
 #[derive(Debug, Default)]
@@ -36,6 +38,14 @@ pub struct CoreConfig {
     pub dim_after_ms: u64,
     pub off_after_ms: u64,
     pub initial_volume: u8,
+    /// The Spotify Connect name in use.
+    pub device_name: String,
+    /// The Bluetooth speaker in use; None for the headphone jack.
+    pub speaker: Option<crate::settings::Speaker>,
+    /// The saved settings, which the Settings screen builds on.
+    pub saved: crate::settings::Settings,
+    /// Bluetooth is available (the Pi, or `--fake` mode).
+    pub bluetooth: bool,
 }
 
 /// Where a newly loaded context starts playing.
@@ -94,6 +104,13 @@ impl Core {
             confirm_delete: None,
             liked: HashMap::new(),
             list_view: false,
+            device: DeviceSettings {
+                saved: cfg.saved.clone(),
+                device_name: cfg.device_name.clone(),
+                speaker: cfg.speaker.clone(),
+                bluetooth: cfg.bluetooth,
+                ..Default::default()
+            },
         };
         let mut core = Core {
             state,
@@ -134,6 +151,7 @@ impl Core {
                 self.maybe_search(now_ms, &mut fx);
             }
             Input::SearchTick => self.maybe_search(now_ms, &mut fx),
+            Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
         }
         if self.state.screen != Screen::Search {
             self.state.keyboard_open = false;
@@ -392,6 +410,12 @@ impl Core {
                 }
                 self.notify(Notice::AddedTo(name), now_ms);
             }
+            TextPurpose::DeviceName => {
+                let name: String = name.chars().take(MAX_DEVICE_NAME_CHARS).collect();
+                if name != self.state.device.device_name {
+                    self.apply_settings(|s| s.device_name = Some(name), fx);
+                }
+            }
             TextPurpose::Rename { playlist_uri } => {
                 let edit = PlaylistEdit::Rename {
                     playlist_uri: playlist_uri.clone(),
@@ -460,6 +484,71 @@ impl Core {
         if let Some(list) = self.tracks_mut(&uri) {
             let track = list.remove(from);
             list.insert(to, track);
+        }
+    }
+
+    // ---- Settings ----
+
+    /// Saves a change to the settings; the player then restarts to apply it.
+    fn apply_settings(&mut self, change: impl FnOnce(&mut Settings), fx: &mut Vec<Effect>) {
+        let mut settings = self.state.device.saved.clone();
+        change(&mut settings);
+        self.state.device.saved = settings.clone();
+        self.state.device.restarting = true;
+        fx.push(Effect::ApplySettings(settings));
+    }
+
+    fn on_bluetooth(&mut self, update: BtUpdate, fx: &mut Vec<Effect>) {
+        let device = &mut self.state.device;
+        match update {
+            BtUpdate::Found(speaker) => {
+                match device
+                    .found
+                    .iter_mut()
+                    .find(|s| s.address == speaker.address)
+                {
+                    Some(existing) => *existing = speaker,
+                    None => device.found.push(speaker),
+                }
+            }
+            BtUpdate::ScanFinished => device.scanning = false,
+            BtUpdate::Connected(address) => {
+                device.connecting = None;
+                let name = device
+                    .found
+                    .iter()
+                    .find(|s| s.address == address)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| address.clone());
+                let speaker = Speaker { address, name };
+                self.apply_settings(|s| s.output = Some(Output::Bluetooth(speaker)), fx);
+            }
+            BtUpdate::ConnectFailed(address) => {
+                device.connecting = None;
+                device.failed = Some(
+                    device
+                        .found
+                        .iter()
+                        .find(|s| s.address == address)
+                        .map(|s| s.name.clone())
+                        .unwrap_or(address),
+                );
+            }
+            BtUpdate::Forgotten(address) => {
+                let current = device
+                    .speaker
+                    .as_ref()
+                    .is_some_and(|s| s.address == address);
+                device.found.retain(|s| s.address != address);
+                if current {
+                    self.apply_settings(|s| s.output = Some(Output::Jack), fx);
+                }
+            }
+            BtUpdate::Unavailable => {
+                device.bluetooth = false;
+                device.scanning = false;
+                device.connecting = None;
+            }
         }
     }
 
@@ -546,6 +635,11 @@ impl Core {
 
     fn on_ui(&mut self, action: UiAction, now_ms: u64, fx: &mut Vec<Effect>) {
         match action {
+            UiAction::ShowSection(Section::Settings) => {
+                self.state.section = Section::Settings;
+                self.state.back_stack.clear();
+                self.state.screen = Screen::Settings;
+            }
             UiAction::ShowSection(Section::Search) => {
                 if self.state.section != Section::Search {
                     self.before_search = self.state.section;
@@ -714,6 +808,39 @@ impl Core {
             UiAction::ConfirmDelete => self.delete_playlist(now_ms, fx),
             UiAction::ToggleLike => self.toggle_like(now_ms, fx),
             UiAction::ToggleListView => self.state.list_view = !self.state.list_view,
+            UiAction::RenameDevice => {
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::DeviceName,
+                    text: self.state.device.device_name.clone(),
+                });
+            }
+            UiAction::FindSpeakers => {
+                let device = &mut self.state.device;
+                if device.bluetooth && !device.scanning && !device.restarting {
+                    device.scanning = true;
+                    device.found.clear();
+                    device.failed = None;
+                    fx.push(Effect::Bluetooth(BtCommand::Scan));
+                }
+            }
+            UiAction::ConnectSpeaker(address) => {
+                let device = &mut self.state.device;
+                if device.connecting.is_none() && !device.restarting {
+                    device.connecting = Some(address.clone());
+                    device.failed = None;
+                    fx.push(Effect::Bluetooth(BtCommand::Connect(address)));
+                }
+            }
+            UiAction::UseJack => {
+                if self.state.device.speaker.is_some() {
+                    self.apply_settings(|s| s.output = Some(Output::Jack), fx);
+                }
+            }
+            UiAction::ForgetSpeaker => {
+                if let Some(speaker) = self.state.device.speaker.clone() {
+                    fx.push(Effect::Bluetooth(BtCommand::Forget(speaker.address)));
+                }
+            }
             UiAction::ClearSearch => {
                 self.edit_query(now_ms, String::clear);
                 // Clearing is deliberate, so there is no reason to wait.

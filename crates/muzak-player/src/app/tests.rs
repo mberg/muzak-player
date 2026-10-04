@@ -3,12 +3,17 @@ use crate::model::{
     Account, Collection, CollectionKind, EditOutcome, LIKED_URI, PlaylistEdit, SearchResults,
     Section, Track,
 };
+use crate::settings::{Output, Speaker};
 
 pub(crate) fn config() -> CoreConfig {
     CoreConfig {
         dim_after_ms: 60_000,
         off_after_ms: 120_000,
         initial_volume: 50,
+        device_name: "Muzak Test".into(),
+        speaker: None,
+        saved: Default::default(),
+        bluetooth: true,
     }
 }
 
@@ -1092,4 +1097,117 @@ fn list_view_toggles() {
     assert!(!c.state().list_view);
     c.handle(ui(UiAction::ToggleListView), 0);
     assert!(c.state().list_view);
+}
+
+// ---- Settings ----
+
+fn settings_effects(fx: &[Effect]) -> Vec<crate::settings::Settings> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::ApplySettings(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn found(address: &str, name: &str) -> Input {
+    Input::Bluetooth(BtUpdate::Found(FoundSpeaker {
+        address: address.into(),
+        name: name.into(),
+        paired: false,
+    }))
+}
+
+#[test]
+fn settings_opens_from_the_rail() {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Settings)), 0);
+    assert_eq!(c.state().screen, Screen::Settings);
+    assert_eq!(c.state().device.device_name, "Muzak Test");
+}
+
+#[test]
+fn renaming_the_device_saves_and_restarts() {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Settings)), 0);
+    c.handle(ui(UiAction::RenameDevice), 0);
+    assert_eq!(c.state().text_entry.as_ref().unwrap().text, "Muzak Test");
+    for _ in 0.."Muzak Test".len() {
+        c.handle(ui(UiAction::Backspace), 0);
+    }
+    c.handle(ui(UiAction::KeyPressed("Kitchen".into())), 0);
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    let saved = settings_effects(&fx);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].device_name.as_deref(), Some("Kitchen"));
+    assert!(c.state().device.restarting);
+}
+
+#[test]
+fn unchanged_device_name_is_not_saved() {
+    let mut c = core();
+    c.handle(ui(UiAction::RenameDevice), 0);
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    assert!(settings_effects(&fx).is_empty());
+    assert!(!c.state().device.restarting);
+}
+
+#[test]
+fn scanning_then_connecting_saves_the_speaker() {
+    let mut c = core();
+    let fx = c.handle(ui(UiAction::FindSpeakers), 0);
+    assert_eq!(fx, vec![Effect::Bluetooth(BtCommand::Scan)]);
+    assert!(c.state().device.scanning);
+    // A second tap while scanning does nothing.
+    assert!(c.handle(ui(UiAction::FindSpeakers), 0).is_empty());
+    c.handle(found("AA", "Boombox"), 0);
+    c.handle(found("BB", "Kitchen"), 0);
+    c.handle(found("AA", "Boombox 2"), 0);
+    assert_eq!(c.state().device.found.len(), 2);
+    c.handle(Input::Bluetooth(BtUpdate::ScanFinished), 0);
+    assert!(!c.state().device.scanning);
+
+    let fx = c.handle(ui(UiAction::ConnectSpeaker("AA".into())), 0);
+    assert_eq!(fx, vec![Effect::Bluetooth(BtCommand::Connect("AA".into()))]);
+    let fx = c.handle(Input::Bluetooth(BtUpdate::Connected("AA".into())), 0);
+    assert_eq!(
+        settings_effects(&fx)[0].output,
+        Some(Output::Bluetooth(Speaker {
+            address: "AA".into(),
+            name: "Boombox 2".into()
+        }))
+    );
+}
+
+#[test]
+fn a_failed_connection_names_the_speaker() {
+    let mut c = core();
+    c.handle(found("AA", "Boombox"), 0);
+    c.handle(ui(UiAction::ConnectSpeaker("AA".into())), 0);
+    let fx = c.handle(Input::Bluetooth(BtUpdate::ConnectFailed("AA".into())), 0);
+    assert!(settings_effects(&fx).is_empty());
+    assert_eq!(c.state().device.failed.as_deref(), Some("Boombox"));
+    assert_eq!(c.state().device.connecting, None);
+}
+
+#[test]
+fn forgetting_the_speaker_switches_to_the_jack() {
+    let mut cfg = config();
+    cfg.speaker = Some(Speaker {
+        address: "AA".into(),
+        name: "Boombox".into(),
+    });
+    let mut c = Core::new(cfg, 0).0;
+    let fx = c.handle(ui(UiAction::ForgetSpeaker), 0);
+    assert_eq!(fx, vec![Effect::Bluetooth(BtCommand::Forget("AA".into()))]);
+    let fx = c.handle(Input::Bluetooth(BtUpdate::Forgotten("AA".into())), 0);
+    assert_eq!(settings_effects(&fx)[0].output, Some(Output::Jack));
+}
+
+#[test]
+fn no_bluetooth_means_no_scan() {
+    let mut cfg = config();
+    cfg.bluetooth = false;
+    let mut c = Core::new(cfg, 0).0;
+    assert!(c.handle(ui(UiAction::FindSpeakers), 0).is_empty());
 }

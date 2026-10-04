@@ -17,6 +17,34 @@ pub enum Input {
     Tick,
     /// Sent every 150ms while the search screen is open, to send a search soon after typing stops.
     SearchTick,
+    Bluetooth(BtUpdate),
+}
+
+/// A Bluetooth audio device seen in a scan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundSpeaker {
+    pub address: String,
+    pub name: String,
+    pub paired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BtUpdate {
+    Found(FoundSpeaker),
+    ScanFinished,
+    /// Paired, trusted and connected; the address.
+    Connected(String),
+    ConnectFailed(String),
+    Forgotten(String),
+    /// No Bluetooth adapter or service on this device.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BtCommand {
+    Scan,
+    Connect(String),
+    Forget(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,6 +111,12 @@ pub enum UiAction {
     ToggleLike,
     /// Switch collection screens between tiles and a list.
     ToggleListView,
+    /// Settings: name this device with the keyboard.
+    RenameDevice,
+    FindSpeakers,
+    ConnectSpeaker(String),
+    UseJack,
+    ForgetSpeaker,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -174,6 +208,9 @@ pub enum Effect {
     Player(PlayerCommand),
     Library(LibraryRequest),
     Display(DisplayMode),
+    Bluetooth(BtCommand),
+    /// Save the settings and restart the player so they take effect.
+    ApplySettings(crate::settings::Settings),
 }
 
 #[derive(Debug, Clone, PartialEq)]

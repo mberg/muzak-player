@@ -1,13 +1,9 @@
-//! Hardware bits: DSI backlight and a Bluetooth speaker. Both are no-ops on the Mac.
+//! Hardware bits: the DSI backlight, and restarting to apply settings. Bluetooth lives in
+//! `crate::bluetooth`.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
-use tokio::process::Command;
-use tokio::sync::mpsc::UnboundedSender;
-
-use crate::app::{DisplayMode, Input};
-use crate::config::Config;
+use crate::app::DisplayMode;
 
 pub struct Platform {
     backlight: Option<Backlight>,
@@ -15,10 +11,7 @@ pub struct Platform {
 
 impl Platform {
     /// Must be called inside the tokio runtime.
-    pub fn start(config: &Config, inputs: UnboundedSender<Input>) -> Self {
-        if let Some(address) = config.bluetooth_speaker.clone() {
-            tokio::spawn(monitor_speaker(address, inputs));
-        }
+    pub fn start() -> Self {
         let backlight = Backlight::detect();
         match &backlight {
             Some(b) => tracing::info!("backlight at {}", b.brightness.display()),
@@ -73,42 +66,19 @@ impl Backlight {
     }
 }
 
-pub fn parse_connected(bluetoothctl_info: &str) -> bool {
-    bluetoothctl_info
-        .lines()
-        .any(|line| line.trim() == "Connected: yes")
-}
-
-async fn bluetoothctl(args: &[&str]) -> Option<String> {
-    let run = Command::new("bluetoothctl")
-        .args(args)
-        .kill_on_drop(true)
-        .output();
-    match tokio::time::timeout(Duration::from_secs(10), run).await {
-        Ok(Ok(output)) => Some(String::from_utf8_lossy(&output.stdout).into_owned()),
-        _ => None,
-    }
-}
-
-async fn monitor_speaker(address: String, inputs: UnboundedSender<Input>) {
-    let mut last = None;
-    loop {
-        let mut connected = bluetoothctl(&["info", &address])
-            .await
-            .is_some_and(|out| parse_connected(&out));
-        if !connected {
-            let _ = bluetoothctl(&["connect", &address]).await;
-            connected = bluetoothctl(&["info", &address])
-                .await
-                .is_some_and(|out| parse_connected(&out));
-        }
-        if last != Some(connected) {
-            tracing::info!("speaker {address} connected: {connected}");
-            let _ = inputs.send(Input::Speaker { connected });
-            last = Some(connected);
-        }
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
+/// Replaces this process with a fresh copy of itself, with the same arguments, so new
+/// settings take effect. Under systemd the service keeps its PID; on a Mac the window reopens.
+pub fn restart() -> ! {
+    use std::os::unix::process::CommandExt;
+    let error = match std::env::current_exe() {
+        Ok(exe) => std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .exec(),
+        Err(e) => e,
+    };
+    tracing::error!("restarting failed: {error}");
+    // systemd restarts the service on exit; on a Mac the user starts it again.
+    std::process::exit(1)
 }
 
 #[cfg(test)]
@@ -121,16 +91,5 @@ mod tests {
         assert_eq!(brightness_for(DisplayMode::Dim, 255), 38);
         assert_eq!(brightness_for(DisplayMode::Dim, 5), 1);
         assert_eq!(brightness_for(DisplayMode::Off, 255), 0);
-    }
-
-    #[test]
-    fn parses_bluetoothctl_info() {
-        let out =
-            "Device AA:BB:CC:DD:EE:FF (public)\n\tName: Speaker\n\tPaired: yes\n\tConnected: yes\n";
-        assert!(parse_connected(out));
-        assert!(!parse_connected(
-            &out.replace("Connected: yes", "Connected: no")
-        ));
-        assert!(!parse_connected(""));
     }
 }

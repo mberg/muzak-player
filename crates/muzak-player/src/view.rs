@@ -18,6 +18,7 @@ pub enum ScreenView {
     NowPlaying,
     Search,
     Artist,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +99,32 @@ pub struct DetailView {
     pub summary: String,
 }
 
+/// A Bluetooth speaker found by a scan.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpeakerRowView {
+    pub address: String,
+    pub name: String,
+    /// "Connecting…", "In use", "Paired" or empty.
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingsView {
+    pub account_name: String,
+    pub account_id: String,
+    pub device_name: String,
+    /// "Headphone jack" or the speaker's name.
+    pub output: String,
+    pub on_speaker: bool,
+    pub speaker_connected: bool,
+    pub bluetooth: bool,
+    pub scanning: bool,
+    pub speakers: Vec<SpeakerRowView>,
+    /// A line under the speaker list: a failure or "Restarting…".
+    pub message: String,
+    pub restarting: bool,
+}
+
 /// The add-to-playlist picker: the user's own playlists.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PickerView {
@@ -143,8 +170,6 @@ pub struct View {
     pub banner: Option<String>,
     pub display: DisplayMode,
     pub auth_needed: bool,
-    /// Small label in the rail naming the signed-in account; empty until known.
-    pub account: String,
     pub search: SearchView,
     pub artist: Option<ArtistView>,
     pub picker: Option<PickerView>,
@@ -155,6 +180,7 @@ pub struct View {
     pub keyboard: bool,
     /// Collection screens show a list instead of tiles.
     pub list_view: bool,
+    pub settings: SettingsView,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -169,10 +195,17 @@ pub fn build(state: &AppState) -> View {
         Screen::NowPlaying => ScreenView::NowPlaying,
         Screen::Search => ScreenView::Search,
         Screen::Artist(_) => ScreenView::Artist,
+        Screen::Settings => ScreenView::Settings,
     };
     let grid_section = match state.screen {
         Screen::Grid(section) => section,
-        _ if matches!(state.section, Section::Liked | Section::Search) => Section::Playlists,
+        _ if matches!(
+            state.section,
+            Section::Liked | Section::Search | Section::Settings
+        ) =>
+        {
+            Section::Playlists
+        }
         _ => state.section,
     };
     let grid_slot = state.sections.get(&grid_section);
@@ -196,11 +229,6 @@ pub fn build(state: &AppState) -> View {
         banner: banner(state),
         display: state.display,
         auth_needed: state.auth_needed,
-        account: state
-            .account
-            .as_ref()
-            .map(|a| a.name.clone())
-            .unwrap_or_default(),
         search: search(state),
         artist: artist(state),
         picker: state.picker.as_ref().map(|_| PickerView {
@@ -210,6 +238,7 @@ pub fn build(state: &AppState) -> View {
             title: match entry.purpose {
                 TextPurpose::NewPlaylist { .. } => "New playlist".into(),
                 TextPurpose::Rename { .. } => "Rename playlist".into(),
+                TextPurpose::DeviceName => "Device name".into(),
             },
             text: entry.text.clone(),
         }),
@@ -220,6 +249,62 @@ pub fn build(state: &AppState) -> View {
         }),
         keyboard,
         list_view: state.list_view,
+        settings: settings(state),
+    }
+}
+
+fn settings(state: &AppState) -> SettingsView {
+    let d = &state.device;
+    let current = d.speaker.as_ref().map(|s| s.address.as_str());
+    let speakers = d
+        .found
+        .iter()
+        .map(|s| SpeakerRowView {
+            address: s.address.clone(),
+            name: s.name.clone(),
+            status: if d.connecting.as_deref() == Some(s.address.as_str()) {
+                "Connecting…".into()
+            } else if current == Some(s.address.as_str()) {
+                "In use".into()
+            } else if s.paired {
+                "Paired".into()
+            } else {
+                String::new()
+            },
+        })
+        .collect();
+    let message = if d.restarting {
+        "Saved. Restarting the player…".to_string()
+    } else if let Some(name) = &d.failed {
+        format!("Couldn't connect to {name}. Check it's on and ready to pair.")
+    } else if d.scanning {
+        "Looking for speakers…".to_string()
+    } else {
+        String::new()
+    };
+    SettingsView {
+        account_name: state
+            .account
+            .as_ref()
+            .map(|a| a.name.clone())
+            .unwrap_or_default(),
+        account_id: state
+            .account
+            .as_ref()
+            .map(|a| a.id.clone())
+            .unwrap_or_default(),
+        device_name: d.device_name.clone(),
+        output: d
+            .speaker
+            .as_ref()
+            .map_or_else(|| "Headphone jack".to_string(), |s| s.name.clone()),
+        on_speaker: d.speaker.is_some(),
+        speaker_connected: state.speaker_connected,
+        bluetooth: d.bluetooth,
+        scanning: d.scanning,
+        speakers,
+        message,
+        restarting: d.restarting,
     }
 }
 
