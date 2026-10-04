@@ -23,6 +23,8 @@ const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
 /// The sleep timer fades the volume out over its last this-many milliseconds.
 const SLEEP_FADE_MS: u64 = 30_000;
+/// While a sleep timer runs, the screen turns off this soon after the last touch.
+const SLEEP_SCREEN_OFF_MS: u64 = 3_000;
 
 /// What to put back if Spotify refuses an edit, and what to reload either way.
 #[derive(Debug, Default)]
@@ -1314,7 +1316,14 @@ impl Core {
             self.last_activity_ms = now_ms;
         }
         let idle = now_ms.saturating_sub(self.last_activity_ms);
-        let target = if idle >= self.cfg.off_after_ms {
+        let target = if self.state.sleep_ends_ms.is_some() {
+            // Falling asleep: straight to dark a moment after the last touch.
+            if idle >= SLEEP_SCREEN_OFF_MS {
+                DisplayMode::Off
+            } else {
+                DisplayMode::Active
+            }
+        } else if idle >= self.cfg.off_after_ms {
             DisplayMode::Off
         } else if idle >= self.cfg.dim_after_ms {
             DisplayMode::Dim

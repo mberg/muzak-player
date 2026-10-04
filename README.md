@@ -169,7 +169,7 @@ Check:
 ### Sleep timer
 
 - [ ] On the playing-song screen, the moon at the top right opens "Sleep timer" with 30 minutes (default) and 60 minutes.
-- [ ] Once set, the moon turns gold and shows the minutes left; the screen dims and turns off as usual even though music plays.
+- [ ] Once set, the moon turns gold and shows the minutes left, and the screen goes dark about 3 seconds after the last touch. A tap wakes it.
 - [ ] In the last 30 seconds the music fades out, then pauses; the next Play is at the old volume.
 - [ ] "Turn off" in the sheet cancels it.
 

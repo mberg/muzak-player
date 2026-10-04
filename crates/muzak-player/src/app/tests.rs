@@ -1496,15 +1496,22 @@ fn turning_the_timer_off_mid_fade_restores_volume() {
 }
 
 #[test]
-fn the_screen_dims_while_falling_asleep_to_music() {
+fn the_screen_goes_dark_seconds_after_setting_a_sleep_timer() {
     let mut c = playing_at(60);
-    c.handle(ui(UiAction::SetSleepTimer(Some(60))), 0);
-    c.handle(Input::Tick, config().dim_after_ms + 1);
-    assert_eq!(c.state().display, DisplayMode::Dim);
+    c.handle(ui(UiAction::SetSleepTimer(Some(60))), 10_000);
+    c.handle(Input::Tick, 12_000);
+    assert_eq!(c.state().display, DisplayMode::Active);
+    c.handle(Input::Tick, 13_000);
+    assert_eq!(c.state().display, DisplayMode::Off);
     // A new song doesn't light it up again.
     c.handle(
         Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
-        config().dim_after_ms + 2,
+        14_000,
     );
-    assert_eq!(c.state().display, DisplayMode::Dim);
+    assert_eq!(c.state().display, DisplayMode::Off);
+    // A touch wakes it, and it goes dark again a few seconds later.
+    c.handle(ui(UiAction::Touch), 20_000);
+    assert_eq!(c.state().display, DisplayMode::Active);
+    c.handle(Input::Tick, 23_000);
+    assert_eq!(c.state().display, DisplayMode::Off);
 }
