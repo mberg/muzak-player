@@ -93,6 +93,7 @@ export component AppWindow inherits Window {
     callback set-theme(int);
     in property <bool> list-view;
     in property <bool> recent-chips;
+    in property <bool> can-create-playlist;
     in property <bool> recent-songs;
     in property <[TileData]> recent-song-rows;
     in property <bool> picker-open;
@@ -134,6 +135,7 @@ export component AppWindow inherits Window {
     callback set-sleep-length(int);
     callback toggle-list-view();
     callback set-recent-songs(bool);
+    callback create-playlist();
     callback play-recent(int);
     callback toggle-save-album(string);
     callback toggle-follow(string);
@@ -182,6 +184,8 @@ export component AppWindow inherits Window {
         list-view: root.list-view;
         toggle-layout => { root.toggle-list-view(); }
         recent-chips: root.recent-chips;
+        can-create: root.can-create-playlist;
+        create => { root.create-playlist(); }
         recent-songs: root.recent-songs;
         songs: root.recent-song-rows;
         set-recent-songs(b) => { root.set-recent-songs(b); }

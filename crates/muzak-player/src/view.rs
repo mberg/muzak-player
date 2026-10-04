@@ -216,6 +216,8 @@ pub struct View {
     pub list_view: bool,
     /// Colour scheme index.
     pub theme: u32,
+    /// Playlists shows a button to make a new, empty playlist.
+    pub can_create_playlist: bool,
     /// Recent's chips (albums and playlists, or songs) show on its screen.
     pub recent_chips: bool,
     pub recent_songs: bool,
@@ -292,6 +294,7 @@ pub fn build(state: &AppState) -> View {
         keyboard,
         list_view: state.list_view,
         theme: state.device.saved.theme.unwrap_or(0),
+        can_create_playlist: state.screen == Screen::Grid(Section::Playlists),
         recent_chips: state.screen == Screen::Grid(Section::Recent),
         recent_songs: state.recent_songs,
         recent_song_rows: if state.recent_songs && state.screen == Screen::Grid(Section::Recent) {
@@ -791,6 +794,7 @@ fn banner(state: &AppState) -> Option<String> {
         Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
         Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
         Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),
+        Some(Notice::Created(name)) => Some(format!("Created {name}")),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }

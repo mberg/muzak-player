@@ -111,6 +111,8 @@ pub enum UiAction {
     PickPlaylist(String),
     /// From the picker: name a new playlist for the song.
     NewPlaylist,
+    /// From Playlists: name a new, empty playlist.
+    NewEmptyPlaylist,
     /// The keyboard's Done key: saves a name, or hides the search keyboard.
     KeyboardDone,
     CancelText,

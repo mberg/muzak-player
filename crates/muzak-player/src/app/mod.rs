@@ -465,7 +465,8 @@ impl Core {
         };
         match entry.purpose {
             TextPurpose::NewPlaylist { track_uri } => {
-                let track = self.find_track(&track_uri);
+                let track = track_uri.as_deref().and_then(|uri| self.find_track(uri));
+                let empty = track_uri.is_none();
                 let edit = PlaylistEdit::Create {
                     name: name.clone(),
                     track_uri,
@@ -496,7 +497,11 @@ impl Core {
                     undo.placeholder = Some(placeholder.clone());
                     undo.tracks.push((placeholder, None));
                 }
-                self.notify(Notice::AddedTo(name), now_ms);
+                if empty {
+                    self.notify(Notice::Created(name), now_ms);
+                } else {
+                    self.notify(Notice::AddedTo(name), now_ms);
+                }
             }
             TextPurpose::DeviceName => {
                 let name: String = name.chars().take(MAX_DEVICE_NAME_CHARS).collect();
@@ -1042,10 +1047,18 @@ impl Core {
             UiAction::OpenPicker(track_uri) => self.state.picker = Some(track_uri),
             UiAction::ClosePicker => self.state.picker = None,
             UiAction::PickPlaylist(playlist_uri) => self.add_to_playlist(playlist_uri, now_ms, fx),
+            UiAction::NewEmptyPlaylist => {
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::NewPlaylist { track_uri: None },
+                    text: String::new(),
+                });
+            }
             UiAction::NewPlaylist => {
                 if let Some(track_uri) = self.state.picker.take() {
                     self.state.text_entry = Some(TextEntry {
-                        purpose: TextPurpose::NewPlaylist { track_uri },
+                        purpose: TextPurpose::NewPlaylist {
+                            track_uri: Some(track_uri),
+                        },
                         text: String::new(),
                     });
                 }

@@ -170,7 +170,10 @@ impl FakeCatalog {
                 Ok(EditOutcome::Done)
             }
             PlaylistEdit::Create { name, track_uri } => {
-                let track = Self::find_track(&data, &track_uri).ok_or(FetchError::NotFound)?;
+                let tracks = match track_uri {
+                    Some(uri) => vec![Self::find_track(&data, &uri).ok_or(FetchError::NotFound)?],
+                    None => Vec::new(),
+                };
                 data.created += 1;
                 let created = Collection {
                     uri: format!("spotify:playlist:fake-new{}", data.created),
@@ -184,7 +187,7 @@ impl FakeCatalog {
                     year: None,
                 };
                 data.playlists.insert(0, created.clone());
-                data.tracks.insert(created.uri.clone(), vec![track]);
+                data.tracks.insert(created.uri.clone(), tracks);
                 Ok(EditOutcome::Created(created))
             }
             PlaylistEdit::Remove {
@@ -452,7 +455,7 @@ mod tests {
         let EditOutcome::Created(made) = catalog
             .apply(PlaylistEdit::Create {
                 name: "New".into(),
-                track_uri: song.clone(),
+                track_uri: Some(song.clone()),
             })
             .unwrap()
         else {

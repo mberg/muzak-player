@@ -926,7 +926,7 @@ fn creating_a_playlist_shows_a_placeholder_then_the_real_one() {
         edit,
         PlaylistEdit::Create {
             name: "Road".into(),
-            track_uri: "spotify:track:t1".into()
+            track_uri: Some("spotify:track:t1".into())
         }
     );
     assert_eq!(c.state().text_entry, None);
@@ -1717,4 +1717,29 @@ fn playing_on_sonos_shows_the_room_and_can_switch_back() {
     assert_eq!(v.settings.sonos_rooms[0].status, "In use");
     let fx = c.handle(ui(UiAction::UseJack), 0);
     assert_eq!(settings_effects(&fx)[0].output, Some(Output::Jack));
+}
+
+#[test]
+fn an_empty_playlist_can_be_made_from_playlists() {
+    let mut c = editor();
+    c.handle(ui(UiAction::NewEmptyPlaylist), 0);
+    for key in ["G", "y", "m"] {
+        c.handle(ui(UiAction::KeyPressed(key.into())), 0);
+    }
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    assert_eq!(
+        edit_of(&fx).1,
+        PlaylistEdit::Create {
+            name: "Gym".into(),
+            track_uri: None
+        }
+    );
+    let placeholder = c.state().sections[&Section::Playlists]
+        .data
+        .as_ref()
+        .unwrap()[0]
+        .clone();
+    assert_eq!(placeholder.name, "Gym");
+    assert!(track_names(&c, &placeholder.uri).is_empty());
+    assert_eq!(c.state().notice, Some(Notice::Created("Gym".into())));
 }
