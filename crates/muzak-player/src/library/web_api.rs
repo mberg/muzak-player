@@ -16,7 +16,7 @@ use crate::model::{
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
 /// Keep in sync with `crates/muzak-setup/src/main.rs`.
-pub const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify";
+pub const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify,user-follow-read,user-follow-modify";
 const MAX_ITEMS: usize = 500;
 const RECENT_LIMIT: usize = 20;
 /// Spotify answers "Invalid limit" above 10 per type (checked 2026-10-03).
@@ -200,6 +200,11 @@ struct ArtistFull {
     images: Option<Vec<ImageObj>>,
 }
 
+#[derive(Debug, Deserialize)]
+struct FollowedObj {
+    artists: Page<ArtistFull>,
+}
+
 /// Every group is optional: Spotify omits groups it has nothing for.
 #[derive(Debug, Deserialize)]
 struct SearchObj {
@@ -322,6 +327,11 @@ fn playlist_collection(p: PlaylistObj) -> Collection {
 fn playlist_id(uri: &str) -> Result<&str, FetchError> {
     uri.strip_prefix("spotify:playlist:")
         .ok_or_else(|| FetchError::Other(format!("not a playlist: {uri}")))
+}
+
+fn artist_id(uri: &str) -> Result<&str, FetchError> {
+    uri.strip_prefix("spotify:artist:")
+        .ok_or_else(|| FetchError::Other(format!("not an artist: {uri}")))
 }
 
 fn artist_collection(a: ArtistFull) -> Collection {
@@ -581,6 +591,28 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
         Ok(items.iter().map(|s| album_collection(&s.album)).collect())
     }
 
+    /// Artists the user follows, by name.
+    async fn artists(&self) -> Result<Vec<Collection>, FetchError> {
+        let mut out = Vec::new();
+        let mut next = Some("/me/following?type=artist&limit=50".to_string());
+        while let Some(url) = next.take() {
+            let page: FollowedObj = decode(self.get(&url).await?)?;
+            out.extend(
+                page.artists
+                    .items
+                    .into_iter()
+                    .flatten()
+                    .map(artist_collection),
+            );
+            if out.len() < MAX_ITEMS {
+                next = page.artists.next;
+            }
+        }
+        out.truncate(MAX_ITEMS);
+        out.sort_by_key(|a| a.name.to_lowercase());
+        Ok(out)
+    }
+
     async fn recent(&self) -> Result<Vec<Collection>, FetchError> {
         // Without the playlist list (Spotify rate-limits it hard) recent playlists are
         // skipped, but albums and Liked Songs still show.
@@ -661,6 +693,7 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
         match section {
             Section::Playlists => self.playlists().await,
             Section::Albums => self.albums().await,
+            Section::Artists => self.artists().await,
             Section::Recent => self.recent().await,
             Section::Liked => Ok(vec![liked_collection()]),
             Section::Search | Section::Settings => Ok(Vec::new()),
@@ -779,6 +812,26 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
             | PlaylistEdit::UnsaveAlbum { album_uri: uri } => {
                 let path = format!("/me/library?uris={}", encode_query(&uri));
                 self.send(Method::Delete, &path, None).await?;
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Follow { artist_uri } => {
+                let id = artist_id(&artist_uri)?;
+                self.send(
+                    Method::Put,
+                    &format!("/me/following?type=artist&ids={id}"),
+                    None,
+                )
+                .await?;
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Unfollow { artist_uri } => {
+                let id = artist_id(&artist_uri)?;
+                self.send(
+                    Method::Delete,
+                    &format!("/me/following?type=artist&ids={id}"),
+                    None,
+                )
+                .await?;
                 Ok(EditOutcome::Done)
             }
             PlaylistEdit::Delete { playlist_uri } => {
@@ -1285,6 +1338,44 @@ mod tests {
             Err(HttpError::RateLimited(Some(3600))),
         );
         assert!(api(http).section(Section::Albums).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn followed_artists_follow_pages_and_sort_by_name() {
+        let http = FakeHttp::default()
+            .on(
+                "/me/following?type=artist&limit=50",
+                Ok(json!({"artists": {"items": [{"uri": "spotify:artist:b", "name": "beta", "images": []}],
+                    "next": "https://api.test/v1/me/following?type=artist&limit=50&after=b"}})),
+            )
+            .on(
+                "https://api.test/v1/me/following?type=artist&limit=50&after=b",
+                Ok(json!({"artists": {"items": [{"uri": "spotify:artist:a", "name": "Alpha", "images": []}],
+                    "next": null}})),
+            );
+        let artists = api(http).section(Section::Artists).await.unwrap();
+        let names: Vec<_> = artists.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Alpha", "beta"]);
+        assert_eq!(artists[0].kind, CollectionKind::Artist);
+    }
+
+    #[tokio::test]
+    async fn follow_and_unfollow_use_the_following_endpoint() {
+        let path = "/me/following?type=artist&ids=r1";
+        let http = FakeHttp::default()
+            .on_send(Method::Put, path, Ok(Value::Null))
+            .on_send(Method::Delete, path, Ok(Value::Null));
+        let api = api(http);
+        let artist_uri = "spotify:artist:r1".to_string();
+        api.apply(PlaylistEdit::Follow {
+            artist_uri: artist_uri.clone(),
+        })
+        .await
+        .unwrap();
+        api.apply(PlaylistEdit::Unfollow { artist_uri })
+            .await
+            .unwrap();
+        assert_eq!(api.http.sent().len(), 2);
     }
 
     #[tokio::test]

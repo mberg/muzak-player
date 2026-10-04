@@ -115,6 +115,8 @@ pub enum UiAction {
     PickLiked,
     /// Save the album to the library, or remove it.
     ToggleSaveAlbum(String),
+    /// Follow the artist, or stop following.
+    ToggleFollow(String),
     /// Settings: name this device with the keyboard.
     RenameDevice,
     FindSpeakers,

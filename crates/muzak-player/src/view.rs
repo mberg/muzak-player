@@ -66,6 +66,9 @@ pub struct ArtistView {
     pub header: TileView,
     pub albums: Vec<TileView>,
     pub status: LoadStatus,
+    pub followed: bool,
+    /// "Artists" when drilled down from the Artists list; empty otherwise.
+    pub back_label: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +103,8 @@ pub struct DetailView {
     /// An album, which can be saved to or removed from the library.
     pub saveable: bool,
     pub saved: bool,
+    /// Inside the artist drill-down: the artist to go back to. Empty otherwise.
+    pub back_label: String,
 }
 
 /// A Bluetooth speaker found by a scan.
@@ -309,8 +314,7 @@ fn settings(state: &AppState) -> SettingsView {
         bluetooth_note: if d.bluetooth {
             String::new()
         } else if cfg!(target_os = "linux") {
-            "Bluetooth isn't working on this player. Restarting the device usually fixes it."
-                .into()
+            "Bluetooth isn't working on this player. Restarting the device usually fixes it.".into()
         } else {
             "Bluetooth speakers are paired on the Raspberry Pi, from this screen. This computer \
              can't pair them; run with --fake to try the screen here."
@@ -495,6 +499,17 @@ fn artist(state: &AppState) -> Option<ArtistView> {
         header,
         albums,
         status: status(slot),
+        followed: state.liked.get(&uri).copied().unwrap_or_else(|| {
+            section_items(state, Section::Artists)
+                .iter()
+                .any(|a| a.uri == uri)
+        }),
+        back_label: match state.back_stack.last() {
+            Some(Screen::Grid(Section::Artists)) if state.screen == Screen::Artist(uri.clone()) => {
+                Section::Artists.title().into()
+            }
+            _ => String::new(),
+        },
     })
 }
 
@@ -589,6 +604,14 @@ fn detail(state: &AppState) -> Option<DetailView> {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
         summary,
+        back_label: match state.back_stack.last() {
+            Some(Screen::Artist(artist)) if state.screen == Screen::Detail(uri.clone()) => {
+                find_collection(state, artist)
+                    .map(|a| a.name)
+                    .unwrap_or_default()
+            }
+            _ => String::new(),
+        },
         saveable: uri.starts_with("spotify:album:"),
         saved: state.liked.get(&uri).copied().unwrap_or_else(|| {
             section_items(state, Section::Albums)

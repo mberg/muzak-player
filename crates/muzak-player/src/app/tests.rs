@@ -1294,3 +1294,56 @@ fn opening_an_album_asks_whether_it_is_saved_and_the_heart_saves_it() {
         .and_then(|s| s.data.clone());
     assert!(albums.is_none_or(|a| a.iter().all(|x| x.uri != album.uri)));
 }
+
+// ---- Artists ----
+
+#[test]
+fn artists_drill_down_to_albums_and_back() {
+    let mut c = core();
+    c.handle(ui(UiAction::ShowSection(Section::Artists)), 0);
+    assert_eq!(c.state().screen, Screen::Grid(Section::Artists));
+    let fx = c.handle(ui(UiAction::OpenCollection("spotify:artist:r1".into())), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:r1".into()));
+    assert!(fx.contains(&Effect::Library(LibraryRequest::ArtistAlbums {
+        artist_uri: "spotify:artist:r1".into()
+    })));
+    c.handle(ui(UiAction::OpenCollection("spotify:album:a1".into())), 0);
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:r1".into()));
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().screen, Screen::Grid(Section::Artists));
+}
+
+#[test]
+fn following_an_artist_adds_it_to_artists() {
+    let mut c = core();
+    let artist = Collection {
+        uri: "spotify:artist:r1".into(),
+        kind: CollectionKind::Artist,
+        name: "Band".into(),
+        ..Default::default()
+    };
+    c.state.search.results.data = Some(Arc::new(SearchResults {
+        artists: vec![artist.clone()],
+        ..Default::default()
+    }));
+    let fx = c.handle(ui(UiAction::ToggleFollow(artist.uri.clone())), 0);
+    assert_eq!(
+        edit_of(&fx).1,
+        PlaylistEdit::Follow {
+            artist_uri: artist.uri.clone()
+        }
+    );
+    assert_eq!(
+        c.state().sections[&Section::Artists].data.as_ref().unwrap()[0],
+        artist
+    );
+    c.handle(ui(UiAction::ToggleFollow(artist.uri.clone())), 0);
+    assert!(
+        c.state().sections[&Section::Artists]
+            .data
+            .as_ref()
+            .unwrap()
+            .is_empty()
+    );
+}

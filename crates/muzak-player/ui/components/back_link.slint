@@ -1,0 +1,34 @@
+import { Theme } from "../theme.slint";
+
+// "‹ Artists": goes up one level inside a drill-down.
+export component BackLink inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    height: 36px;
+    width: row.preferred-width;
+    border-radius: 18px;
+    background: touch.pressed ? Theme.surface-hi : transparent;
+    row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 12px;
+        spacing: 2px;
+        Image {
+            source: @image-url("../icons/back.svg");
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.accent;
+        }
+        Text {
+            text: root.label;
+            color: Theme.accent;
+            font-size: Theme.font-small;
+            font-weight: 800;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

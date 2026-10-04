@@ -8,6 +8,8 @@ pub const LIKED_URI: &str = "muzak:liked";
 pub enum Section {
     Playlists,
     Albums,
+    /// Artists the user follows.
+    Artists,
     Liked,
     Recent,
     Search,
@@ -19,20 +21,22 @@ impl Section {
         match self {
             Section::Playlists => 0,
             Section::Albums => 1,
-            Section::Liked => 2,
-            Section::Recent => 3,
+            Section::Artists => 2,
+            Section::Liked => 3,
             Section::Search => 4,
-            Section::Settings => 5,
+            Section::Recent => 5,
+            Section::Settings => 6,
         }
     }
 
     pub fn from_index(index: i32) -> Section {
         match index {
             1 => Section::Albums,
-            2 => Section::Liked,
-            3 => Section::Recent,
+            2 => Section::Artists,
+            3 => Section::Liked,
             4 => Section::Search,
-            5 => Section::Settings,
+            5 => Section::Recent,
+            6 => Section::Settings,
             _ => Section::Playlists,
         }
     }
@@ -41,6 +45,7 @@ impl Section {
         match self {
             Section::Playlists => "Playlists",
             Section::Albums => "Albums",
+            Section::Artists => "Artists",
             Section::Liked => "Liked Songs",
             Section::Recent => "Recent",
             Section::Search => "Search",
@@ -52,6 +57,7 @@ impl Section {
         match self {
             Section::Playlists => "section-playlists",
             Section::Albums => "section-albums",
+            Section::Artists => "section-artists",
             Section::Liked => "section-liked",
             Section::Recent => "section-recent",
             Section::Search => "section-search",
@@ -146,6 +152,12 @@ pub enum PlaylistEdit {
     },
     UnsaveAlbum {
         album_uri: String,
+    },
+    Follow {
+        artist_uri: String,
+    },
+    Unfollow {
+        artist_uri: String,
     },
 }
 

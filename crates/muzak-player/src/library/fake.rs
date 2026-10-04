@@ -23,6 +23,8 @@ struct Data {
     albums: Vec<Collection>,
     tracks: HashMap<String, Vec<Track>>,
     created: usize,
+    /// Whether the user follows the fake artist.
+    following: bool,
     /// Album URIs in the fake library; every fake album starts saved.
     saved_albums: std::collections::HashSet<String>,
 }
@@ -80,6 +82,7 @@ impl FakeCatalog {
         let saved_albums = albums.iter().map(|a| a.uri.clone()).collect();
         Self {
             data: Mutex::new(Data {
+                following: true,
                 saved_albums,
                 playlists,
                 albums,
@@ -101,6 +104,15 @@ impl FakeCatalog {
             .filter(|a| data.saved_albums.contains(&a.uri))
             .cloned()
             .collect()
+    }
+
+    /// Followed artists: the fake band, unless unfollowed.
+    pub fn followed(&self) -> Vec<Collection> {
+        if self.data.lock().unwrap().following {
+            vec![fake_artist()]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Every fake album, saved or not, as search and artists see them.
@@ -223,6 +235,14 @@ impl FakeCatalog {
                 data.saved_albums.remove(&album_uri);
                 Ok(EditOutcome::Done)
             }
+            PlaylistEdit::Follow { .. } => {
+                data.following = true;
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Unfollow { .. } => {
+                data.following = false;
+                Ok(EditOutcome::Done)
+            }
             PlaylistEdit::Delete { playlist_uri } => {
                 data.playlists.retain(|p| p.uri != playlist_uri);
                 Ok(EditOutcome::Done)
@@ -278,6 +298,7 @@ impl LibrarySource for FakeSource {
         Ok(match section {
             Section::Playlists => self.catalog.playlists(),
             Section::Albums => self.catalog.albums(),
+            Section::Artists => self.catalog.followed(),
             Section::Recent => {
                 let mut recent = self.catalog.playlists()[..2].to_vec();
                 recent.push(self.catalog.albums()[0].clone());
@@ -330,6 +351,9 @@ impl LibrarySource for FakeSource {
     }
 
     async fn is_liked(&self, track_uri: &str) -> Result<bool, FetchError> {
+        if track_uri.starts_with("spotify:artist:") {
+            return Ok(!self.catalog.followed().is_empty());
+        }
         if track_uri.starts_with("spotify:album:") {
             return Ok(self.catalog.albums().iter().any(|a| a.uri == track_uri));
         }

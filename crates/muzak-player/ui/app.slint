@@ -79,6 +79,9 @@ export component AppWindow inherits Window {
     in property <string> detail-summary;
     in property <bool> detail-saveable;
     in property <bool> detail-saved;
+    in property <string> detail-back-label;
+    in property <bool> artist-followed;
+    in property <string> artist-back-label;
     in property <string> now-track-uri;
     in property <bool> now-liked;
     in property <bool> list-view;
@@ -117,6 +120,7 @@ export component AppWindow inherits Window {
     callback toggle-like();
     callback toggle-list-view();
     callback toggle-save-album(string);
+    callback toggle-follow(string);
     callback pick-liked();
     callback rename-device();
     callback find-speakers();
@@ -179,6 +183,7 @@ export component AppWindow inherits Window {
         summary: root.detail-summary;
         saveable: root.detail-saveable;
         saved: root.detail-saved;
+        back-label: root.detail-back-label;
         toggle-save => { root.toggle-save-album(root.detail.uri); }
         add(uri) => { root.open-picker(uri); }
         edit => { root.edit-playlist(root.detail.uri); }
@@ -243,6 +248,9 @@ export component AppWindow inherits Window {
         header: root.artist;
         albums: root.artist-albums;
         state: root.artist-state;
+        followed: root.artist-followed;
+        back-label: root.artist-back-label;
+        toggle-follow => { root.toggle-follow(root.artist.uri); }
         list-view: root.list-view;
         toggle-layout => { root.toggle-list-view(); }
         back => { root.back(); }

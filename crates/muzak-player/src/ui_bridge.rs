@@ -220,6 +220,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_save_album(move |uri| s(UiAction::ToggleSaveAlbum(uri.to_string())));
     let s = send.clone();
+    window.on_toggle_follow(move |uri| s(UiAction::ToggleFollow(uri.to_string())));
+    let s = send.clone();
     window.on_pick_liked(move || s(UiAction::PickLiked));
     let s = send.clone();
     window.on_rename_device(move || s(UiAction::RenameDevice));
@@ -309,6 +311,7 @@ impl Bridge {
             w.set_detail_summary(detail.summary.as_str().into());
             w.set_detail_saveable(detail.saveable);
             w.set_detail_saved(detail.saved);
+            w.set_detail_back_label(detail.back_label.as_str().into());
         }
 
         let art = self.images.get(&v.now.image_url);
@@ -389,6 +392,8 @@ impl Bridge {
                 .collect();
             sync(&self.artist_albums, albums);
             w.set_artist_state(load_state(artist.status));
+            w.set_artist_followed(artist.followed);
+            w.set_artist_back_label(artist.back_label.as_str().into());
         }
         let s = &v.settings;
         w.set_account_name(s.account_name.as_str().into());
