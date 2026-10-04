@@ -189,7 +189,7 @@ async fn probe(state_dir: &Path) -> anyhow::Result<()> {
     };
 
     let mut failures = 0;
-    let mut first_playlist = None;
+    let mut playlists: Vec<(String, String, String)> = Vec::new();
     for (label, path) in [
         ("playlists", "/me/playlists?limit=5"),
         ("saved albums", "/me/albums?limit=5"),
@@ -203,10 +203,20 @@ async fn probe(state_dir: &Path) -> anyhow::Result<()> {
             failures += 1;
         }
         if label == "playlists" {
-            first_playlist = body["items"][0]["id"].as_str().map(str::to_string);
+            for item in body["items"].as_array().into_iter().flatten() {
+                let field = |key: &str| item[key].as_str().unwrap_or("?").to_string();
+                playlists.push((
+                    field("id"),
+                    field("name"),
+                    item["owner"]["id"].as_str().unwrap_or("?").to_string(),
+                ));
+            }
         }
     }
-    if let Some(id) = first_playlist {
+    // Spotify refuses playlist tracks for playlists it owns itself (Discover Weekly, editorial
+    // mixes) to developer apps, so check each playlist and show who owns it.
+    let mut any_playlist_ok = false;
+    for (id, name, owner) in &playlists {
         let mut any_ok = false;
         for path in [
             format!("/playlists/{id}/items?limit=5"),
@@ -216,9 +226,15 @@ async fn probe(state_dir: &Path) -> anyhow::Result<()> {
             println!("{:<16} HTTP {status}  {path}", "playlist items");
             any_ok |= status.is_success();
         }
-        if !any_ok {
-            failures += 1;
-        }
+        println!(
+            "{:<16} {name:?} owned by {owner}: {}",
+            "",
+            if any_ok { "ok" } else { "FORBIDDEN" }
+        );
+        any_playlist_ok |= any_ok;
+    }
+    if !playlists.is_empty() && !any_playlist_ok {
+        failures += 1;
     }
     if failures > 0 {
         bail!("{failures} endpoint group(s) failed; apply Contingency A in the phase 1 plan");
