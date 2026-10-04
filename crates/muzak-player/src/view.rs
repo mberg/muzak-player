@@ -134,6 +134,10 @@ pub struct SettingsView {
     /// "Headphone jack" or the speaker's name.
     pub output: String,
     pub on_speaker: bool,
+    /// A Sonos room plays instead of this device.
+    pub on_sonos: bool,
+    /// Sonos rooms found by the last scan.
+    pub sonos_rooms: Vec<SpeakerRowView>,
     pub speaker_connected: bool,
     pub bluetooth: bool,
     pub scanning: bool,
@@ -327,11 +331,15 @@ fn settings(state: &AppState) -> SettingsView {
             },
         })
         .collect();
+    let sonos = match &d.saved.output {
+        Some(crate::settings::Output::Sonos(room)) => Some(room.clone()),
+        _ => None,
+    };
     let message = if d.restarting {
         "Saved. Restarting the player…".to_string()
     } else if let Some(name) = &d.failed {
         format!("Couldn't connect to {name}. Check it's on and ready to pair.")
-    } else if d.scanning {
+    } else if d.scanning || d.sonos_scanning {
         "Looking for speakers…".to_string()
     } else {
         String::new()
@@ -348,11 +356,26 @@ fn settings(state: &AppState) -> SettingsView {
             .map(|a| a.id.clone())
             .unwrap_or_default(),
         device_name: d.device_name.clone(),
-        output: d
-            .speaker
-            .as_ref()
-            .map_or_else(|| "Headphone jack".to_string(), |s| s.name.clone()),
-        on_speaker: d.speaker.is_some(),
+        output: match (&sonos, &d.speaker) {
+            (Some(room), _) => format!("Sonos: {}", room.name),
+            (None, Some(speaker)) => speaker.name.clone(),
+            (None, None) => "Headphone jack".to_string(),
+        },
+        on_speaker: d.speaker.is_some() && sonos.is_none(),
+        on_sonos: sonos.is_some(),
+        sonos_rooms: d
+            .sonos_rooms
+            .iter()
+            .map(|r| SpeakerRowView {
+                address: r.uuid.clone(),
+                name: r.name.clone(),
+                status: if sonos.as_ref().is_some_and(|s| s.uuid == r.uuid) {
+                    "In use".into()
+                } else {
+                    String::new()
+                },
+            })
+            .collect(),
         speaker_connected: state.speaker_connected,
         bluetooth: d.bluetooth,
         sleep_minutes: d
@@ -368,7 +391,7 @@ fn settings(state: &AppState) -> SettingsView {
              can't pair them; run with --fake to try the screen here."
                 .into()
         },
-        scanning: d.scanning,
+        scanning: d.scanning || d.sonos_scanning,
         speakers,
         message,
         restarting: d.restarting,

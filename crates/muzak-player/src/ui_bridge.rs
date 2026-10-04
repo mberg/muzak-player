@@ -244,6 +244,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_connect_speaker(move |address| s(UiAction::ConnectSpeaker(address.to_string())));
     let s = send.clone();
+    window.on_choose_sonos(move |uuid| s(UiAction::ChooseSonos(uuid.to_string())));
+    let s = send.clone();
     window.on_use_jack(move || s(UiAction::UseJack));
     let s = send.clone();
     window.on_forget_speaker(move || s(UiAction::ForgetSpeaker));
@@ -473,6 +475,17 @@ impl Bridge {
             })
             .collect();
         w.set_speakers(ModelRc::new(VecModel::from(speakers)));
+        w.set_on_sonos(s.on_sonos);
+        let rooms: Vec<SpeakerRowData> = s
+            .sonos_rooms
+            .iter()
+            .map(|r| SpeakerRowData {
+                address: r.address.as_str().into(),
+                name: r.name.as_str().into(),
+                status: r.status.as_str().into(),
+            })
+            .collect();
+        w.set_sonos_rooms(ModelRc::new(VecModel::from(rooms)));
     }
 }
 

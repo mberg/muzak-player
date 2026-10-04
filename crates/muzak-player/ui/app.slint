@@ -58,6 +58,8 @@ export component AppWindow inherits Window {
     in property <string> device-name;
     in property <string> output-name;
     in property <bool> on-speaker;
+    in property <bool> on-sonos;
+    in property <[SpeakerRowData]> sonos-rooms;
     in property <bool> speaker-connected;
     in property <bool> bluetooth;
     in property <bool> scanning;
@@ -140,6 +142,7 @@ export component AppWindow inherits Window {
     callback find-speakers();
     callback connect-speaker(string);
     callback use-jack();
+    callback choose-sonos(string);
     callback forget-speaker();
     callback open-picker(string);
     callback close-picker();
@@ -246,6 +249,9 @@ export component AppWindow inherits Window {
         device-name: root.device-name;
         output: root.output-name;
         on-speaker: root.on-speaker;
+        on-sonos: root.on-sonos;
+        sonos-rooms: root.sonos-rooms;
+        choose-sonos(uuid) => { root.choose-sonos(uuid); }
         speaker-connected: root.speaker-connected;
         bluetooth: root.bluetooth;
         scanning: root.scanning;

@@ -16,11 +16,21 @@ pub struct Speaker {
     pub name: String,
 }
 
+/// A Sonos room on the home network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SonosRoom {
+    /// Sonos's player id, e.g. "RINCON_000E58...".
+    pub uuid: String,
+    pub name: String,
+}
+
 /// Where audio goes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Output {
     Jack,
     Bluetooth(Speaker),
+    /// A Sonos room plays instead of this device, controlled over the network.
+    Sonos(SonosRoom),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -77,6 +87,8 @@ impl Settings {
                     config.audio_device = Some(JACK_DEVICE.into());
                 }
             }
+            // This device plays nothing; its own audio settings don't matter.
+            Some(Output::Sonos(_)) => {}
             Some(Output::Bluetooth(speaker)) => {
                 config.bluetooth_speaker = Some(speaker.address.clone());
                 if alsa {
