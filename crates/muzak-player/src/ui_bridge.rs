@@ -252,6 +252,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_listen(move || s(UiAction::Listen));
+    let s = send.clone();
     window.on_create_playlist(move || s(UiAction::NewEmptyPlaylist));
     let s = send.clone();
     window.on_set_recent_songs(move |songs| s(UiAction::SetRecentSongs(songs)));
@@ -363,6 +365,7 @@ impl Bridge {
         w.set_banner(v.banner.unwrap_or_default().into());
         w.set_voice_status(v.voice_status.as_str().into());
         w.set_voice_listening(v.voice_listening);
+        w.set_voice_enabled(v.voice_enabled);
         w.set_display_mode(match v.display {
             DisplayMode::Active => 0,
             DisplayMode::Dim => 1,

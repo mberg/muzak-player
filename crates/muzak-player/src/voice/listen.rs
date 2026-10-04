@@ -10,6 +10,12 @@ const END_SILENCE: usize = RATE * 8 / 10;
 const NO_SPEECH: usize = RATE * 4;
 /// The longest request.
 const MAX_REQUEST: usize = RATE * 8;
+/// Audio kept from before the wake word was recognised. The model needs a moment after the
+/// wake word ends, and a quick "ziggy stop" is over by then; this keeps it.
+const PRE_ROLL: usize = RATE;
+/// After the wake word, people often pause before the request. If nothing new is said, the
+/// request ends after this much quiet (the command may already be in the audio from before).
+const PAUSE_AFTER_WAKE: usize = RATE * 2;
 /// Speech must be this much louder than the room was before the wake word...
 const SPEECH_OVER_NOISE: f32 = 2.5;
 /// ...and at least this loud (RMS of samples in -1.0..1.0).
@@ -38,7 +44,12 @@ enum Phase {
     Waiting,
     Recording {
         audio: Vec<f32>,
+        /// Stop here, whatever is said.
+        limit: usize,
+        /// Speech since recording started.
         spoke: bool,
+        /// The audio starts with what was said before the wake word was recognised.
+        after_wake: bool,
         quiet: usize,
     },
 }
@@ -50,6 +61,8 @@ pub struct Listener<W: WakeWord> {
     noise: f32,
     /// Part of a frame left over from the last chunk.
     partial: Vec<f32>,
+    /// The last `PRE_ROLL` samples heard while waiting.
+    recent: std::collections::VecDeque<f32>,
 }
 
 fn rms(frame: &[f32]) -> f32 {
@@ -63,7 +76,21 @@ impl<W: WakeWord> Listener<W> {
             phase: Phase::Waiting,
             noise: MIN_SPEECH / SPEECH_OVER_NOISE,
             partial: Vec::new(),
+            recent: std::collections::VecDeque::with_capacity(PRE_ROLL + FRAME),
         }
+    }
+
+    /// Starts recording now, without the wake word (the microphone button).
+    pub fn listen_now(&mut self) {
+        self.wake.reset();
+        self.recent.clear();
+        self.phase = Phase::Recording {
+            audio: Vec::with_capacity(MAX_REQUEST),
+            limit: MAX_REQUEST,
+            spoke: false,
+            after_wake: false,
+            quiet: 0,
+        };
     }
 
     pub fn is_recording(&self) -> bool {
@@ -89,11 +116,20 @@ impl<W: WakeWord> Listener<W> {
         match &mut self.phase {
             Phase::Waiting => {
                 self.noise = 0.98 * self.noise + 0.02 * level;
+                self.recent.extend(frame);
+                let extra = self.recent.len().saturating_sub(PRE_ROLL);
+                self.recent.drain(..extra);
                 if self.wake.feed(frame) {
                     self.wake.reset();
+                    // The request starts with what was just said, so a quick command right after
+                    // the wake word isn't lost.
+                    let mut audio = Vec::with_capacity(MAX_REQUEST + PRE_ROLL);
+                    audio.extend(self.recent.drain(..));
                     self.phase = Phase::Recording {
-                        audio: Vec::with_capacity(MAX_REQUEST),
+                        limit: audio.len() + MAX_REQUEST,
+                        audio,
                         spoke: false,
+                        after_wake: true,
                         quiet: 0,
                     };
                     return Some(Heard::Woke);
@@ -102,7 +138,9 @@ impl<W: WakeWord> Listener<W> {
             }
             Phase::Recording {
                 audio,
+                limit,
                 spoke,
+                after_wake,
                 quiet,
             } => {
                 audio.extend_from_slice(frame);
@@ -113,15 +151,21 @@ impl<W: WakeWord> Listener<W> {
                 } else {
                     *quiet += frame.len();
                 }
-                let done = if *spoke {
-                    *quiet >= END_SILENCE || audio.len() >= MAX_REQUEST
+                let done = if audio.len() >= *limit {
+                    true
+                } else if *spoke {
+                    *quiet >= END_SILENCE
+                } else if *after_wake {
+                    *quiet >= PAUSE_AFTER_WAKE
                 } else {
                     audio.len() >= NO_SPEECH
                 };
                 if !done {
                     return None;
                 }
-                let heard = if *spoke {
+                // After the wake word, the audio from before may hold a quick command; Gemini
+                // decides. From the button, silence is nothing.
+                let heard = if *spoke || *after_wake {
                     Heard::Request(std::mem::take(audio))
                 } else {
                     Heard::Nothing
@@ -160,8 +204,19 @@ mod tests {
         vec![0.5; FRAME]
     }
 
+    fn request(heard: &[Heard]) -> &[f32] {
+        match heard {
+            [Heard::Request(audio)] => audio,
+            other => panic!("expected a request, got {other:?}"),
+        }
+    }
+
+    fn secs(audio: &[f32]) -> f32 {
+        audio.len() as f32 / RATE as f32
+    }
+
     #[test]
-    fn records_from_the_wake_word_until_the_speaker_stops() {
+    fn records_from_just_before_the_wake_word_until_the_speaker_stops() {
         let mut l = Listener::new(FakeWake);
         assert!(l.push(&silence(1.0)).is_empty());
         assert_eq!(l.push(&wake()), [Heard::Woke]);
@@ -171,28 +226,62 @@ mod tests {
         assert!(l.push(&silence(0.4)).is_empty());
         assert!(l.push(&speech(0.5)).is_empty());
         let heard = l.push(&silence(1.0));
-        let [Heard::Request(audio)] = heard.as_slice() else {
-            panic!("expected a request, got {heard:?}")
-        };
-        // 2 s of speech, the pause, and the quiet that ended it.
-        assert!((2.6..3.4).contains(&(audio.len() as f32 / RATE as f32)));
+        // A second from before the wake word, 2 s of speech, the pause, and the quiet after.
+        assert!(
+            (3.6..4.4).contains(&secs(request(&heard))),
+            "{}",
+            secs(request(&heard))
+        );
         assert!(!l.is_recording());
     }
 
     #[test]
-    fn the_wake_word_then_quiet_is_nothing() {
+    fn a_command_said_while_the_wake_word_was_being_recognised_is_kept() {
         let mut l = Listener::new(FakeWake);
+        l.push(&silence(1.0));
+        // "next song" was said before the wake word model caught up.
+        let command = speech(0.6);
+        l.push(&command);
+        assert_eq!(l.push(&wake()), [Heard::Woke]);
+        // Nothing more is said: the request ends after the longer pause.
+        assert!(l.push(&silence(1.5)).is_empty());
+        let audio = request(&l.push(&silence(0.6))).to_vec();
+        let kept = audio
+            .windows(command.len())
+            .any(|w| w == command.as_slice());
+        assert!(kept, "the command before the wake word is in the request");
+    }
+
+    #[test]
+    fn a_pause_after_the_wake_word_does_not_end_the_request() {
+        let mut l = Listener::new(FakeWake);
+        l.push(&silence(1.0));
         l.push(&wake());
+        assert!(l.push(&silence(1.5)).is_empty(), "waiting for the request");
+        assert!(l.push(&speech(1.0)).is_empty());
+        let heard = l.push(&silence(1.0));
+        assert!(secs(request(&heard)) > 3.0);
+    }
+
+    #[test]
+    fn the_microphone_button_waits_for_speech() {
+        let mut l = Listener::new(FakeWake);
+        l.listen_now();
+        assert!(l.is_recording());
         assert!(l.push(&silence(3.9)).is_empty());
         assert_eq!(l.push(&silence(0.2)), [Heard::Nothing]);
+        l.listen_now();
+        l.push(&speech(1.0));
+        let heard = l.push(&silence(1.0));
+        assert!((1.7..1.9).contains(&secs(request(&heard))));
     }
 
     #[test]
     fn a_long_request_is_cut_off() {
         let mut l = Listener::new(FakeWake);
-        l.push(&wake());
+        l.listen_now();
         let heard = l.push(&speech(9.0));
-        assert!(matches!(heard.as_slice(), [Heard::Request(a)] if a.len() == MAX_REQUEST));
+        assert_eq!(request(&heard).len(), MAX_REQUEST);
     }
 
     #[test]

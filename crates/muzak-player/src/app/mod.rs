@@ -64,6 +64,8 @@ pub struct CoreConfig {
     pub saved: crate::settings::Settings,
     /// Bluetooth is available (the Pi, or `--fake` mode).
     pub bluetooth: bool,
+    /// Voice control is set up, so the microphone button shows.
+    pub voice: bool,
 }
 
 impl CoreConfig {
@@ -148,7 +150,10 @@ impl Core {
             history: None,
             recent_songs: false,
             sleep_ends_ms: None,
-            voice: VoiceState::default(),
+            voice: VoiceState {
+                enabled: cfg.voice,
+                ..VoiceState::default()
+            },
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
                 device_name: cfg.device_name.clone(),
@@ -1098,6 +1103,12 @@ impl Core {
                 self.toggle_in_library(uri, Section::Artists, now_ms, fx)
             }
             UiAction::ToggleListView => self.state.list_view = !self.state.list_view,
+            UiAction::Listen => {
+                if self.state.voice.enabled && self.state.voice.phase == VoicePhase::Idle {
+                    self.state.keyboard_open = false;
+                    fx.push(Effect::VoiceListen);
+                }
+            }
             UiAction::RenameDevice => {
                 self.state.text_entry = Some(TextEntry {
                     purpose: TextPurpose::DeviceName,

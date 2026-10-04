@@ -27,10 +27,14 @@ pub struct VoiceSettings {
 /// The latest library and playback summary, sent with each request.
 pub type SharedContext = Arc<Mutex<VoiceContext>>;
 
+/// Set to start listening without the wake word (the microphone button).
+pub type ListenNow = Arc<std::sync::atomic::AtomicBool>;
+
 pub fn spawn_voice(
     settings: VoiceSettings,
     inputs: UnboundedSender<Input>,
     context: SharedContext,
+    listen_now: ListenNow,
     runtime: tokio::runtime::Handle,
 ) {
     let backend = match (&settings.vertex_key_file, &settings.gemini_key) {
@@ -85,6 +89,13 @@ pub fn spawn_voice(
                 let mut recording: Vec<f32> = Vec::new();
                 let mut files = 0;
                 while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(5)) {
+                    if listen_now.swap(false, std::sync::atomic::Ordering::Relaxed)
+                        && !listener.is_recording()
+                    {
+                        tracing::info!("voice: listening from the button");
+                        listener.listen_now();
+                        let _ = inputs.send(Input::Voice(VoiceUpdate::Woke));
+                    }
                     // With RUST_LOG=muzak_player::voice=debug: is any sound arriving at all?
                     peak = chunk.iter().fold(peak, |p, s| p.max(s.abs()));
                     if let Some(dir) = &record_dir {

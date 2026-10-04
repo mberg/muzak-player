@@ -114,6 +114,18 @@ fn ui_clicks() {
         window.set_voice_status("".into());
         window.set_banner("".into());
 
+        // Search: the microphone listens without the wake word.
+        window.set_screen(ScreenKind::Search);
+        window.set_voice_enabled(true);
+        let listened = Rc::new(Cell::new(false));
+        let li = listened.clone();
+        window.on_listen(move || li.set(true));
+        visible_by_label(&window, "Ask by voice")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(listened.get(), "the microphone starts listening");
+        window.set_voice_enabled(false);
+
         // Recent: the Songs chip, then a song plays.
         window.set_keyboard_open(false);
         window.set_screen(ScreenKind::Grid);

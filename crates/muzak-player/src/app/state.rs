@@ -148,6 +148,8 @@ pub enum VoicePhase {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VoiceState {
+    /// Voice control is set up on this device.
+    pub enabled: bool,
     pub phase: VoicePhase,
     /// When the phase last changed, so a lost reply can't leave the music quiet.
     pub since_ms: u64,

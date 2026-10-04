@@ -216,6 +216,8 @@ pub enum UiAction {
     SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.
     RenameDevice,
+    /// The microphone button: listen for a request without the wake word.
+    Listen,
     FindSpeakers,
     ConnectSpeaker(String),
     /// Play through this Sonos room (by uuid) instead of this device.
@@ -329,6 +331,8 @@ pub enum Effect {
     ScanSonos,
     /// What the voice service passes to Gemini with the next request.
     VoiceContext(VoiceContext),
+    /// Start listening without the wake word.
+    VoiceListen,
 }
 
 #[derive(Debug, Clone, PartialEq)]

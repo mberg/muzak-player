@@ -203,6 +203,8 @@ pub struct View {
     /// "Listening…" or "Working on it…" during a voice request; empty otherwise.
     pub voice_status: String,
     pub voice_listening: bool,
+    /// Voice control is set up, so the microphone button shows.
+    pub voice_enabled: bool,
     pub display: DisplayMode,
     /// The dim screen shows a clock, except while falling asleep to a sleep timer.
     pub show_clock: bool,
@@ -279,6 +281,7 @@ pub fn build(state: &AppState) -> View {
             crate::app::VoicePhase::Thinking => "Working on it…".into(),
         },
         voice_listening: state.voice.phase == crate::app::VoicePhase::Listening,
+        voice_enabled: state.voice.enabled,
         display: state.display,
         show_clock: state.sleep_ends_ms.is_none(),
         auth_needed: state.auth_needed,

@@ -156,10 +156,12 @@ async fn run(
         speaker,
         saved,
         bluetooth: bluetooth.is_some(),
+        voice: config.voice_model_dir.is_some(),
     };
     let history =
         crate::history::spawn_history(config.state_dir.join("history.db"), inputs.clone());
     let voice_context = crate::voice::service::SharedContext::default();
+    let listen_now = crate::voice::service::ListenNow::default();
     if let Some(model_dir) = &config.voice_model_dir {
         crate::voice::service::spawn_voice(
             crate::voice::service::VoiceSettings {
@@ -183,6 +185,7 @@ async fn run(
             },
             inputs.clone(),
             voice_context.clone(),
+            listen_now.clone(),
             tokio::runtime::Handle::current(),
         );
     }
@@ -193,6 +196,7 @@ async fn run(
         library,
         history,
         voice_context,
+        listen_now,
         bluetooth,
         state_dir: config.state_dir.clone(),
     };
@@ -230,6 +234,7 @@ struct Outputs {
     library: UnboundedSender<LibraryRequest>,
     history: UnboundedSender<crate::app::HistoryCommand>,
     voice_context: crate::voice::service::SharedContext,
+    listen_now: crate::voice::service::ListenNow,
     bluetooth: Option<UnboundedSender<crate::app::BtCommand>>,
     state_dir: std::path::PathBuf,
 }
@@ -244,6 +249,11 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                 let _ = outputs.library.send(request);
             }
             Effect::Display(mode) => platform.set_display(mode),
+            Effect::VoiceListen => {
+                outputs
+                    .listen_now
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
             Effect::VoiceContext(context) => {
                 *outputs.voice_context.lock().unwrap() = context;
             }

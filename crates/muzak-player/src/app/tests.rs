@@ -14,6 +14,7 @@ pub(crate) fn config() -> CoreConfig {
         speaker: None,
         saved: Default::default(),
         bluetooth: true,
+        voice: true,
     }
 }
 
@@ -1935,4 +1936,27 @@ fn paused_music_is_not_lowered_or_raised() {
     );
     assert!(volumes(&fx).is_empty());
     assert_eq!(banner(&c).as_deref(), Some("No internet right now"));
+}
+
+#[test]
+fn the_microphone_button_starts_listening_once() {
+    let mut c = core();
+    c.handle(ui(UiAction::OpenKeyboard), 0);
+    let fx = c.handle(ui(UiAction::Listen), 0);
+    assert_eq!(fx, vec![Effect::VoiceListen]);
+    assert!(!c.state().keyboard_open, "the keyboard gets out of the way");
+    assert!(crate::view::build(c.state()).voice_enabled);
+    // Already listening: a second tap does nothing.
+    c.handle(voice(VoiceUpdate::Woke), 0);
+    assert!(
+        c.handle(ui(UiAction::Listen), 0)
+            .iter()
+            .all(|e| *e != Effect::VoiceListen)
+    );
+    // No voice on this device: no button, and a tap does nothing.
+    let mut cfg = config();
+    cfg.voice = false;
+    let mut c = Core::new(cfg, 0).0;
+    assert!(!crate::view::build(c.state()).voice_enabled);
+    assert!(c.handle(ui(UiAction::Listen), 0).is_empty());
 }

@@ -53,6 +53,8 @@ export component AppWindow inherits Window {
     // "Listening…" or "Working on it…" during a voice request; empty otherwise.
     in property <string> voice-status;
     in property <bool> voice-listening;
+    in property <bool> voice-enabled;
+    callback listen();
     in property <int> display-mode;
     in property <string> clock;
     in property <bool> show-clock;
@@ -242,6 +244,8 @@ export component AppWindow inherits Window {
         add-song(uri) => { root.open-picker(uri); }
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
+        voice: root.voice-enabled;
+        listen => { root.listen(); }
         close => { root.close-search(); }
         filter: root.search-filter;
         set-filter(i) => { root.set-search-filter(i); }

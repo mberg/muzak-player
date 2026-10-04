@@ -37,7 +37,8 @@ pub fn wav(samples: &[f32]) -> Vec<u8> {
 fn instructions(context: &VoiceContext) -> String {
     let mut text = String::from(
         "You control a music player on a small touchscreen at home. The audio is one spoken \
-         request said after the wake word. Choose exactly one function.\n\
+         request. It may begin with the player's wake word (such as \"ziggy\"); ignore that. \
+         Choose exactly one function.\n\
          - If the request names something in the library below, call play_item with its id.\n\
          - Otherwise, to play music, call search_and_play with a precise Spotify search query. \
          Use what you know: for \"Paul Simon's first album\" search for that album's real title \

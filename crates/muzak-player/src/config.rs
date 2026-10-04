@@ -28,7 +28,7 @@ pub struct Config {
     /// Voice control: a sherpa-onnx keyword model folder. Voice is on when this is set.
     #[serde(default)]
     pub voice_model_dir: Option<PathBuf>,
-    /// Said before a request; defaults to "hey muzak".
+    /// Said before a request; defaults to "ziggy".
     #[serde(default)]
     pub wake_phrase: Option<String>,
     /// How sure the wake word must be, 0-1; lower hears it more readily. Defaults to 0.25.
