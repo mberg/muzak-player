@@ -1458,10 +1458,8 @@ fn playing_at(volume: u8) -> Core {
 #[test]
 fn sleep_timer_fades_then_pauses_and_restores_volume() {
     let mut c = playing_at(60);
+    // The moon starts it straight away, for the default 30 minutes.
     c.handle(ui(UiAction::TapSleepTimer), 0);
-    assert!(c.state().sleep_picker);
-    c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
-    assert!(!c.state().sleep_picker);
     let ends = 30 * 60_000;
     assert_eq!(c.state().sleep_ends_ms, Some(ends));
     assert_eq!(crate::view::build(c.state()).now.sleep_left, "30 min");
@@ -1499,7 +1497,7 @@ fn tapping_the_moon_while_running_turns_it_off_and_restores_volume() {
     c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
     c.handle(Input::Tick, 30 * 60_000 - 3_000);
     let fx = c.handle(ui(UiAction::TapSleepTimer), 30 * 60_000 - 2_000);
-    assert!(!c.state().sleep_picker, "no sheet when turning it off");
+
     assert!(fx.contains(&Effect::Player(PlayerCommand::SetVolume { percent: 60 })));
     assert_eq!(c.state().sleep_ends_ms, None);
 }
@@ -1525,4 +1523,16 @@ fn during_a_sleep_timer_the_screen_dims_in_seconds_then_goes_dark_after_a_minute
     assert_eq!(c.state().display, DisplayMode::Active);
     c.handle(Input::Tick, 83_000);
     assert_eq!(c.state().display, DisplayMode::Dim);
+}
+
+#[test]
+fn the_sleep_length_comes_from_settings_and_saves_without_a_restart() {
+    let mut c = playing_at(60);
+    let fx = c.handle(ui(UiAction::SetSleepLength(60)), 0);
+    assert!(matches!(&fx[..], [Effect::SaveSettings(s)] if s.sleep_minutes == Some(60)));
+    assert!(!c.state().device.restarting);
+    c.handle(ui(UiAction::TapSleepTimer), 1_000);
+    assert_eq!(c.state().sleep_ends_ms, Some(1_000 + 60 * 60_000));
+    c.handle(ui(UiAction::TapSleepTimer), 2_000);
+    assert_eq!(c.state().sleep_ends_ms, None);
 }

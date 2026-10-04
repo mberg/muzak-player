@@ -25,6 +25,9 @@ component SmallPill inherits Rectangle {
     in property <color> tint: Theme.text;
     in property <bool> enabled: true;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
     height: 44px;
     width: label-text.preferred-width + 36px;
     border-radius: 22px;
@@ -102,6 +105,8 @@ export component SettingsScreen inherits Rectangle {
     callback connect-speaker(string);
     callback use-jack();
     callback forget-speaker();
+    in property <int> sleep-minutes;
+    callback set-sleep-length(int);
     background: Theme.bg;
     Flickable {
         content-height: column.preferred-height;
@@ -158,6 +163,29 @@ export component SettingsScreen inherits Rectangle {
                 }
                 Text {
                     text: "The name Spotify shows when you pick where to play.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Sleep timer";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "30 minutes";
+                        primary: root.sleep-minutes == 30;
+                        clicked => { root.set-sleep-length(30); }
+                    }
+                    SmallPill {
+                        label: "60 minutes";
+                        primary: root.sleep-minutes == 60;
+                        clicked => { root.set-sleep-length(60); }
+                    }
+                }
+                Text {
+                    text: "The moon on the playing-song screen starts it. Music fades out and stops.";
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;

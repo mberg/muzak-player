@@ -203,6 +203,11 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                     let _ = bluetooth.send(command);
                 }
             }
+            Effect::SaveSettings(settings) => {
+                if let Err(e) = settings.save(&outputs.state_dir) {
+                    tracing::error!("saving settings failed: {e:#}");
+                }
+            }
             Effect::ApplySettings(settings) => {
                 let state_dir = outputs.state_dir.clone();
                 tokio::spawn(async move {

@@ -59,8 +59,8 @@ impl Platform {
 pub fn brightness_for(mode: DisplayMode, max: u32) -> u32 {
     match mode {
         DisplayMode::Active => max,
-        // 90% darker, with the clock showing.
-        DisplayMode::Dim => (max / 10).max(1),
+        // 80% darker.
+        DisplayMode::Dim => (max / 5).max(1),
         DisplayMode::Off => 0,
     }
 }
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn brightness_levels() {
         assert_eq!(brightness_for(DisplayMode::Active, 255), 255);
-        assert_eq!(brightness_for(DisplayMode::Dim, 255), 25);
+        assert_eq!(brightness_for(DisplayMode::Dim, 255), 51);
         assert_eq!(brightness_for(DisplayMode::Dim, 5), 1);
         assert_eq!(brightness_for(DisplayMode::Off, 255), 0);
     }

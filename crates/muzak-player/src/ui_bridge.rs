@@ -246,13 +246,7 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_open_sleep_timer(move || s(UiAction::TapSleepTimer));
     let s = send.clone();
-    window.on_close_sleep_timer(move || s(UiAction::CloseSleepTimer));
-    let s = send.clone();
-    window.on_set_sleep_timer(move |minutes| {
-        s(UiAction::SetSleepTimer(
-            (minutes > 0).then_some(minutes as u32),
-        ))
-    });
+    window.on_set_sleep_length(move |minutes| s(UiAction::SetSleepLength(minutes.max(1) as u32)));
     let s = send.clone();
     window.on_open_album_artist(move |uri| s(UiAction::OpenAlbumArtist(uri.to_string())));
     let s = send.clone();
@@ -367,7 +361,6 @@ impl Bridge {
         w.set_now_liked(v.now.liked);
         w.set_now_has_artist(v.now.has_artist);
         w.set_sleep_left(v.now.sleep_left.as_str().into());
-        w.set_sleep_picker(v.sleep_picker);
         w.set_list_view(v.list_view);
         w.set_picker_open(v.picker.is_some());
         if let Some(picker) = &v.picker {
@@ -431,6 +424,7 @@ impl Bridge {
         w.set_bluetooth(s.bluetooth);
         w.set_scanning(s.scanning);
         w.set_settings_message(s.message.as_str().into());
+        w.set_sleep_minutes(s.sleep_minutes as i32);
         w.set_bluetooth_note(s.bluetooth_note.as_str().into());
         w.set_restarting(s.restarting);
         let speakers: Vec<SpeakerRowData> = s

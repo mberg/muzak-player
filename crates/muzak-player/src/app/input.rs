@@ -121,9 +121,10 @@ pub enum UiAction {
     ToggleSaveAlbum(String),
     /// Follow the artist, or stop following.
     ToggleFollow(String),
-    /// The moon: turns a running sleep timer off, otherwise shows the choices.
+    /// The moon: turns a running sleep timer off, otherwise starts it.
     TapSleepTimer,
-    CloseSleepTimer,
+    /// Settings: how long the sleep timer runs, in minutes.
+    SetSleepLength(u32),
     /// Set the sleep timer to these minutes; None turns it off.
     SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.
@@ -232,6 +233,8 @@ pub enum Effect {
     Bluetooth(BtCommand),
     /// Save the settings and restart the player so they take effect.
     ApplySettings(crate::settings::Settings),
+    /// Save the settings; nothing needs a restart.
+    SaveSettings(crate::settings::Settings),
 }
 
 #[derive(Debug, Clone, PartialEq)]

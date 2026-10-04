@@ -21,6 +21,8 @@ const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
+/// Sleep timer length unless Settings says otherwise.
+pub const DEFAULT_SLEEP_MINUTES: u32 = 30;
 /// The sleep timer fades the volume out over its last this-many milliseconds.
 const SLEEP_FADE_MS: u64 = 5_000;
 /// While a sleep timer runs, the screen dims this soon after the last touch...
@@ -115,7 +117,6 @@ impl Core {
             artists_seen: HashMap::new(),
             now_ms,
             sleep_ends_ms: None,
-            sleep_picker: false,
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
                 device_name: cfg.device_name.clone(),
@@ -1118,16 +1119,24 @@ impl Core {
                 self.on_ui(UiAction::OpenArtist(artist_uri), now_ms, fx);
             }
             UiAction::TapSleepTimer => {
-                if self.state.sleep_ends_ms.is_some() {
-                    self.restore_sleep_volume(fx);
-                    self.state.sleep_ends_ms = None;
+                let minutes = if self.state.sleep_ends_ms.is_some() {
+                    None
                 } else {
-                    self.state.sleep_picker = true;
-                }
+                    Some(
+                        self.state
+                            .device
+                            .saved
+                            .sleep_minutes
+                            .unwrap_or(DEFAULT_SLEEP_MINUTES),
+                    )
+                };
+                self.on_ui(UiAction::SetSleepTimer(minutes), now_ms, fx);
             }
-            UiAction::CloseSleepTimer => self.state.sleep_picker = false,
+            UiAction::SetSleepLength(minutes) => {
+                self.state.device.saved.sleep_minutes = Some(minutes);
+                fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
+            }
             UiAction::SetSleepTimer(minutes) => {
-                self.state.sleep_picker = false;
                 self.restore_sleep_volume(fx);
                 self.state.sleep_ends_ms = minutes.map(|m| now_ms + u64::from(m) * 60_000);
             }

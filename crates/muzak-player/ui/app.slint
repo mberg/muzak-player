@@ -17,7 +17,6 @@ import { PlaylistPicker } from "components/picker.slint";
 import { NameDialog } from "components/name_dialog.slint";
 import { ConfirmDelete } from "components/confirm_dialog.slint";
 import { SettingsScreen } from "screens/settings.slint";
-import { SleepSheet } from "components/sleep_sheet.slint";
 
 export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData }
 
@@ -88,7 +87,7 @@ export component AppWindow inherits Window {
     in property <bool> now-liked;
     in property <bool> now-has-artist;
     in property <string> sleep-left;
-    in property <bool> sleep-picker;
+    in property <int> sleep-minutes;
     in property <bool> list-view;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
@@ -126,8 +125,7 @@ export component AppWindow inherits Window {
     callback open-playing-artist();
     callback open-album-artist(string);
     callback open-sleep-timer();
-    callback close-sleep-timer();
-    callback set-sleep-timer(int);
+    callback set-sleep-length(int);
     callback toggle-list-view();
     callback toggle-save-album(string);
     callback toggle-follow(string);
@@ -249,6 +247,8 @@ export component AppWindow inherits Window {
         connect-speaker(address) => { root.connect-speaker(address); }
         use-jack => { root.use-jack(); }
         forget-speaker => { root.forget-speaker(); }
+        sleep-minutes: root.sleep-minutes;
+        set-sleep-length(m) => { root.set-sleep-length(m); }
     }
     ArtistScreen {
         x: Theme.rail-width;
@@ -315,14 +315,6 @@ export component AppWindow inherits Window {
         open-artist => { root.open-playing-artist(); }
         sleep-left: root.sleep-left;
         open-sleep => { root.open-sleep-timer(); }
-    }
-    if root.sleep-picker: SleepSheet {
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.height;
-        pick(minutes) => { root.set-sleep-timer(minutes); }
-        close => { root.close-sleep-timer(); }
     }
     if root.picker-open: PlaylistPicker {
         x: 0;

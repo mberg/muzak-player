@@ -130,6 +130,8 @@ pub struct SettingsView {
     pub speakers: Vec<SpeakerRowView>,
     /// A line under the speaker list: a failure or "Restarting…".
     pub message: String,
+    /// The sleep timer's length in minutes.
+    pub sleep_minutes: u32,
     /// Why there's no Bluetooth, shown instead of the speaker buttons.
     pub bluetooth_note: String,
     pub restarting: bool,
@@ -196,8 +198,6 @@ pub struct View {
     pub keyboard: bool,
     /// Collection screens show a list instead of tiles.
     pub list_view: bool,
-    /// The sleep timer's choices are on screen.
-    pub sleep_picker: bool,
     pub settings: SettingsView,
 }
 
@@ -268,7 +268,6 @@ pub fn build(state: &AppState) -> View {
         }),
         keyboard,
         list_view: state.list_view,
-        sleep_picker: state.sleep_picker,
         settings: settings(state),
     }
 }
@@ -321,6 +320,10 @@ fn settings(state: &AppState) -> SettingsView {
         on_speaker: d.speaker.is_some(),
         speaker_connected: state.speaker_connected,
         bluetooth: d.bluetooth,
+        sleep_minutes: d
+            .saved
+            .sleep_minutes
+            .unwrap_or(crate::app::DEFAULT_SLEEP_MINUTES),
         bluetooth_note: if d.bluetooth {
             String::new()
         } else if cfg!(target_os = "linux") {

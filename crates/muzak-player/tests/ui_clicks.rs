@@ -58,7 +58,7 @@ fn ui_clicks() {
         play.single_click(PointerEventButton::Left).await;
         assert_eq!(plays.get(), 1, "Play plays the album");
 
-        // Now Playing: the moon opens the sleep timer; 30 minutes is the default choice.
+        // Now Playing: the moon starts the sleep timer.
         window.set_screen(ScreenKind::NowPlaying);
         let opened = Rc::new(Cell::new(false));
         let o = opened.clone();
@@ -66,15 +66,18 @@ fn ui_clicks() {
         visible_by_label(&window, "Sleep timer")
             .single_click(PointerEventButton::Left)
             .await;
-        assert!(opened.get(), "the moon opens the sleep timer");
-        window.set_sleep_picker(true);
-        let picked = Rc::new(Cell::new(-1));
-        let p = picked.clone();
-        window.on_set_sleep_timer(move |m| p.set(m));
-        visible_by_label(&window, "30 minutes")
+        assert!(opened.get(), "the moon starts the sleep timer");
+
+        // Settings: the sleep timer length.
+        window.set_screen(ScreenKind::Settings);
+        window.set_sleep_minutes(30);
+        let length = Rc::new(Cell::new(0));
+        let l = length.clone();
+        window.on_set_sleep_length(move |m| l.set(m));
+        visible_by_label(&window, "60 minutes")
             .single_click(PointerEventButton::Left)
             .await;
-        assert_eq!(picked.get(), 30);
+        assert_eq!(length.get(), 60);
 
         slint::quit_event_loop().unwrap();
     })

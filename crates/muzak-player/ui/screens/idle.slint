@@ -8,8 +8,8 @@ export component IdleOverlay inherits Rectangle {
     // No clock while falling asleep to a sleep timer: just dim, then dark.
     in property <bool> show-clock: true;
     callback touched();
-    // 90% darker when dim (the Pi also lowers its backlight); black when off.
-    background: root.mode == 0 ? #00000000 : root.mode == 1 ? #000000e6 : #000000;
+    // 80% darker when dim (the Pi also lowers its backlight); black when off.
+    background: root.mode == 0 ? #00000000 : root.mode == 1 ? #000000cc : #000000;
     animate background { duration: root.mode == 0 ? 0ms : 5s; }
     Text {
         text: root.clock;

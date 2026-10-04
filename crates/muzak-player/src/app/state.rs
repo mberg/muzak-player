@@ -204,6 +204,4 @@ pub struct AppState {
     pub now_ms: u64,
     /// When the sleep timer pauses playback, if one is set.
     pub sleep_ends_ms: Option<u64>,
-    /// The sleep timer's choices are on screen.
-    pub sleep_picker: bool,
 }
