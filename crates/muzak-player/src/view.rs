@@ -152,6 +152,8 @@ pub struct TextEntryView {
 pub struct NowView {
     /// The playing song, for adding it to a playlist; empty when unknown.
     pub track_uri: String,
+    /// The artist name can open the artist's page.
+    pub has_artist: bool,
     /// The playing song is in Liked Songs.
     pub liked: bool,
     pub title: String,
@@ -564,6 +566,7 @@ fn find_collection(state: &AppState, uri: &str) -> Option<Collection> {
     });
     from_sections
         .chain(from_search)
+        .chain(state.artists_seen.values())
         .find(|c| c.uri == uri)
         .cloned()
 }
@@ -661,6 +664,7 @@ fn now(state: &AppState) -> NowView {
     };
     NowView {
         track_uri: pb.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default(),
+        has_artist: pb.track.as_ref().is_some_and(|t| t.artist_uri.is_some()),
         liked: pb
             .track
             .as_ref()

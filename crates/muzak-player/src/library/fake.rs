@@ -266,6 +266,7 @@ fn fake_tracks(collection_uri: &str, collection: &str, n: u32) -> Vec<Track> {
             duration_ms: 20_000 + i * 1_000,
             // The fake player only knows collections, so a single song plays in its own one.
             album_uri: Some(collection_uri.to_string()),
+            artist_uri: Some(fake_artist().uri),
         })
         .collect()
 }

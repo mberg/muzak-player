@@ -84,6 +84,7 @@ export component AppWindow inherits Window {
     in property <string> artist-back-label;
     in property <string> now-track-uri;
     in property <bool> now-liked;
+    in property <bool> now-has-artist;
     in property <bool> list-view;
     in property <bool> picker-open;
     in property <[TileData]> picker-playlists;
@@ -118,6 +119,7 @@ export component AppWindow inherits Window {
     callback play-song(string);
     callback keyboard-done();
     callback toggle-like();
+    callback open-playing-artist();
     callback toggle-list-view();
     callback toggle-save-album(string);
     callback toggle-follow(string);
@@ -300,6 +302,8 @@ export component AppWindow inherits Window {
         add => { root.open-picker(root.now-track-uri); }
         liked: root.now-liked;
         toggle-like => { root.toggle-like(); }
+        has-artist: root.now-has-artist;
+        open-artist => { root.open-playing-artist(); }
     }
     if root.picker-open: PlaylistPicker {
         x: 0;

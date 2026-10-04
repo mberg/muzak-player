@@ -196,4 +196,6 @@ pub struct AppState {
     /// Playlists, albums and artist albums show as a list instead of tiles.
     pub list_view: bool,
     pub device: DeviceSettings,
+    /// Artists opened from a song, so their page has a name before it loads elsewhere.
+    pub artists_seen: HashMap<String, Collection>,
 }

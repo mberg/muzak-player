@@ -41,6 +41,7 @@ pub(crate) fn track(n: u32) -> Track {
         image_url: None,
         duration_ms: 180_000,
         album_uri: Some("spotify:album:a1".into()),
+        artist_uri: Some("spotify:artist:r1".into()),
     }
 }
 
@@ -1346,4 +1347,20 @@ fn following_an_artist_adds_it_to_artists() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn the_playing_songs_artist_opens_their_page_with_a_name() {
+    let mut c = core();
+    c.handle(Input::Player(PlayerUpdate::TrackChanged(track(1))), 0);
+    c.handle(ui(UiAction::OpenNowPlaying), 0);
+    let fx = c.handle(ui(UiAction::OpenPlayingArtist), 0);
+    assert_eq!(c.state().screen, Screen::Artist("spotify:artist:r1".into()));
+    assert!(fx.contains(&Effect::Library(LibraryRequest::ArtistAlbums {
+        artist_uri: "spotify:artist:r1".into()
+    })));
+    let v = crate::view::build(c.state());
+    assert_eq!(v.artist.unwrap().header.title, "Band");
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().screen, Screen::NowPlaying);
 }

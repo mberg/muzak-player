@@ -84,6 +84,8 @@ pub enum UiAction {
     CloseSearch,
     SetSearchFilter(crate::app::state::SearchFilter),
     OpenArtist(String),
+    /// From Now Playing: open the playing song's artist.
+    OpenPlayingArtist,
     PlayArtist(String),
     /// Play one song picked from search results, by track URI.
     PlaySong(String),

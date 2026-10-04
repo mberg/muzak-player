@@ -182,6 +182,7 @@ struct OwnerObj {
 #[derive(Debug, Deserialize)]
 struct ArtistObj {
     name: String,
+    uri: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -419,6 +420,7 @@ fn to_track(t: TrackObj, album_fallback: Option<(&str, &str, Option<&str>)>) -> 
         image_url,
         duration_ms: t.duration_ms,
         album_uri,
+        artist_uri: t.artists.first().and_then(|a| a.uri.clone()),
     })
 }
 

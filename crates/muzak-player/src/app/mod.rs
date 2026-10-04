@@ -104,6 +104,7 @@ impl Core {
             confirm_delete: None,
             liked: HashMap::new(),
             list_view: false,
+            artists_seen: HashMap::new(),
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
                 device_name: cfg.device_name.clone(),
@@ -701,7 +702,8 @@ impl Core {
             .values()
             .chain(self.state.artist_albums.values())
             .filter_map(|slot| slot.data.as_ref())
-            .flat_map(|items| items.iter());
+            .flat_map(|items| items.iter())
+            .chain(self.state.artists_seen.values());
         let from_search = self.state.search.results.data.iter().flat_map(|found| {
             found
                 .albums
@@ -1019,6 +1021,31 @@ impl Core {
                 fx.push(Effect::Library(LibraryRequest::ArtistAlbums {
                     artist_uri: uri,
                 }));
+            }
+            UiAction::OpenPlayingArtist => {
+                let Some(track) = self.state.playback.track.clone() else {
+                    return;
+                };
+                let Some(uri) = track.artist_uri.clone() else {
+                    return;
+                };
+                let name = track
+                    .artists
+                    .split(", ")
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
+                self.state.artists_seen.insert(
+                    uri.clone(),
+                    Collection {
+                        uri: uri.clone(),
+                        kind: crate::model::CollectionKind::Artist,
+                        name,
+                        subtitle: "Artist".into(),
+                        ..Default::default()
+                    },
+                );
+                self.on_ui(UiAction::OpenArtist(uri), now_ms, fx);
             }
             UiAction::PlayArtist(uri) => {
                 self.start_playback(uri, Start::Shuffled, false, now_ms, fx);

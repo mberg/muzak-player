@@ -104,6 +104,9 @@ pub struct Track {
     /// The album this track is on, used to play a single song in its album.
     #[serde(default)]
     pub album_uri: Option<String>,
+    /// The first credited artist, so the song can lead to the artist's page.
+    #[serde(default)]
+    pub artist_uri: Option<String>,
 }
 
 /// A change to one of the user's playlists.

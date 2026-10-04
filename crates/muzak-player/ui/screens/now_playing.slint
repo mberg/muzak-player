@@ -25,6 +25,9 @@ export component NowPlayingScreen inherits Rectangle {
     callback cycle-repeat();
     callback add();
     callback toggle-like();
+    callback open-artist();
+    // The artist name opens the artist's page.
+    in property <bool> has-artist;
     in property <bool> liked;
     // Whether there is a song to add to a playlist.
     in property <bool> can-add;
@@ -79,13 +82,23 @@ export component NowPlayingScreen inherits Rectangle {
             // The artist, with like and add-to-playlist on the same line.
             HorizontalLayout {
                 spacing: 4px;
-                Text {
+                Rectangle {
                     horizontal-stretch: 1;
-                    text: root.loading ? "Loading…" : root.artists;
-                    color: Theme.text-dim;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                    overflow: elide;
+                    artist-text := Text {
+                        x: 0;
+                        width: Math.min(self.preferred-width, parent.width);
+                        text: root.loading ? "Loading…" : root.artists;
+                        color: root.has-artist && artist-touch.pressed ? Theme.text : Theme.text-dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    artist-touch := TouchArea {
+                        x: 0;
+                        width: artist-text.width;
+                        enabled: root.has-artist;
+                        clicked => { root.open-artist(); }
+                    }
                 }
                 if root.can-add: IconButton {
                     size: 52px;
