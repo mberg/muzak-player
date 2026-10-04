@@ -17,8 +17,10 @@ import { PlaylistPicker } from "components/picker.slint";
 import { NameDialog } from "components/name_dialog.slint";
 import { ConfirmDelete } from "components/confirm_dialog.slint";
 import { SettingsScreen } from "screens/settings.slint";
+import { BooksScreen } from "screens/books.slint";
+import { BookScreen, ChapterData } from "screens/book.slint";
 
-export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData, Theme }
+export { TileData, TrackData, ScreenKind, LoadState, SearchRowData, SpeakerRowData, Theme, ChapterData }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -93,6 +95,22 @@ export component AppWindow inherits Window {
     callback set-theme(int);
     in property <bool> list-view;
     in property <bool> recent-chips;
+    in property <bool> books-enabled;
+    in property <string> books-query;
+    in property <[SearchRowData]> books-rows;
+    in property <LoadState> books-state;
+    in property <string> books-message;
+    in property <string> book-title;
+    in property <string> book-author;
+    in property <string> book-narrator;
+    in property <image> book-cover;
+    in property <bool> book-has-cover;
+    in property <string> book-info;
+    in property <[ChapterData]> book-chapters;
+    in property <LoadState> book-state;
+    in property <string> books-url;
+    in property <string> books-user;
+    in property <string> books-settings-message;
     in property <bool> can-create-playlist;
     in property <bool> recent-songs;
     in property <[TileData]> recent-song-rows;
@@ -135,6 +153,11 @@ export component AppWindow inherits Window {
     callback set-sleep-length(int);
     callback toggle-list-view();
     callback set-recent-songs(bool);
+    callback open-book(string);
+    callback set-books-enabled(bool);
+    callback edit-books-server();
+    callback books-sign-in();
+    callback books-sign-out();
     callback create-playlist();
     callback play-recent(int);
     callback toggle-save-album(string);
@@ -169,6 +192,7 @@ export component AppWindow inherits Window {
         // Search uses the whole screen.
         visible: root.screen != ScreenKind.search;
         selected: root.section;
+        books: root.books-enabled;
         select(i) => { root.show-section(i); }
     }
     GridScreen {
@@ -242,6 +266,36 @@ export component AppWindow inherits Window {
         filter: root.search-filter;
         set-filter(i) => { root.set-search-filter(i); }
     }
+    BooksScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.books;
+        query: root.books-query;
+        keyboard: root.keyboard-open;
+        keyboard-height: kb.height;
+        rows: root.books-rows;
+        state: root.books-state;
+        message: root.books-message;
+        open-book(id) => { root.open-book(id); }
+        open-keyboard => { root.open-keyboard(); }
+    }
+    BookScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.book;
+        title: root.book-title;
+        author: root.book-author;
+        narrator: root.book-narrator;
+        cover-image: root.book-cover;
+        has-cover: root.book-has-cover;
+        info: root.book-info;
+        chapters: root.book-chapters;
+        state: root.book-state;
+    }
     SettingsScreen {
         x: Theme.rail-width;
         y: 0;
@@ -271,6 +325,14 @@ export component AppWindow inherits Window {
         sleep-minutes: root.sleep-minutes;
         set-sleep-length(m) => { root.set-sleep-length(m); }
         set-theme(i) => { root.set-theme(i); }
+        books-enabled: root.books-enabled;
+        books-url: root.books-url;
+        books-user: root.books-user;
+        books-message: root.books-settings-message;
+        set-books-enabled(b) => { root.set-books-enabled(b); }
+        edit-books-server => { root.edit-books-server(); }
+        books-sign-in => { root.books-sign-in(); }
+        books-sign-out => { root.books-sign-out(); }
     }
     ArtistScreen {
         x: Theme.rail-width;

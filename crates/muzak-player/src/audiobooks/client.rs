@@ -91,14 +91,20 @@ pub async fn login(url: &str, username: &str, password: &str) -> Result<AbsAuth,
         return Err(AbsError::BadLogin);
     }
     if !response.status().is_success() {
-        return Err(AbsError::Other(format!("sign-in failed: HTTP {}", response.status())));
+        return Err(AbsError::Other(format!(
+            "sign-in failed: HTTP {}",
+            response.status()
+        )));
     }
     let body: Value = response.json().await?;
     let (access_token, refresh_token) =
         tokens(&body).ok_or_else(|| AbsError::Other("server returned no tokens".into()))?;
     Ok(AbsAuth {
         url,
-        username: body["user"]["username"].as_str().unwrap_or(username).to_string(),
+        username: body["user"]["username"]
+            .as_str()
+            .unwrap_or(username)
+            .to_string(),
         access_token,
         refresh_token,
     })
@@ -167,7 +173,12 @@ impl AbsClient {
     }
 
     /// An authorised request; a 401 refreshes the tokens once and retries.
-    async fn send(&self, method: reqwest::Method, path: &str, body: Option<&Value>) -> Result<reqwest::Response, AbsError> {
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<reqwest::Response, AbsError> {
         let mut refreshed = false;
         loop {
             let (url, token) = {
@@ -218,7 +229,9 @@ impl AbsClient {
                 let path = format!(
                     "/api/libraries/{library}/items?limit={PAGE}&page={page}&sort=media.metadata.title&minified=1"
                 );
-                let Some(json) = self.get_json(&path).await? else { break };
+                let Some(json) = self.get_json(&path).await? else {
+                    break;
+                };
                 let (books, total) = parse_items(&json);
                 let fetched = books.len();
                 out.books.extend(books);
@@ -251,7 +264,8 @@ impl AbsClient {
             .get_json(&format!("/api/items/{id}?expanded=1"))
             .await?
             .ok_or_else(|| AbsError::Other("book not found".into()))?;
-        let detail = parse_detail(&item).ok_or_else(|| AbsError::Other("unreadable book".into()))?;
+        let detail =
+            parse_detail(&item).ok_or_else(|| AbsError::Other("unreadable book".into()))?;
         let progress = self
             .get_json(&format!("/api/me/progress/{id}"))
             .await?
@@ -263,7 +277,11 @@ impl AbsClient {
     /// A book's cover, if it has one.
     pub async fn cover(&self, id: &str) -> Result<Option<Vec<u8>>, AbsError> {
         let response = self
-            .send(reqwest::Method::GET, &format!("/api/items/{id}/cover?width=400"), None)
+            .send(
+                reqwest::Method::GET,
+                &format!("/api/items/{id}/cover?width=400"),
+                None,
+            )
             .await?;
         if !response.status().is_success() {
             return Ok(None);
@@ -278,7 +296,10 @@ mod tests {
 
     #[test]
     fn server_addresses_are_tidied() {
-        assert_eq!(normalize_url(" nas.local:13378/ "), "http://nas.local:13378");
+        assert_eq!(
+            normalize_url(" nas.local:13378/ "),
+            "http://nas.local:13378"
+        );
         assert_eq!(normalize_url("https://books.home"), "https://books.home");
     }
 
@@ -296,7 +317,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join(AUTH_FILE);
         let auth = login(&url, &user, &pass).await.unwrap();
-        assert!(matches!(login(&url, &user, "wrong").await, Err(AbsError::BadLogin)));
+        assert!(matches!(
+            login(&url, &user, "wrong").await,
+            Err(AbsError::BadLogin)
+        ));
         let client = AbsClient::new(auth, file.clone());
         // Force a refresh: an invalid access token gets a 401, then rotates and retries.
         client.auth.lock().unwrap().access_token = "expired".into();
@@ -305,6 +329,11 @@ mod tests {
         assert!(file.is_file(), "the rotated refresh token was saved");
         let (detail, _) = client.book(&library.books[0].id).await.unwrap();
         assert!(!detail.summary.title.is_empty());
-        println!("{} books; first: {} ({} chapters)", library.books.len(), detail.summary.title, detail.chapters.len());
+        println!(
+            "{} books; first: {} ({} chapters)",
+            library.books.len(),
+            detail.summary.title,
+            detail.chapters.len()
+        );
     }
 }

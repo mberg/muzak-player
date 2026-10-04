@@ -16,7 +16,16 @@ pub struct ImageLoader {
     client: reqwest::Client,
     dir: PathBuf,
     max_px: u32,
+    /// Audiobookshelf covers ("abs-cover:<item id>") need the signed-in client.
+    books: Option<crate::audiobooks::service::AbsHandle>,
 }
+
+/// The image URL for an Audiobookshelf book's cover.
+pub fn book_cover_url(id: &str) -> String {
+    format!("{BOOK_COVER}{id}")
+}
+
+const BOOK_COVER: &str = "abs-cover:";
 
 pub fn cache_file_name(url: &str) -> String {
     let last = url.rsplit('/').next().unwrap_or("");
@@ -50,7 +59,36 @@ impl ImageLoader {
             client,
             dir,
             max_px,
+            books: None,
         })
+    }
+
+    pub fn with_books(mut self, books: crate::audiobooks::service::AbsHandle) -> Self {
+        self.books = Some(books);
+        self
+    }
+
+    async fn download(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+        if let Some(id) = url.strip_prefix(BOOK_COVER) {
+            let client = self
+                .books
+                .as_ref()
+                .and_then(|h| h.read().unwrap().clone())
+                .ok_or_else(|| anyhow::anyhow!("not signed in to Audiobookshelf"))?;
+            return client
+                .cover(id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("book has no cover"));
+        }
+        Ok(self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?
+            .to_vec())
     }
 
     pub async fn load(&self, url: &str) -> anyhow::Result<RgbaImage> {
@@ -58,15 +96,7 @@ impl ImageLoader {
         let bytes = match tokio::fs::read(&path).await {
             Ok(bytes) => bytes,
             Err(_) => {
-                let bytes = self
-                    .client
-                    .get(url)
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .bytes()
-                    .await?
-                    .to_vec();
+                let bytes = self.download(url).await?;
                 let tmp = path.with_extension("tmp");
                 tokio::fs::write(&tmp, &bytes).await?;
                 tokio::fs::rename(&tmp, &path).await?;

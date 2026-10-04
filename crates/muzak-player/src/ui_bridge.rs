@@ -12,7 +12,8 @@ use crate::app::{AppState, DisplayMode, Input, UiAction};
 use crate::model::Section;
 use crate::view::{self, LoadStatus, RowKind, ScreenView, SearchRowView, TileView, TrackRowView};
 use crate::{
-    AppWindow, LoadState, ScreenKind, SearchRowData, SpeakerRowData, Theme, TileData, TrackData,
+    AppWindow, ChapterData, LoadState, ScreenKind, SearchRowData, SpeakerRowData, Theme, TileData,
+    TrackData,
 };
 
 const IMAGE_CACHE_LIMIT: usize = 80;
@@ -81,6 +82,7 @@ struct Bridge {
     artist_albums: Rc<VecModel<TileData>>,
     picker_playlists: Rc<VecModel<TileData>>,
     recent_songs: Rc<VecModel<TileData>>,
+    books_rows: Rc<VecModel<SearchRowData>>,
     last: Option<AppState>,
 }
 
@@ -102,6 +104,8 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
     let artist_albums = Rc::new(VecModel::<TileData>::default());
     window.set_search_rows(ModelRc::from(search_rows.clone()));
     window.set_artist_albums(ModelRc::from(artist_albums.clone()));
+    let books_rows = Rc::new(VecModel::<SearchRowData>::default());
+    window.set_books_rows(ModelRc::from(books_rows.clone()));
     let recent_songs = Rc::new(VecModel::<TileData>::default());
     window.set_recent_song_rows(ModelRc::from(recent_songs.clone()));
     let picker_playlists = Rc::new(VecModel::<TileData>::default());
@@ -121,6 +125,7 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
         artist_albums,
         picker_playlists,
         recent_songs,
+        books_rows,
         last: None,
     };
     BRIDGE.with(|cell| *cell.borrow_mut() = Some(bridge));
@@ -252,6 +257,16 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
+    window.on_open_book(move |id| s(UiAction::OpenBook(id.to_string())));
+    let s = send.clone();
+    window.on_set_books_enabled(move |b| s(UiAction::SetBooksEnabled(b)));
+    let s = send.clone();
+    window.on_edit_books_server(move || s(UiAction::EditBooksServer));
+    let s = send.clone();
+    window.on_books_sign_in(move || s(UiAction::BooksSignIn));
+    let s = send.clone();
+    window.on_books_sign_out(move || s(UiAction::BooksSignOut));
+    let s = send.clone();
     window.on_create_playlist(move || s(UiAction::NewEmptyPlaylist));
     let s = send.clone();
     window.on_set_recent_songs(move |songs| s(UiAction::SetRecentSongs(songs)));
@@ -322,6 +337,8 @@ impl Bridge {
             ScreenView::Search => ScreenKind::Search,
             ScreenView::Artist => ScreenKind::Artist,
             ScreenView::Settings => ScreenKind::Settings,
+            ScreenView::Books => ScreenKind::Books,
+            ScreenView::Book => ScreenKind::Book,
         });
         w.set_section(v.section.index());
         w.set_grid_title(v.grid_title.as_str().into());
@@ -380,6 +397,42 @@ impl Bridge {
         w.set_list_view(v.list_view);
         w.set_recent_chips(v.recent_chips);
         w.set_can_create_playlist(v.can_create_playlist);
+        w.set_books_enabled(v.books_enabled);
+        w.set_books_query(v.books.query.as_str().into());
+        w.set_books_state(load_state(v.books.status));
+        w.set_books_message(v.books.message.as_str().into());
+        if v.screen == ScreenView::Books {
+            let rows = v
+                .books
+                .rows
+                .iter()
+                .map(|r| search_row_data(&mut self.images, r))
+                .collect();
+            sync(&self.books_rows, rows);
+        }
+        if let Some(book) = &v.book {
+            let cover = self.images.get(&book.cover_url);
+            w.set_book_title(book.title.as_str().into());
+            w.set_book_author(book.author.as_str().into());
+            w.set_book_narrator(book.narrator.as_str().into());
+            w.set_book_has_cover(cover.is_some());
+            w.set_book_cover(cover.unwrap_or_default());
+            w.set_book_info(book.info.as_str().into());
+            w.set_book_state(load_state(book.status));
+            let chapters: Vec<ChapterData> = book
+                .chapters
+                .iter()
+                .map(|(title, start)| ChapterData {
+                    title: title.as_str().into(),
+                    start: start.as_str().into(),
+                })
+                .collect();
+            w.set_book_chapters(ModelRc::new(VecModel::from(chapters)));
+        }
+        let s = &v.settings;
+        w.set_books_url(s.books_url.as_str().into());
+        w.set_books_user(s.books_user.as_str().into());
+        w.set_books_settings_message(s.books_message.as_str().into());
         w.set_recent_songs(v.recent_songs);
         if v.recent_songs && v.recent_chips {
             let now = chrono::Local::now();
@@ -522,6 +575,7 @@ fn search_row_data(images: &mut Images, r: &SearchRowView) -> SearchRowData {
             RowKind::Album => 2,
             RowKind::Artist => 3,
             RowKind::Playlist => 4,
+            RowKind::Book => 5,
         },
         title: r.title.as_str().into(),
         subtitle: r.subtitle.as_str().into(),

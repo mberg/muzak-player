@@ -63,6 +63,10 @@ pub struct CoreConfig {
     pub saved: crate::settings::Settings,
     /// Bluetooth is available (the Pi, or `--fake` mode).
     pub bluetooth: bool,
+    /// Signed in to Audiobookshelf as, if signed in.
+    pub books_user: Option<String>,
+    /// The Audiobookshelf address from the config file, used when Settings has none.
+    pub books_config_url: Option<String>,
 }
 
 impl CoreConfig {
@@ -154,6 +158,22 @@ impl Core {
                 bluetooth: cfg.bluetooth,
                 ..Default::default()
             },
+            books: {
+                let saved = cfg.saved.audiobooks.clone();
+                BooksState {
+                    // Settings decide; otherwise an address in the config file turns Books on.
+                    enabled: saved
+                        .as_ref()
+                        .map_or(cfg.books_config_url.is_some(), |a| a.enabled),
+                    url: saved
+                        .map(|a| a.url)
+                        .filter(|u| !u.is_empty())
+                        .or(cfg.books_config_url.clone())
+                        .unwrap_or_default(),
+                    username: cfg.books_user.clone(),
+                    ..Default::default()
+                }
+            },
         };
         let mut core = Core {
             state,
@@ -207,6 +227,7 @@ impl Core {
                 self.on_sleep_tick(now_ms, &mut fx);
             }
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
+            Input::Books(update) => self.on_books(update, &mut fx),
             Input::SonosRooms(rooms) => {
                 self.state.device.sonos_rooms = rooms;
                 self.state.device.sonos_scanning = false;
@@ -225,7 +246,7 @@ impl Core {
                 self.state.history = Some(Arc::new(plays));
             }
         }
-        if self.state.screen != Screen::Search {
+        if !matches!(self.state.screen, Screen::Search | Screen::Books) {
             self.state.keyboard_open = false;
         }
         // Edit mode belongs to the playlist on screen; leaving it ends editing.
@@ -265,6 +286,11 @@ impl Core {
     }
 
     fn edit_query(&mut self, now_ms: u64, change: impl FnOnce(&mut String)) {
+        if self.state.screen == Screen::Books {
+            // The Books screen filters the loaded library on the device.
+            change(&mut self.state.books.query);
+            return;
+        }
         if self.state.screen != Screen::Search {
             return;
         }
@@ -503,6 +529,28 @@ impl Core {
                     self.notify(Notice::AddedTo(name), now_ms);
                 }
             }
+            TextPurpose::BooksServer => {
+                self.state.books.url = crate::audiobooks::client::normalize_url(&name);
+                self.save_books_settings(fx);
+            }
+            TextPurpose::BooksUsername => {
+                // Then the password, on its own screen.
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::BooksPassword { username: name },
+                    text: String::new(),
+                });
+            }
+            TextPurpose::BooksPassword { username } => {
+                // Passwords keep their spaces; `name` was trimmed.
+                let password = entry.text.clone();
+                self.state.books.signing_in = true;
+                self.state.books.message = None;
+                fx.push(Effect::Books(BooksRequest::SignIn {
+                    url: self.state.books.url.clone(),
+                    username,
+                    password,
+                }));
+            }
             TextPurpose::DeviceName => {
                 let name: String = name.chars().take(MAX_DEVICE_NAME_CHARS).collect();
                 if name != self.state.device.device_name {
@@ -577,6 +625,71 @@ impl Core {
         if let Some(list) = self.tracks_mut(&uri) {
             let track = list.remove(from);
             list.insert(to, track);
+        }
+    }
+
+    // ---- Audiobooks ----
+
+    fn load_books(&mut self, fx: &mut Vec<Effect>) {
+        let books = &mut self.state.books;
+        if books.enabled && books.username.is_some() {
+            books.library.loading = true;
+            fx.push(Effect::Books(BooksRequest::Load));
+        }
+    }
+
+    fn save_books_settings(&mut self, fx: &mut Vec<Effect>) {
+        self.state.device.saved.audiobooks = Some(crate::settings::AudiobooksSettings {
+            enabled: self.state.books.enabled,
+            url: self.state.books.url.clone(),
+        });
+        fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
+    }
+
+    fn on_books(&mut self, update: BooksUpdate, fx: &mut Vec<Effect>) {
+        let books = &mut self.state.books;
+        match update {
+            BooksUpdate::Library(library) => {
+                books.library.data = Some(Arc::new(library));
+                books.library.loading = false;
+                books.library.failed = false;
+            }
+            BooksUpdate::LibraryFailed(message) => {
+                books.library.loading = false;
+                books.library.failed = books.library.data.is_none();
+                books.message = Some(message);
+            }
+            BooksUpdate::Detail {
+                id,
+                detail,
+                progress,
+            } => {
+                let slot = books.details.entry(id).or_default();
+                slot.data = Some(Arc::new((detail, progress)));
+                slot.loading = false;
+                slot.failed = false;
+            }
+            BooksUpdate::DetailFailed { id, message } => {
+                let slot = books.details.entry(id).or_default();
+                slot.loading = false;
+                slot.failed = slot.data.is_none();
+                books.message = Some(message);
+            }
+            BooksUpdate::SignedIn { username } => {
+                books.username = Some(username);
+                books.signing_in = false;
+                books.message = None;
+                self.load_books(fx);
+            }
+            BooksUpdate::SignInFailed(message) => {
+                books.signing_in = false;
+                books.message = Some(message);
+            }
+            BooksUpdate::SignedOut => {
+                books.username = None;
+                books.library = Slot::default();
+                books.details.clear();
+            }
         }
     }
 
@@ -897,6 +1010,12 @@ impl Core {
 
     fn on_ui(&mut self, action: UiAction, now_ms: u64, fx: &mut Vec<Effect>) {
         match action {
+            UiAction::ShowSection(Section::Books) => {
+                self.state.section = Section::Books;
+                self.state.back_stack.clear();
+                self.state.screen = Screen::Books;
+                self.load_books(fx);
+            }
             UiAction::ShowSection(Section::Settings) => {
                 self.state.section = Section::Settings;
                 self.state.back_stack.clear();
@@ -1047,6 +1166,36 @@ impl Core {
             UiAction::OpenPicker(track_uri) => self.state.picker = Some(track_uri),
             UiAction::ClosePicker => self.state.picker = None,
             UiAction::PickPlaylist(playlist_uri) => self.add_to_playlist(playlist_uri, now_ms, fx),
+            UiAction::OpenBook(id) => {
+                self.navigate(Screen::Book(id.clone()));
+                self.state
+                    .books
+                    .details
+                    .entry(id.clone())
+                    .or_default()
+                    .loading = true;
+                fx.push(Effect::Books(BooksRequest::Detail(id)));
+            }
+            UiAction::SetBooksEnabled(enabled) => {
+                self.state.books.enabled = enabled;
+                self.save_books_settings(fx);
+                if enabled {
+                    self.load_books(fx);
+                }
+            }
+            UiAction::EditBooksServer => {
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::BooksServer,
+                    text: self.state.books.url.clone(),
+                });
+            }
+            UiAction::BooksSignIn => {
+                self.state.text_entry = Some(TextEntry {
+                    purpose: TextPurpose::BooksUsername,
+                    text: self.state.books.username.clone().unwrap_or_default(),
+                });
+            }
+            UiAction::BooksSignOut => fx.push(Effect::Books(BooksRequest::SignOut)),
             UiAction::NewEmptyPlaylist => {
                 self.state.text_entry = Some(TextEntry {
                     purpose: TextPurpose::NewPlaylist { track_uri: None },
@@ -1151,7 +1300,8 @@ impl Core {
                 self.maybe_search(u64::MAX, fx);
             }
             UiAction::OpenKeyboard => {
-                self.state.keyboard_open = self.state.screen == Screen::Search;
+                self.state.keyboard_open =
+                    matches!(self.state.screen, Screen::Search | Screen::Books);
             }
             UiAction::CloseKeyboard => self.state.keyboard_open = false,
             UiAction::SetSearchFilter(filter) => self.state.search.filter = filter,

@@ -146,6 +146,15 @@ export component SettingsScreen inherits Rectangle {
     in property <int> sleep-minutes;
     callback set-sleep-length(int);
     callback set-theme(int);
+    in property <bool> books-enabled;
+    in property <string> books-url;
+    // Signed in as; empty when signed out.
+    in property <string> books-user;
+    in property <string> books-message;
+    callback set-books-enabled(bool);
+    callback edit-books-server();
+    callback books-sign-in();
+    callback books-sign-out();
     background: Theme.bg;
     Flickable {
         content-height: column.preferred-height;
@@ -321,6 +330,67 @@ export component SettingsScreen inherits Rectangle {
                 if root.message != "": Text {
                     text: root.message;
                     color: root.restarting ? Theme.accent : Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Audiobooks";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "On";
+                        primary: root.books-enabled;
+                        clicked => { root.set-books-enabled(true); }
+                    }
+                    SmallPill {
+                        label: "Off";
+                        primary: !root.books-enabled;
+                        clicked => { root.set-books-enabled(false); }
+                    }
+                }
+                if root.books-enabled: HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.books-url == "" ? "Audiobookshelf server not set" : root.books-url;
+                        color: root.books-url == "" ? Theme.text-dim : Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    IconButton {
+                        size: 48px;
+                        icon: @image-url("../icons/edit.svg");
+                        accessible-role: button;
+                        accessible-label: "Edit server";
+                        clicked => { root.edit-books-server(); }
+                    }
+                }
+                if root.books-enabled && root.books-url != "": HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: root.books-user == "" ? "Not signed in" : "Signed in as " + root.books-user;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                    }
+                    if root.books-user == "": SmallPill {
+                        label: "Sign in";
+                        primary: true;
+                        clicked => { root.books-sign-in(); }
+                    }
+                    if root.books-user != "": SmallPill {
+                        label: "Sign out";
+                        clicked => { root.books-sign-out(); }
+                    }
+                }
+                if root.books-message != "": Text {
+                    text: root.books-message;
+                    color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;
                 }

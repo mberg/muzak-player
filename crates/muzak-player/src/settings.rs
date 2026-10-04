@@ -47,6 +47,15 @@ pub struct Settings {
     /// Colour scheme: 0 Midnight (default), 1 Ocean, 2 Forest, 3 Daylight.
     #[serde(default)]
     pub theme: Option<u32>,
+    /// Audiobooks from an Audiobookshelf server; the config file's address when unset.
+    #[serde(default)]
+    pub audiobooks: Option<AudiobooksSettings>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AudiobooksSettings {
+    pub enabled: bool,
+    pub url: String,
 }
 
 impl Settings {
@@ -125,6 +134,7 @@ mod tests {
             output: Some(Output::Jack),
             sleep_minutes: Some(60),
             theme: Some(2),
+            audiobooks: None,
         };
         settings.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), settings);
@@ -141,6 +151,7 @@ mod tests {
             })),
             sleep_minutes: None,
             theme: None,
+            audiobooks: None,
         }
         .apply(&mut config);
         assert_eq!(config.device_name, "Kitchen");
@@ -164,6 +175,7 @@ mod tests {
             output: Some(Output::Jack),
             sleep_minutes: None,
             theme: None,
+            audiobooks: None,
         }
         .apply(&mut config);
         assert_eq!(config.audio_device.as_deref(), Some(JACK_DEVICE));

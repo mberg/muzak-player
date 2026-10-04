@@ -25,6 +25,9 @@ pub struct Config {
     /// Bluetooth speaker address to watch and reconnect.
     #[serde(default)]
     pub bluetooth_speaker: Option<String>,
+    /// Audiobookshelf server, e.g. "http://nas.local:13378". Turns Books on.
+    #[serde(default)]
+    pub audiobookshelf_url: Option<String>,
 }
 
 fn default_audio_backend() -> String {

@@ -90,6 +90,29 @@ async fn run(
         inputs.clone(),
     );
     let cache = Arc::new(DiskCache::new(config.cache_dir())?);
+    // Audiobooks: signed in if a sign-in was saved on this device.
+    let books_handle: crate::audiobooks::service::AbsHandle = Arc::new(std::sync::RwLock::new(
+        crate::audiobooks::client::AbsClient::load(
+            &config.state_dir.join(crate::audiobooks::client::AUTH_FILE),
+        )
+        .map(Arc::new),
+    ));
+    let books_user = books_handle
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.username())
+        .or_else(|| fake.then(|| "Fake Listener".to_string()));
+    let books = crate::audiobooks::service::spawn_books(
+        if fake {
+            crate::audiobooks::service::Backend::Fake
+        } else {
+            crate::audiobooks::service::Backend::Real(books_handle.clone())
+        },
+        config.state_dir.clone(),
+        cache.clone(),
+        inputs.clone(),
+    );
     let sonos_room = match &saved.output {
         Some(crate::settings::Output::Sonos(room)) => Some(room.clone()),
         _ => None,
@@ -139,7 +162,7 @@ async fn run(
         (player, library)
     };
     spawn_image_loader(
-        Arc::new(ImageLoader::new(config.images_dir(), 300)?),
+        Arc::new(ImageLoader::new(config.images_dir(), 300)?.with_books(books_handle.clone())),
         image_requests,
         images,
     );
@@ -156,6 +179,8 @@ async fn run(
         speaker,
         saved,
         bluetooth: bluetooth.is_some(),
+        books_user,
+        books_config_url: config.audiobookshelf_url.clone(),
     };
     let history =
         crate::history::spawn_history(config.state_dir.join("history.db"), inputs.clone());
@@ -165,6 +190,7 @@ async fn run(
         player,
         library,
         history,
+        books,
         bluetooth,
         state_dir: config.state_dir.clone(),
     };
@@ -201,6 +227,7 @@ struct Outputs {
     player: UnboundedSender<PlayerCommand>,
     library: UnboundedSender<LibraryRequest>,
     history: UnboundedSender<crate::app::HistoryCommand>,
+    books: UnboundedSender<crate::app::BooksRequest>,
     bluetooth: Option<UnboundedSender<crate::app::BtCommand>>,
     state_dir: std::path::PathBuf,
 }
@@ -215,6 +242,9 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                 let _ = outputs.library.send(request);
             }
             Effect::Display(mode) => platform.set_display(mode),
+            Effect::Books(request) => {
+                let _ = outputs.books.send(request);
+            }
             Effect::ScanSonos => {
                 let inputs = outputs.inputs.clone();
                 let fake = outputs.fake;

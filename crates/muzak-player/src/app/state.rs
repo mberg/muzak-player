@@ -12,6 +12,9 @@ pub enum Screen {
     /// An artist's albums, by artist URI.
     Artist(String),
     Settings,
+    Books,
+    /// A book's page, by Audiobookshelf item id.
+    Book(String),
 }
 
 /// Library data plus its loading status. Data stays visible while a refresh runs.
@@ -159,6 +162,28 @@ pub struct DeviceSettings {
     pub sonos_scanning: bool,
 }
 
+/// Audiobooks from an Audiobookshelf server.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BooksState {
+    pub enabled: bool,
+    pub url: String,
+    /// Signed in as, if signed in.
+    pub username: Option<String>,
+    pub library: Slot<crate::audiobooks::types::BooksLibrary>,
+    pub details: HashMap<
+        String,
+        Slot<(
+            crate::audiobooks::types::BookDetail,
+            Option<crate::audiobooks::types::BookProgress>,
+        )>,
+    >,
+    /// The Books screen's filter.
+    pub query: String,
+    pub signing_in: bool,
+    /// A sign-in or loading problem to show in Settings and on the Books screen.
+    pub message: Option<String>,
+}
+
 /// What the on-screen text field is for, apart from search.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextPurpose {
@@ -172,6 +197,13 @@ pub enum TextPurpose {
     },
     /// This device's Spotify Connect name.
     DeviceName,
+    /// The Audiobookshelf server address.
+    BooksServer,
+    BooksUsername,
+    /// Shown as dots.
+    BooksPassword {
+        username: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -221,6 +253,7 @@ pub struct AppState {
     /// Playlists, albums and artist albums show as a list instead of tiles.
     pub list_view: bool,
     pub device: DeviceSettings,
+    pub books: BooksState,
     /// Artists opened from a song, so their page has a name before it loads elsewhere.
     pub artists_seen: HashMap<String, Collection>,
     /// The core's clock at the last input, so the view can show times left.

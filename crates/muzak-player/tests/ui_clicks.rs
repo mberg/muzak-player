@@ -97,6 +97,76 @@ fn ui_clicks() {
             .await;
         assert_eq!(length.get(), 60);
 
+        // Settings, at the bottom: Audiobooks turns on, then Sign in.
+        window.set_books_url("http://nas.local:13378".into());
+        let books_on = Rc::new(Cell::new(false));
+        let bo = books_on.clone();
+        window.on_set_books_enabled(move |b| bo.set(b));
+        let sign_in = Rc::new(Cell::new(false));
+        let si = sign_in.clone();
+        window.on_books_sign_in(move || si.set(true));
+        window
+            .window()
+            .dispatch_event(WindowEvent::PointerScrolled {
+                position: LogicalPosition::new(400.0, 300.0),
+                delta_x: 0.0,
+                delta_y: -2000.0,
+            });
+        slint::platform::update_timers_and_animations();
+        visible_by_label(&window, "On")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(books_on.get(), "On turns Books on");
+        window.set_books_enabled(true);
+        slint::platform::update_timers_and_animations();
+        window
+            .window()
+            .dispatch_event(WindowEvent::PointerScrolled {
+                position: LogicalPosition::new(400.0, 300.0),
+                delta_x: 0.0,
+                delta_y: -2000.0,
+            });
+        slint::platform::update_timers_and_animations();
+        visible_by_label(&window, "Sign in")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(sign_in.get(), "Sign in starts signing in");
+
+        // Books: the search field opens the keyboard and a book opens its page.
+        window.set_screen(ScreenKind::Books);
+        let section = Rc::new(Cell::new(-1));
+        let sc = section.clone();
+        window.on_show_section(move |i| sc.set(i));
+        visible_by_label(&window, "Books")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(section.get(), 7, "the rail shows Books when it's on");
+        let keyboard = Rc::new(Cell::new(false));
+        let k = keyboard.clone();
+        window.on_open_keyboard(move || k.set(true));
+        visible_by_label(&window, "Search books")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert!(keyboard.get(), "the search field opens the keyboard");
+        window.set_books_state(muzak_player::LoadState::Ready);
+        window.set_books_rows(slint::ModelRc::new(slint::VecModel::from(vec![
+            muzak_player::SearchRowData {
+                kind: 5,
+                title: "The Hobbit".into(),
+                subtitle: "J.R.R. Tolkien · 10 h 50 min".into(),
+                uri: "book-1".into(),
+                ..Default::default()
+            },
+        ])));
+        let book = Rc::new(std::cell::RefCell::new(String::new()));
+        let b = book.clone();
+        window.on_open_book(move |id| *b.borrow_mut() = id.to_string());
+        visible_by_label(&window, "The Hobbit")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(*book.borrow(), "book-1");
+        window.set_books_enabled(false);
+
         // Recent: the Songs chip, then a song plays.
         window.set_keyboard_open(false);
         window.set_screen(ScreenKind::Grid);

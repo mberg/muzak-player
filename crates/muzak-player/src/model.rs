@@ -14,6 +14,8 @@ pub enum Section {
     Recent,
     Search,
     Settings,
+    /// Audiobooks, when an Audiobookshelf server is set up.
+    Books,
 }
 
 impl Section {
@@ -26,6 +28,7 @@ impl Section {
             Section::Search => 4,
             Section::Recent => 5,
             Section::Settings => 6,
+            Section::Books => 7,
         }
     }
 
@@ -37,6 +40,7 @@ impl Section {
             4 => Section::Search,
             5 => Section::Recent,
             6 => Section::Settings,
+            7 => Section::Books,
             _ => Section::Playlists,
         }
     }
@@ -50,6 +54,7 @@ impl Section {
             Section::Recent => "Recent",
             Section::Search => "Search",
             Section::Settings => "Settings",
+            Section::Books => "Books",
         }
     }
 
@@ -62,6 +67,7 @@ impl Section {
             Section::Recent => "section-recent",
             Section::Search => "section-search",
             Section::Settings => "section-settings",
+            Section::Books => "section-books",
         }
     }
 }

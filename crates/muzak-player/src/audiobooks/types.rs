@@ -69,7 +69,10 @@ pub fn book_summary(item: &Value) -> Option<BookSummary> {
             .or_else(|| {
                 // Expanded items list authors instead of authorName.
                 meta["authors"].as_array().map(|a| {
-                    a.iter().map(|x| s(&x["name"])).collect::<Vec<_>>().join(", ")
+                    a.iter()
+                        .map(|x| s(&x["name"]))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 })
             })
             .unwrap_or_default(),
@@ -135,7 +138,11 @@ pub fn parse_continue_ids(shelves: &Value) -> Vec<String> {
         .flatten()
         .find(|shelf| shelf["id"] == "continue-listening")
         .and_then(|shelf| shelf["entities"].as_array())
-        .map(|e| e.iter().filter_map(|x| x["id"].as_str().map(str::to_string)).collect())
+        .map(|e| {
+            e.iter()
+                .filter_map(|x| x["id"].as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

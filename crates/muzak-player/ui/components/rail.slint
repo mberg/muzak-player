@@ -5,6 +5,9 @@ component RailItem inherits Rectangle {
     in property <string> label;
     in property <bool> active;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
     height: 84px;
     background: root.active ? Theme.surface-hi : transparent;
     Rectangle {
@@ -38,6 +41,8 @@ component RailItem inherits Rectangle {
 // Index order matches Section::index in model.rs.
 export component Rail inherits Rectangle {
     in property <int> selected;
+    // Books shows only when Audiobookshelf is turned on.
+    in property <bool> books;
     callback select(int);
     width: Theme.rail-width;
     background: Theme.surface;
@@ -55,6 +60,7 @@ export component Rail inherits Rectangle {
             RailItem { icon: @image-url("../icons/album.svg"); label: "Albums"; active: root.selected == 1; clicked => { root.select(1); } }
             RailItem { icon: @image-url("../icons/artist.svg"); label: "Artists"; active: root.selected == 2; clicked => { root.select(2); } }
             RailItem { icon: @image-url("../icons/heart.svg"); label: "Liked"; active: root.selected == 3; clicked => { root.select(3); } }
+            if root.books: RailItem { icon: @image-url("../icons/book.svg"); label: "Books"; active: root.selected == 7; clicked => { root.select(7); } }
             RailItem { icon: @image-url("../icons/history.svg"); label: "Recent"; active: root.selected == 5; clicked => { root.select(5); } }
             // Settings: small, at the end of the list.
             Rectangle {
