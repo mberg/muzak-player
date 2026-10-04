@@ -1,6 +1,7 @@
 slint::include_modules!();
 
 pub mod app;
+pub mod audiobooks;
 pub mod bluetooth;
 pub mod config;
 pub mod history;
