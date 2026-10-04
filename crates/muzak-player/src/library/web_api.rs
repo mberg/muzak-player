@@ -805,7 +805,7 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
             Section::Artists => self.artists().await,
             Section::Recent => self.recent().await,
             Section::Liked => Ok(vec![liked_collection()]),
-            Section::Search | Section::Settings => Ok(Vec::new()),
+            Section::Search | Section::Settings | Section::Books => Ok(Vec::new()),
         }
     }
 

@@ -22,7 +22,43 @@ pub enum Input {
     HistoryRecent(Vec<crate::model::PlayRecord>),
     /// Sonos rooms found on the network.
     SonosRooms(Vec<crate::settings::SonosRoom>),
+    Books(BooksUpdate),
     Voice(VoiceUpdate),
+}
+
+/// Work for the audiobooks service.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BooksRequest {
+    /// The library list (cached first, then fresh).
+    Load,
+    /// One book's page.
+    Detail(String),
+    SignIn {
+        url: String,
+        username: String,
+        password: String,
+    },
+    SignOut,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BooksUpdate {
+    Library(crate::audiobooks::types::BooksLibrary),
+    LibraryFailed(String),
+    Detail {
+        id: String,
+        detail: crate::audiobooks::types::BookDetail,
+        progress: Option<crate::audiobooks::types::BookProgress>,
+    },
+    DetailFailed {
+        id: String,
+        message: String,
+    },
+    SignedIn {
+        username: String,
+    },
+    SignInFailed(String),
+    SignedOut,
 }
 
 /// What the voice service tells the core.
@@ -188,6 +224,15 @@ pub enum UiAction {
     NewPlaylist,
     /// From Playlists: name a new, empty playlist.
     NewEmptyPlaylist,
+    /// Books: open a book's page.
+    OpenBook(String),
+    /// Settings: turn Books on or off.
+    SetBooksEnabled(bool),
+    /// Settings: type the Audiobookshelf server address.
+    EditBooksServer,
+    /// Settings: sign in to Audiobookshelf (asks for username, then password).
+    BooksSignIn,
+    BooksSignOut,
     /// The keyboard's Done key: saves a name, or hides the search keyboard.
     KeyboardDone,
     CancelText,
@@ -339,6 +384,7 @@ pub enum Effect {
     History(HistoryCommand),
     /// Look for Sonos rooms on the network.
     ScanSonos,
+    Books(BooksRequest),
     /// What the voice service passes to Gemini with the next request.
     VoiceContext(VoiceContext),
     /// Start listening without the wake word.

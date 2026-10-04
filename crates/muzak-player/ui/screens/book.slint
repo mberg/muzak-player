@@ -1,0 +1,131 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { TileData, LoadState } from "../types.slint";
+import { StateMessage } from "../components/state_message.slint";
+
+export struct ChapterData {
+    title: string,
+    start: string,
+}
+
+// A book's page: cover and details on the left, chapters on the right.
+export component BookScreen inherits Rectangle {
+    in property <string> title;
+    in property <string> author;
+    in property <string> narrator;
+    in property <image> cover-image;
+    in property <bool> has-cover;
+    in property <string> info;
+    in property <[ChapterData]> chapters;
+    in property <LoadState> state;
+    property <length> art: 196px;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding: 16px;
+        padding-right: 8px;
+        spacing: 20px;
+        VerticalLayout {
+            width: root.art;
+            spacing: 8px;
+            Rectangle {
+                width: root.art;
+                height: root.art;
+                border-radius: Theme.radius;
+                clip: true;
+                background: Theme.surface;
+                Image {
+                    source: @image-url("../icons/book.svg");
+                    width: 40%;
+                    height: 40%;
+                    colorize: Theme.text-dim;
+                    visible: !root.has-cover;
+                }
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.cover-image;
+                    image-fit: cover;
+                    visible: root.has-cover;
+                }
+            }
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 20px;
+                font-weight: 800;
+                wrap: word-wrap;
+                overflow: elide;
+                max-height: 52px;
+            }
+            Text {
+                text: root.author;
+                color: Theme.accent;
+                font-size: Theme.font-small;
+                font-weight: 800;
+                overflow: elide;
+            }
+            if root.narrator != "": Text {
+                text: "Read by " + root.narrator;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                overflow: elide;
+            }
+            Rectangle {
+                vertical-stretch: 1;
+            }
+            // Listening arrives in the next phase.
+            Rectangle {
+                height: 56px;
+                border-radius: 28px;
+                background: Theme.surface;
+                Text {
+                    text: "Listening comes next";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    font-weight: 800;
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                height: 44px;
+                text: root.info;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                ListView {
+                    for chapter in root.chapters: Rectangle {
+                        height: 52px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 20px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: chapter.title;
+                                color: Theme.text;
+                                font-size: Theme.font-body;
+                                font-weight: 800;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: chapter.start;
+                                color: Theme.text-dim;
+                                font-size: Theme.font-small;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                if root.state != LoadState.ready: StateMessage {
+                    width: parent.width;
+                    height: parent.height;
+                    state: root.state;
+                }
+            }
+        }
+    }
+}

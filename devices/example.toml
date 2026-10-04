@@ -10,6 +10,8 @@ audio_device = "plughw:CARD=Headphones"
 initial_volume = 60
 dim_after_secs = 180
 off_after_secs = 600
+# Audiobooks from an Audiobookshelf server turns Books on. Sign in from Settings on the player.
+# audiobookshelf_url = "http://nas.local:13378"
 # Voice control: say the wake word, then a request. Needs a USB microphone and the keyword model:
 #   curl -sSL https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2 | tar xj -C /var/lib/muzak
 # voice_model_dir = "/var/lib/muzak/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"

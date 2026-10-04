@@ -25,6 +25,9 @@ pub struct Config {
     /// Bluetooth speaker address to watch and reconnect.
     #[serde(default)]
     pub bluetooth_speaker: Option<String>,
+    /// Audiobookshelf server, e.g. "http://nas.local:13378". Turns Books on.
+    #[serde(default)]
+    pub audiobookshelf_url: Option<String>,
     /// Voice control: a sherpa-onnx keyword model folder. Voice is on when this is set.
     #[serde(default)]
     pub voice_model_dir: Option<PathBuf>,

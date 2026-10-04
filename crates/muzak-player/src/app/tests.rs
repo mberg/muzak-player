@@ -14,6 +14,8 @@ pub(crate) fn config() -> CoreConfig {
         speaker: None,
         saved: Default::default(),
         bluetooth: true,
+        books_user: None,
+        books_config_url: None,
         voice: true,
     }
 }
@@ -1743,6 +1745,147 @@ fn an_empty_playlist_can_be_made_from_playlists() {
     assert_eq!(placeholder.name, "Gym");
     assert!(track_names(&c, &placeholder.uri).is_empty());
     assert_eq!(c.state().notice, Some(Notice::Created("Gym".into())));
+}
+
+// ---- Audiobooks ----
+
+fn books_library() -> crate::audiobooks::types::BooksLibrary {
+    use crate::audiobooks::types::{BookProgress, BookSummary, BooksLibrary};
+    let book = |id: &str, title: &str, author: &str| BookSummary {
+        id: id.into(),
+        title: title.into(),
+        author: author.into(),
+        duration_secs: 7_200.0,
+        ..Default::default()
+    };
+    BooksLibrary {
+        books: vec![
+            book("b1", "The Hobbit", "Tolkien"),
+            book("b2", "Matilda", "Roald Dahl"),
+        ],
+        progress: [(
+            "b2".to_string(),
+            BookProgress {
+                current_secs: 3_600.0,
+                progress: 0.5,
+                finished: false,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        continue_ids: vec!["b2".into()],
+    }
+}
+
+fn books_core() -> Core {
+    let mut cfg = config();
+    cfg.books_config_url = Some("http://nas.local:13378".into());
+    cfg.books_user = Some("sam".into());
+    Core::new(cfg, 0).0
+}
+
+#[test]
+fn a_config_file_address_turns_books_on_and_opening_books_loads_them() {
+    let mut c = books_core();
+    assert!(c.state().books.enabled);
+    assert!(crate::view::build(c.state()).books_enabled);
+    let fx = c.handle(ui(UiAction::ShowSection(Section::Books)), 0);
+    assert_eq!(fx, vec![Effect::Books(BooksRequest::Load)]);
+    assert_eq!(c.state().screen, Screen::Books);
+}
+
+#[test]
+fn signing_in_asks_for_username_then_a_hidden_password() {
+    let mut cfg = config();
+    cfg.books_config_url = Some("http://nas.local:13378".into());
+    let mut c = Core::new(cfg, 0).0;
+    c.handle(ui(UiAction::BooksSignIn), 0);
+    c.handle(ui(UiAction::KeyPressed("sam".into())), 0);
+    c.handle(ui(UiAction::KeyboardDone), 0);
+    for key in ["p", "w", " ", "1"] {
+        c.handle(ui(UiAction::KeyPressed(key.into())), 0);
+    }
+    let v = crate::view::build(c.state());
+    let entry = v.text_entry.unwrap();
+    assert_eq!(entry.title, "Password for sam");
+    assert_eq!(entry.text, "••••");
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    assert_eq!(
+        fx,
+        vec![Effect::Books(BooksRequest::SignIn {
+            url: "http://nas.local:13378".into(),
+            username: "sam".into(),
+            password: "pw 1".into(),
+        })]
+    );
+    assert!(c.state().books.signing_in);
+    let fx = c.handle(
+        Input::Books(BooksUpdate::SignedIn {
+            username: "sam".into(),
+        }),
+        0,
+    );
+    assert_eq!(fx, vec![Effect::Books(BooksRequest::Load)]);
+}
+
+#[test]
+fn the_books_screen_lists_continue_listening_then_filters_as_you_type() {
+    let mut c = books_core();
+    c.handle(ui(UiAction::ShowSection(Section::Books)), 0);
+    c.handle(Input::Books(BooksUpdate::Library(books_library())), 0);
+    let titles = |c: &Core| -> Vec<String> {
+        crate::view::build(c.state())
+            .books
+            .rows
+            .into_iter()
+            .map(|r| r.title)
+            .collect()
+    };
+    assert_eq!(
+        titles(&c),
+        [
+            "Continue listening",
+            "Matilda",
+            "All books",
+            "The Hobbit",
+            "Matilda"
+        ]
+    );
+    let v = crate::view::build(c.state());
+    assert_eq!(v.books.rows[1].subtitle, "Roald Dahl · 1 h left");
+    c.handle(ui(UiAction::OpenKeyboard), 0);
+    assert!(c.state().keyboard_open);
+    c.handle(ui(UiAction::KeyPressed("tolk".into())), 0);
+    assert_eq!(titles(&c), ["The Hobbit"]);
+}
+
+#[test]
+fn opening_a_book_loads_its_page() {
+    use crate::audiobooks::types::{BookDetail, Chapter};
+    let mut c = books_core();
+    c.handle(Input::Books(BooksUpdate::Library(books_library())), 0);
+    let fx = c.handle(ui(UiAction::OpenBook("b2".into())), 0);
+    assert_eq!(fx, vec![Effect::Books(BooksRequest::Detail("b2".into()))]);
+    c.handle(
+        Input::Books(BooksUpdate::Detail {
+            id: "b2".into(),
+            detail: BookDetail {
+                summary: books_library().books[1].clone(),
+                description: String::new(),
+                chapters: vec![Chapter {
+                    title: "One".into(),
+                    start_secs: 3_725.0,
+                    end_secs: 4_000.0,
+                }],
+            },
+            progress: None,
+        }),
+        0,
+    );
+    let book = crate::view::build(c.state()).book.unwrap();
+    assert_eq!(book.title, "Matilda");
+    assert_eq!(book.info, "2 h · 1 h left");
+    assert_eq!(book.chapters, [("One".to_string(), "1:02:05".to_string())]);
 }
 
 // ---- Voice ----

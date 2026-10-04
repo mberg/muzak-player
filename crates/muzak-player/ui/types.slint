@@ -14,7 +14,7 @@ export struct TrackData {
     current: bool,
 }
 
-export enum ScreenKind { grid, detail, now-playing, search, artist, settings }
+export enum ScreenKind { grid, detail, now-playing, search, artist, settings, books, book }
 
 export struct SpeakerRowData {
     address: string,
@@ -24,7 +24,7 @@ export struct SpeakerRowData {
 
 export enum LoadState { loading, empty, failed, forbidden, limited, ready }
 
-// kind: 0 header, 1 song, 2 album, 3 artist, 4 playlist.
+// kind: 0 header, 1 song, 2 album, 3 artist, 4 playlist, 5 book.
 export struct SearchRowData {
     kind: int,
     title: string,

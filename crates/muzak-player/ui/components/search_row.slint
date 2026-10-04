@@ -8,6 +8,8 @@ export component SearchRow inherits Rectangle {
     callback clicked();
     callback add();
     height: root.data.kind == 0 ? 40px : 64px;
+    accessible-role: button;
+    accessible-label: root.data.title;
     border-radius: 10px;
     background: touch.pressed && root.data.kind != 0 ? Theme.surface-hi : transparent;
     // Under the content, so the plus button gets its own taps.
@@ -36,7 +38,7 @@ export component SearchRow inherits Rectangle {
                 clip: true;
                 background: Theme.surface;
                 Image {
-                    source: root.data.kind == 3 ? @image-url("../icons/artist.svg") : @image-url("../icons/note.svg");
+                    source: root.data.kind == 3 ? @image-url("../icons/artist.svg") : root.data.kind == 5 ? @image-url("../icons/book.svg") : @image-url("../icons/note.svg");
                     width: 50%;
                     height: 50%;
                     colorize: Theme.text-dim;
@@ -89,7 +91,7 @@ export component SearchRow inherits Rectangle {
         }
         Text {
             width: 72px;
-            text: root.data.kind == 1 ? "Song" : root.data.kind == 2 ? "Album" : root.data.kind == 3 ? "Artist" : "Playlist";
+            text: root.data.kind == 1 ? "Song" : root.data.kind == 2 ? "Album" : root.data.kind == 3 ? "Artist" : root.data.kind == 5 ? "" : "Playlist";
             color: Theme.text-dim;
             font-size: 13px;
             horizontal-alignment: right;

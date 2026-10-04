@@ -19,6 +19,8 @@ pub enum ScreenView {
     Search,
     Artist,
     Settings,
+    Books,
+    Book,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +42,7 @@ pub enum RowKind {
     Album,
     Artist,
     Playlist,
+    Book,
 }
 
 /// One line of search results: a group header or a result.
@@ -109,6 +112,203 @@ pub struct DetailView {
     pub artist_link: bool,
 }
 
+/// The Books screen: Continue listening, then every book, filtered as you type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BooksView {
+    pub query: String,
+    pub keyboard: bool,
+    pub rows: Vec<SearchRowView>,
+    pub status: LoadStatus,
+    /// Why there are no books: not signed in, or a server problem.
+    pub message: String,
+}
+
+/// A book's page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BookView {
+    pub id: String,
+    pub title: String,
+    pub author: String,
+    pub narrator: String,
+    pub cover_url: Option<String>,
+    /// "5 h 12 min · 2 h 3 min left" or "5 h 12 min · Finished".
+    pub info: String,
+    pub description: String,
+    /// (title, start as "1:02:03").
+    pub chapters: Vec<(String, String)>,
+    pub status: LoadStatus,
+}
+
+/// "5 h 12 min", "48 min".
+pub fn fmt_duration(secs: f64) -> String {
+    let minutes = (secs / 60.0).round() as u64;
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+/// "1:02:03" or "2:03".
+fn fmt_clock(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+fn book_progress_text(
+    duration_secs: f64,
+    progress: Option<&crate::audiobooks::types::BookProgress>,
+) -> String {
+    match progress {
+        Some(p) if p.finished => "Finished".into(),
+        Some(p) if p.current_secs > 0.0 => {
+            format!("{} left", fmt_duration(duration_secs - p.current_secs))
+        }
+        _ => fmt_duration(duration_secs),
+    }
+}
+
+fn book_row(
+    book: &crate::audiobooks::types::BookSummary,
+    progress: Option<&crate::audiobooks::types::BookProgress>,
+) -> SearchRowView {
+    SearchRowView {
+        kind: RowKind::Book,
+        title: book.title.clone(),
+        subtitle: format!(
+            "{} · {}",
+            book.author,
+            book_progress_text(book.duration_secs, progress)
+        ),
+        image_url: book
+            .has_cover
+            .then(|| crate::images::book_cover_url(&book.id)),
+        uri: book.id.clone(),
+    }
+}
+
+fn books_view(state: &AppState) -> BooksView {
+    let b = &state.books;
+    let query = b.query.trim();
+    let mut rows = Vec::new();
+    if let Some(library) = b.library.data.as_ref() {
+        let row = |book| book_row(book, library.progress.get(&book.id));
+        if query.is_empty() {
+            let continuing: Vec<SearchRowView> = library
+                .continue_ids
+                .iter()
+                .filter_map(|id| library.books.iter().find(|b| &b.id == id))
+                .map(row)
+                .collect();
+            if !continuing.is_empty() {
+                rows.push(header_row("Continue listening"));
+                rows.extend(continuing);
+            }
+            rows.push(header_row("All books"));
+            rows.extend(library.books.iter().map(row));
+        } else {
+            rows.extend(
+                library
+                    .books
+                    .iter()
+                    .filter(|book| {
+                        matches(
+                            &format!(
+                                "{} {} {} {}",
+                                book.title, book.author, book.narrator, book.series
+                            ),
+                            query,
+                        )
+                    })
+                    .map(row),
+            );
+        }
+    }
+    let message = if b.username.is_none() {
+        "Sign in to Audiobookshelf in Settings to see your books.".to_string()
+    } else {
+        b.message.clone().unwrap_or_default()
+    };
+    BooksView {
+        query: b.query.clone(),
+        keyboard: state.keyboard_open && state.screen == Screen::Books,
+        status: if b.username.is_none() || (rows.is_empty() && !query.is_empty()) {
+            LoadStatus::Empty
+        } else {
+            status(Some(&Slot {
+                data: b.library.data.as_ref().map(|l| Arc::new(l.books.clone())),
+                loading: b.library.loading,
+                failed: b.library.failed,
+                forbidden: false,
+                limited: false,
+            }))
+        },
+        rows,
+        message,
+    }
+}
+
+fn book_view(state: &AppState) -> Option<BookView> {
+    let Screen::Book(id) = &state.screen else {
+        return None;
+    };
+    let b = &state.books;
+    let slot = b.details.get(id);
+    let summary = b
+        .library
+        .data
+        .as_ref()
+        .and_then(|l| l.books.iter().find(|x| &x.id == id).cloned());
+    let (detail, progress) = match slot.and_then(|s| s.data.as_deref()) {
+        Some((detail, progress)) => (Some(detail.clone()), *progress),
+        None => (None, None),
+    };
+    let summary = detail.as_ref().map(|d| d.summary.clone()).or(summary)?;
+    let progress = progress.or_else(|| {
+        b.library
+            .data
+            .as_ref()
+            .and_then(|l| l.progress.get(id).copied())
+    });
+    let length = fmt_duration(summary.duration_secs);
+    let left = book_progress_text(summary.duration_secs, progress.as_ref());
+    Some(BookView {
+        id: id.clone(),
+        title: summary.title.clone(),
+        author: summary.author.clone(),
+        narrator: summary.narrator.clone(),
+        cover_url: summary
+            .has_cover
+            .then(|| crate::images::book_cover_url(&summary.id)),
+        info: if left == length {
+            length
+        } else {
+            format!("{length} · {left}")
+        },
+        description: detail
+            .as_ref()
+            .map(|d| d.description.clone())
+            .unwrap_or_default(),
+        chapters: detail
+            .map(|d| {
+                d.chapters
+                    .iter()
+                    .map(|c| (c.title.clone(), fmt_clock(c.start_secs)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        status: match slot {
+            Some(Slot { data: Some(_), .. }) => LoadStatus::Ready,
+            Some(Slot { failed: true, .. }) => LoadStatus::Failed,
+            _ => LoadStatus::Loading,
+        },
+    })
+}
+
 /// One song in Recent's Songs view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecentSongView {
@@ -150,6 +350,12 @@ pub struct SettingsView {
     pub sleep_minutes: u32,
     /// Why there's no Bluetooth, shown instead of the speaker buttons.
     pub bluetooth_note: String,
+    pub books_enabled: bool,
+    pub books_url: String,
+    /// Signed in to Audiobookshelf as; empty when signed out.
+    pub books_user: String,
+    /// "Signing in…" or a problem.
+    pub books_message: String,
     pub restarting: bool,
 }
 
@@ -221,6 +427,10 @@ pub struct View {
     pub list_view: bool,
     /// Colour scheme index.
     pub theme: u32,
+    /// The rail shows Books.
+    pub books_enabled: bool,
+    pub books: BooksView,
+    pub book: Option<BookView>,
     /// Playlists shows a button to make a new, empty playlist.
     pub can_create_playlist: bool,
     /// Recent's chips (albums and playlists, or songs) show on its screen.
@@ -244,6 +454,8 @@ pub fn build(state: &AppState) -> View {
         Screen::Search => ScreenView::Search,
         Screen::Artist(_) => ScreenView::Artist,
         Screen::Settings => ScreenView::Settings,
+        Screen::Books => ScreenView::Books,
+        Screen::Book(_) => ScreenView::Book,
     };
     let grid_section = match state.screen {
         Screen::Grid(section) => section,
@@ -291,12 +503,19 @@ pub fn build(state: &AppState) -> View {
             playlists: own_playlists(state).iter().map(tile).collect(),
         }),
         text_entry: state.text_entry.as_ref().map(|entry| TextEntryView {
-            title: match entry.purpose {
+            title: match &entry.purpose {
                 TextPurpose::NewPlaylist { .. } => "New playlist".into(),
                 TextPurpose::Rename { .. } => "Rename playlist".into(),
                 TextPurpose::DeviceName => "Device name".into(),
+                TextPurpose::BooksServer => "Audiobookshelf server".into(),
+                TextPurpose::BooksUsername => "Audiobookshelf username".into(),
+                TextPurpose::BooksPassword { username } => format!("Password for {username}"),
             },
-            text: entry.text.clone(),
+            // Passwords show as dots.
+            text: match entry.purpose {
+                TextPurpose::BooksPassword { .. } => "•".repeat(entry.text.chars().count()),
+                _ => entry.text.clone(),
+            },
         }),
         confirm_delete: state.confirm_delete.as_ref().map(|uri| {
             find_collection(state, uri)
@@ -307,6 +526,9 @@ pub fn build(state: &AppState) -> View {
         list_view: state.list_view,
         theme: state.device.saved.theme.unwrap_or(0),
         can_create_playlist: state.screen == Screen::Grid(Section::Playlists),
+        books_enabled: state.books.enabled,
+        books: books_view(state),
+        book: book_view(state),
         recent_chips: state.screen == Screen::Grid(Section::Recent),
         recent_songs: state.recent_songs,
         recent_song_rows: if state.recent_songs && state.screen == Screen::Grid(Section::Recent) {
@@ -395,6 +617,14 @@ fn settings(state: &AppState) -> SettingsView {
             .collect(),
         speaker_connected: state.speaker_connected,
         bluetooth: d.bluetooth,
+        books_enabled: state.books.enabled,
+        books_url: state.books.url.clone(),
+        books_user: state.books.username.clone().unwrap_or_default(),
+        books_message: if state.books.signing_in {
+            "Signing in…".into()
+        } else {
+            state.books.message.clone().unwrap_or_default()
+        },
         sleep_minutes: d
             .saved
             .sleep_minutes
