@@ -110,9 +110,11 @@ impl Http for ReqwestHttp {
             Method::Delete => reqwest::Method::DELETE,
         };
         let mut request = self.client.request(method, url).bearer_auth(token);
-        if let Some(body) = &body {
-            request = request.json(body);
-        }
+        request = match &body {
+            Some(body) => request.json(body),
+            // Spotify answers 411 to a bodiless PUT without `Content-Length: 0`.
+            None => request.body(Vec::<u8>::new()),
+        };
         let response = request
             .send()
             .await
