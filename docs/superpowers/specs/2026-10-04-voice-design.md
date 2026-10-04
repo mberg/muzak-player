@@ -10,7 +10,8 @@ Say a wake word, then ask for music or a book. Everyday commands are understood 
   - **On the device.** Fixed commands and "play" plus the name of something you own are handled on the Pi, offline and fast.
   - **Gemini.** Anything the Pi can't match cleanly goes to Gemini Flash on a paid key. Paid requests aren't used to train Google's models.
 - **Safety rule.** Never act on a guess. A command the Pi isn't sure of goes to Gemini. A name Gemini returns is only played if it matches your library or a real Spotify search result.
-- **Engine.** sherpa-onnx streaming transcription, with your library names as hotwords. It beat Moonshine on CPU and memory at the same accuracy in the spike. Moonshine is the fallback.
+- **Engine (decided).** sherpa-onnx streaming transcription, with your library names as hotwords. It beat Moonshine on CPU and memory at the same accuracy in the spike. It gets tested on the real Pi hardware.
+- **Worst case (decided).** If the transcription model doesn't fit on the Pi, a small model handles only the key commands on the device, and all other audio goes to Gemini.
 
 Assumed until said otherwise:
 
@@ -68,8 +69,8 @@ The Pi 3 A+ has 512 MB of memory, and Spotify playback and the screen already us
 
 Phase 0 measures this on a real Pi before anything else is built. If it doesn't fit, the options in order are:
 
-1. A smaller or quantised sherpa-onnx streaming model, re-tested for dropped speech.
-2. Moonshine tiny streaming with key terms. It has a C API, so we'd write a small Rust wrapper. It was less accurate and used more memory in the spike, so it's a fallback only if a sherpa-onnx model won't run.
+1. A smaller sherpa-onnx model that handles only the key commands on the device: next, skip, pause, stop, go back, louder and quieter. Everything else, including "play" plus a name, goes to Gemini as audio. The spike's 3.3M keyword model is one candidate, if it only listens for those few words. That avoids the false matches it had on longer requests.
+2. Moonshine tiny streaming with key terms, through its C API. It was less accurate and used more memory in the spike.
 3. Gemini only. There's no on-device path, so every request takes about a second and needs the internet.
 
 ## Wake word
