@@ -110,6 +110,8 @@ pub enum Notice {
     AddedTo(String),
     /// The song is already in the named playlist, so nothing was added.
     AlreadyIn(String),
+    /// Something was taken out of the named list.
+    RemovedFrom(String),
 }
 
 /// The Settings screen: this device's name and speaker.

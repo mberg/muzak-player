@@ -277,8 +277,10 @@ impl Core {
                 self.request_tracks(uri, fx);
             }
         }
-        if !undo.sections.is_empty() {
-            self.request_section(Section::Playlists, fx);
+        for (section, _) in &undo.sections {
+            if matches!(section, Section::Playlists | Section::Albums) {
+                self.request_section(*section, fx);
+            }
         }
     }
 
@@ -583,6 +585,118 @@ impl Core {
         }
     }
 
+    /// Whether a song is in Liked Songs, from what Spotify said or the loaded list.
+    fn is_liked(&self, uri: &str) -> bool {
+        self.state.liked.get(uri).copied().unwrap_or_else(|| {
+            self.loaded_tracks(LIKED_URI)
+                .is_some_and(|tracks| tracks.iter().any(|t| t.uri == uri))
+        })
+    }
+
+    fn like_picked(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(uri) = self.state.picker.take() else {
+            return;
+        };
+        let liked = Section::Liked.title().to_string();
+        if self.is_liked(&uri) {
+            self.notify(Notice::AlreadyIn(liked), now_ms);
+            return;
+        }
+        let before = self.state.liked.get(&uri).copied();
+        let edit = PlaylistEdit::Like {
+            track_uri: uri.clone(),
+        };
+        let Some(id) = self.begin_edit(edit, &[LIKED_URI], &[], now_ms, fx) else {
+            return;
+        };
+        if let Some(undo) = self.undo.get_mut(&id) {
+            undo.liked = Some((uri.clone(), before));
+        }
+        self.state.liked.insert(uri.clone(), true);
+        if let Some(track) = self.find_track(&uri)
+            && let Some(list) = self.tracks_mut(LIKED_URI)
+        {
+            list.insert(0, track);
+        }
+        self.notify(Notice::AddedTo(liked), now_ms);
+    }
+
+    /// Whether an album is saved, from what Spotify said or the Albums section.
+    fn album_saved(&self, uri: &str) -> bool {
+        self.state.liked.get(uri).copied().unwrap_or_else(|| {
+            self.state
+                .sections
+                .get(&Section::Albums)
+                .and_then(|slot| slot.data.as_ref())
+                .is_some_and(|albums| albums.iter().any(|a| a.uri == uri))
+        })
+    }
+
+    fn toggle_save_album(&mut self, uri: String, now_ms: u64, fx: &mut Vec<Effect>) {
+        let saved = !self.album_saved(&uri);
+        let before = self.state.liked.get(&uri).copied();
+        let edit = if saved {
+            PlaylistEdit::SaveAlbum {
+                album_uri: uri.clone(),
+            }
+        } else {
+            PlaylistEdit::UnsaveAlbum {
+                album_uri: uri.clone(),
+            }
+        };
+        let Some(id) = self.begin_edit(edit, &[], &[Section::Albums], now_ms, fx) else {
+            return;
+        };
+        if let Some(undo) = self.undo.get_mut(&id) {
+            undo.liked = Some((uri.clone(), before));
+        }
+        self.state.liked.insert(uri.clone(), saved);
+        let album = self.find_collection(&uri);
+        let slot = self.state.sections.entry(Section::Albums).or_default();
+        let albums = Arc::make_mut(slot.data.get_or_insert_with(Default::default));
+        if saved {
+            if let Some(album) = album.filter(|_| albums.iter().all(|a| a.uri != uri)) {
+                albums.insert(0, album);
+            }
+        } else {
+            albums.retain(|a| a.uri != uri);
+        }
+        let name = self
+            .find_collection(&uri)
+            .map(|a| a.name)
+            .unwrap_or_default();
+        if saved {
+            self.notify(Notice::AddedTo(Section::Albums.title().to_string()), now_ms);
+        } else if !name.is_empty() {
+            self.notify(
+                Notice::RemovedFrom(Section::Albums.title().to_string()),
+                now_ms,
+            );
+        }
+    }
+
+    /// An album or playlist known from any section, search results or artist page.
+    fn find_collection(&self, uri: &str) -> Option<Collection> {
+        let from_sections = self
+            .state
+            .sections
+            .values()
+            .chain(self.state.artist_albums.values())
+            .filter_map(|slot| slot.data.as_ref())
+            .flat_map(|items| items.iter());
+        let from_search = self
+            .state
+            .search
+            .results
+            .data
+            .iter()
+            .flat_map(|found| found.albums.iter().chain(&found.playlists));
+        from_sections
+            .chain(from_search)
+            .find(|c| c.uri == uri)
+            .cloned()
+    }
+
     fn delete_playlist(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
         let Some(uri) = self.state.confirm_delete.take() else {
             return;
@@ -662,6 +776,12 @@ impl Core {
                 self.request_section(section, fx);
             }
             UiAction::OpenCollection(uri) => {
+                // Albums show whether they're saved, which Spotify has to be asked.
+                if uri.starts_with("spotify:album:") && !self.state.liked.contains_key(&uri) {
+                    fx.push(Effect::Library(LibraryRequest::IsLiked {
+                        track_uri: uri.clone(),
+                    }));
+                }
                 self.navigate(Screen::Detail(uri.clone()));
                 self.request_tracks(&uri, fx);
             }
@@ -807,6 +927,8 @@ impl Core {
             UiAction::CancelDelete => self.state.confirm_delete = None,
             UiAction::ConfirmDelete => self.delete_playlist(now_ms, fx),
             UiAction::ToggleLike => self.toggle_like(now_ms, fx),
+            UiAction::PickLiked => self.like_picked(now_ms, fx),
+            UiAction::ToggleSaveAlbum(uri) => self.toggle_save_album(uri, now_ms, fx),
             UiAction::ToggleListView => self.state.list_view = !self.state.list_view,
             UiAction::RenameDevice => {
                 self.state.text_entry = Some(TextEntry {

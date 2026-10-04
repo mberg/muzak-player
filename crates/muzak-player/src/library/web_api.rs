@@ -19,7 +19,8 @@ pub const API_BASE: &str = "https://api.spotify.com/v1";
 pub const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify";
 const MAX_ITEMS: usize = 500;
 const RECENT_LIMIT: usize = 20;
-const SEARCH_LIMIT: usize = 20;
+/// Spotify answers "Invalid limit" above 10 per type (checked 2026-10-03).
+const SEARCH_LIMIT: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum HttpError {
@@ -523,7 +524,9 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
                 Err(HttpError::RateLimited(secs)) if !waited => {
                     let secs = secs.unwrap_or(2);
                     if secs > MAX_RETRY_AFTER_SECS {
-                        return Err(FetchError::Other(format!("rate limited for {secs}s: {url}")));
+                        return Err(FetchError::Other(format!(
+                            "rate limited for {secs}s: {url}"
+                        )));
                     }
                     tracing::info!("rate limited; retrying {url} in {secs}s");
                     waited = true;
@@ -759,13 +762,14 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
                 .await?;
                 Ok(EditOutcome::Done)
             }
-            PlaylistEdit::Like { track_uri } => {
-                let path = format!("/me/library?uris={}", encode_query(&track_uri));
+            PlaylistEdit::Like { track_uri: uri } | PlaylistEdit::SaveAlbum { album_uri: uri } => {
+                let path = format!("/me/library?uris={}", encode_query(&uri));
                 self.send(Method::Put, &path, None).await?;
                 Ok(EditOutcome::Done)
             }
-            PlaylistEdit::Unlike { track_uri } => {
-                let path = format!("/me/library?uris={}", encode_query(&track_uri));
+            PlaylistEdit::Unlike { track_uri: uri }
+            | PlaylistEdit::UnsaveAlbum { album_uri: uri } => {
+                let path = format!("/me/library?uris={}", encode_query(&uri));
                 self.send(Method::Delete, &path, None).await?;
                 Ok(EditOutcome::Done)
             }
@@ -1043,7 +1047,7 @@ mod tests {
     #[tokio::test]
     async fn search_maps_every_group_and_skips_null_entries() {
         let http = FakeHttp::default().on(
-            "/search?type=track,artist,album,playlist&limit=20&q=a%20b%26c",
+            "/search?type=track,artist,album,playlist&limit=10&q=a%20b%26c",
             Ok(json!({
                 "tracks": {"items": [{"uri": "spotify:track:t1", "name": "Song", "duration_ms": 1,
                     "artists": [{"name": "Band"}],
@@ -1257,7 +1261,10 @@ mod tests {
     async fn rate_limit_waits_once_then_gives_up() {
         let http = FakeHttp::default()
             .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(0))))
-            .on("/me/albums?limit=50", Ok(json!({"items": [], "next": null})));
+            .on(
+                "/me/albums?limit=50",
+                Ok(json!({"items": [], "next": null})),
+            );
         assert!(api(http).section(Section::Albums).await.is_ok());
 
         let http = FakeHttp::default()
@@ -1265,8 +1272,10 @@ mod tests {
             .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(0))));
         assert!(api(http).section(Section::Albums).await.is_err());
 
-        let http = FakeHttp::default()
-            .on("/me/albums?limit=50", Err(HttpError::RateLimited(Some(3600))));
+        let http = FakeHttp::default().on(
+            "/me/albums?limit=50",
+            Err(HttpError::RateLimited(Some(3600))),
+        );
         assert!(api(http).section(Section::Albums).await.is_err());
     }
 

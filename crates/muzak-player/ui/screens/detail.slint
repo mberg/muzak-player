@@ -56,6 +56,10 @@ export component DetailScreen inherits Rectangle {
     in property <bool> can-add;
     // "23 songs · 1 hr 12 min"
     in property <string> summary;
+    // Albums: whether it's in the library, toggled by the heart.
+    in property <bool> saveable;
+    in property <bool> saved;
+    callback toggle-save();
     callback back();
     callback play(bool);
     callback play-track(int);
@@ -152,6 +156,14 @@ export component DetailScreen inherits Rectangle {
                     font-size: Theme.font-small;
                     vertical-alignment: center;
                     overflow: elide;
+                }
+                if root.saveable: VerticalLayout {
+                    alignment: center;
+                    BarButton {
+                        icon: root.saved ? @image-url("../icons/heart.svg") : @image-url("../icons/heart-outline.svg");
+                        tint: root.saved ? Theme.accent : Theme.text;
+                        clicked => { root.toggle-save(); }
+                    }
                 }
                 if root.editable && !root.editing: VerticalLayout {
                     alignment: center;

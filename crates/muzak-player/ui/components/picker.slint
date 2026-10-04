@@ -7,6 +7,8 @@ component PickerRow inherits Rectangle {
     in property <image> image;
     in property <bool> has-image;
     in property <bool> is-new;
+    // A heart instead of a plus, for Liked Songs.
+    in property <bool> is-liked;
     callback clicked();
     height: 60px;
     border-radius: 10px;
@@ -22,12 +24,12 @@ component PickerRow inherits Rectangle {
                 height: 44px;
                 border-radius: 6px;
                 clip: true;
-                background: root.is-new ? Theme.accent : Theme.surface-hi;
+                background: root.is-new || root.is-liked ? Theme.accent : Theme.surface-hi;
                 Image {
-                    source: root.is-new ? @image-url("../icons/plus.svg") : @image-url("../icons/note.svg");
+                    source: root.is-liked ? @image-url("../icons/heart.svg") : root.is-new ? @image-url("../icons/plus.svg") : @image-url("../icons/note.svg");
                     width: 50%;
                     height: 50%;
-                    colorize: root.is-new ? Theme.accent-text : Theme.text-dim;
+                    colorize: root.is-new || root.is-liked ? Theme.accent-text : Theme.text-dim;
                     visible: !root.has-image;
                 }
                 Image {
@@ -58,6 +60,7 @@ export component PlaylistPicker inherits Rectangle {
     in property <[TileData]> playlists;
     callback pick(string);
     callback new-playlist();
+    callback pick-liked();
     callback close();
     background: #000000a0;
     // A tap outside the sheet closes it.
@@ -74,7 +77,7 @@ export component PlaylistPicker inherits Rectangle {
         Text {
             x: 20px;
             y: 18px;
-            text: "Add to playlist";
+            text: "Add to";
             color: Theme.text;
             font-size: 22px;
             font-weight: 800;
@@ -83,15 +86,23 @@ export component PlaylistPicker inherits Rectangle {
             x: 8px;
             y: 60px;
             width: parent.width - 16px;
+            title: "Liked Songs";
+            is-liked: true;
+            clicked => { root.pick-liked(); }
+        }
+        PickerRow {
+            x: 8px;
+            y: 122px;
+            width: parent.width - 16px;
             title: "New playlist";
             is-new: true;
             clicked => { root.new-playlist(); }
         }
         Rectangle {
             x: 8px;
-            y: 124px;
+            y: 186px;
             width: parent.width - 16px;
-            height: parent.height - 132px;
+            height: parent.height - 194px;
             ListView {
                 for p in root.playlists: PickerRow {
                     title: p.title;

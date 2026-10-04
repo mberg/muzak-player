@@ -76,6 +76,8 @@ export component AppWindow inherits Window {
     in property <bool> detail-editing;
     in property <bool> detail-can-add;
     in property <string> detail-summary;
+    in property <bool> detail-saveable;
+    in property <bool> detail-saved;
     in property <string> now-track-uri;
     in property <bool> now-liked;
     in property <bool> list-view;
@@ -113,6 +115,8 @@ export component AppWindow inherits Window {
     callback keyboard-done();
     callback toggle-like();
     callback toggle-list-view();
+    callback toggle-save-album(string);
+    callback pick-liked();
     callback rename-device();
     callback find-speakers();
     callback connect-speaker(string);
@@ -172,6 +176,9 @@ export component AppWindow inherits Window {
         editing: root.detail-editing;
         can-add: root.detail-can-add;
         summary: root.detail-summary;
+        saveable: root.detail-saveable;
+        saved: root.detail-saved;
+        toggle-save => { root.toggle-save-album(root.detail.uri); }
         add(uri) => { root.open-picker(uri); }
         edit => { root.edit-playlist(root.detail.uri); }
         finish-editing => { root.finish-editing(); }
@@ -292,6 +299,7 @@ export component AppWindow inherits Window {
         playlists: root.picker-playlists;
         pick(uri) => { root.pick-playlist(uri); }
         new-playlist => { root.new-playlist(); }
+        pick-liked => { root.pick-liked(); }
         close => { root.close-picker(); }
     }
     if root.name-open: NameDialog {

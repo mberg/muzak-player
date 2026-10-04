@@ -23,6 +23,8 @@ struct Data {
     albums: Vec<Collection>,
     tracks: HashMap<String, Vec<Track>>,
     created: usize,
+    /// Album URIs in the fake library; every fake album starts saved.
+    saved_albums: std::collections::HashSet<String>,
 }
 
 impl FakeCatalog {
@@ -75,8 +77,10 @@ impl FakeCatalog {
             tracks.insert(c.uri.clone(), fake_tracks(&c.uri, &c.name, 12));
         }
         tracks.insert(LIKED_URI.to_string(), fake_tracks(LIKED_URI, "Liked", 20));
+        let saved_albums = albums.iter().map(|a| a.uri.clone()).collect();
         Self {
             data: Mutex::new(Data {
+                saved_albums,
                 playlists,
                 albums,
                 tracks,
@@ -89,7 +93,18 @@ impl FakeCatalog {
         self.data.lock().unwrap().playlists.clone()
     }
 
+    /// The albums in the fake library.
     pub fn albums(&self) -> Vec<Collection> {
+        let data = self.data.lock().unwrap();
+        data.albums
+            .iter()
+            .filter(|a| data.saved_albums.contains(&a.uri))
+            .cloned()
+            .collect()
+    }
+
+    /// Every fake album, saved or not, as search and artists see them.
+    pub fn all_albums(&self) -> Vec<Collection> {
         self.data.lock().unwrap().albums.clone()
     }
 
@@ -200,6 +215,14 @@ impl FakeCatalog {
                 }
                 Ok(EditOutcome::Done)
             }
+            PlaylistEdit::SaveAlbum { album_uri } => {
+                data.saved_albums.insert(album_uri);
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::UnsaveAlbum { album_uri } => {
+                data.saved_albums.remove(&album_uri);
+                Ok(EditOutcome::Done)
+            }
             PlaylistEdit::Delete { playlist_uri } => {
                 data.playlists.retain(|p| p.uri != playlist_uri);
                 Ok(EditOutcome::Done)
@@ -275,7 +298,7 @@ impl LibrarySource for FakeSource {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let q = query.to_lowercase();
         let hit = |name: &str| name.to_lowercase().contains(&q);
-        let (playlists, albums) = (self.catalog.playlists(), self.catalog.albums());
+        let (playlists, albums) = (self.catalog.playlists(), self.catalog.all_albums());
         let collections = playlists.iter().chain(&albums);
         let tracks = collections
             .clone()
@@ -298,7 +321,7 @@ impl LibrarySource for FakeSource {
 
     async fn artist_albums(&self, _artist_uri: &str) -> Result<Vec<Collection>, FetchError> {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        Ok(self.catalog.albums())
+        Ok(self.catalog.all_albums())
     }
 
     async fn apply(&self, edit: PlaylistEdit) -> Result<EditOutcome, FetchError> {
@@ -307,6 +330,9 @@ impl LibrarySource for FakeSource {
     }
 
     async fn is_liked(&self, track_uri: &str) -> Result<bool, FetchError> {
+        if track_uri.starts_with("spotify:album:") {
+            return Ok(self.catalog.albums().iter().any(|a| a.uri == track_uri));
+        }
         Ok(self
             .catalog
             .tracks_for(LIKED_URI)

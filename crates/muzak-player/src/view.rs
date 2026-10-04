@@ -97,6 +97,9 @@ pub struct DetailView {
     pub can_add: bool,
     /// For example "23 songs · 1 hr 12 min"; empty until the songs load.
     pub summary: String,
+    /// An album, which can be saved to or removed from the library.
+    pub saveable: bool,
+    pub saved: bool,
 }
 
 /// A Bluetooth speaker found by a scan.
@@ -574,6 +577,12 @@ fn detail(state: &AppState) -> Option<DetailView> {
         editing: editable && state.editing.as_deref() == Some(uri.as_str()),
         editable,
         summary,
+        saveable: uri.starts_with("spotify:album:"),
+        saved: state.liked.get(&uri).copied().unwrap_or_else(|| {
+            section_items(state, Section::Albums)
+                .iter()
+                .any(|a| a.uri == uri)
+        }),
         can_add: !uri.starts_with("spotify:playlist:") && !uri.starts_with("muzak:new:"),
         header,
         status: status(slot),
@@ -644,6 +653,7 @@ fn banner(state: &AppState) -> Option<String> {
         Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
         Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
         Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
+        Some(Notice::RemovedFrom(name)) => Some(format!("Removed from {name}")),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }

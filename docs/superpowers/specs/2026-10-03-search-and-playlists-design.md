@@ -97,7 +97,7 @@ Delete removes the playlist from the Playlists and Recent sections, leaves edit 
 
 - `Collection` gains `owner_id: Option<String>` and `snapshot_id: Option<String>`. Both are `#[serde(default)]`, so existing caches still load.
 - `CollectionKind::Playlist` collections are editable when `owner_id == me`.
-- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 20 of each, from the Spotify catalog.
+- New `SearchResults { tracks: Vec<Track>, albums: Vec<Collection>, playlists: Vec<Collection> }`, at most 10 of each (Spotify rejects higher limits since 2026), from the Spotify catalog.
 - Library matches are not stored. `view` computes them from state on each build: the user's playlists, saved albums and loaded Liked Songs whose name, or artist for songs, contains the query, ignoring case and accents. At most 5 of each kind.
 - New `PlaylistEdit` enum: `Add { playlist_uri, track_uri }`, `CreateAndAdd { name, track_uri }`, `Remove { playlist_uri, track_uri, position, snapshot_id }`, `Move { playlist_uri, from, to, snapshot_id }`, `Rename { playlist_uri, name }`, `Delete { playlist_uri }`.
 

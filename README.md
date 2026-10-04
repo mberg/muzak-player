@@ -172,7 +172,7 @@ The gear at the bottom of the left rail opens Settings.
 
 - [ ] It shows your Spotify account name and ID.
 - [ ] The pencil next to the device name opens the keyboard. Saving says "Restarting the player…", the player restarts, and Spotify on your phone shows the new name.
-- [ ] On the Mac, the Speaker section says Bluetooth is chosen on the player. With `--fake`, "Find speakers" lists three pretend speakers; picking "Boombox" restarts on it, and "Old Speaker" fails with a message.
+- [ ] On the Mac, the Speaker section says speakers are paired on the Raspberry Pi. With `--fake`, "Find speakers" lists three pretend speakers; picking "Boombox" restarts on it, and "Old Speaker" fails with a message.
 - [ ] Your choices are kept in `dev/state/settings.json`. Delete that file to go back to the config file's values.
 
 ## Testing on the Pi

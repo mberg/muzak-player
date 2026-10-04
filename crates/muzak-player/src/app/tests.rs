@@ -1211,3 +1211,86 @@ fn no_bluetooth_means_no_scan() {
     let mut c = Core::new(cfg, 0).0;
     assert!(c.handle(ui(UiAction::FindSpeakers), 0).is_empty());
 }
+
+// ---- Library saves ----
+
+#[test]
+fn liked_songs_in_the_add_sheet_likes_the_song() {
+    let mut c = editor();
+    with_tracks(&mut c, LIKED_URI, 2);
+    c.state.search.results.data = Some(Arc::new(SearchResults {
+        tracks: vec![track(9)],
+        ..Default::default()
+    }));
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t9".into())), 0);
+    let fx = c.handle(ui(UiAction::PickLiked), 0);
+    assert_eq!(
+        edit_of(&fx).1,
+        PlaylistEdit::Like {
+            track_uri: "spotify:track:t9".into()
+        }
+    );
+    assert_eq!(track_names(&c, LIKED_URI)[0], "Song 9");
+    assert_eq!(
+        c.state().notice,
+        Some(Notice::AddedTo("Liked Songs".into()))
+    );
+    // Already liked: nothing to do.
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t0".into())), 0);
+    assert!(c.handle(ui(UiAction::PickLiked), 0).is_empty());
+    assert_eq!(
+        c.state().notice,
+        Some(Notice::AlreadyIn("Liked Songs".into()))
+    );
+}
+
+#[test]
+fn opening_an_album_asks_whether_it_is_saved_and_the_heart_saves_it() {
+    let mut c = core();
+    let album = Collection {
+        uri: "spotify:album:x".into(),
+        kind: CollectionKind::Album,
+        name: "New Album".into(),
+        ..Default::default()
+    };
+    c.state.search.results.data = Some(Arc::new(SearchResults {
+        albums: vec![album.clone()],
+        ..Default::default()
+    }));
+    let fx = c.handle(ui(UiAction::OpenCollection(album.uri.clone())), 0);
+    assert!(fx.contains(&Effect::Library(LibraryRequest::IsLiked {
+        track_uri: album.uri.clone()
+    })));
+    c.handle(
+        Input::Library(LibraryUpdate::Liked {
+            track_uri: album.uri.clone(),
+            liked: false,
+        }),
+        0,
+    );
+    let fx = c.handle(ui(UiAction::ToggleSaveAlbum(album.uri.clone())), 0);
+    let (id, edit) = edit_of(&fx);
+    assert_eq!(
+        edit,
+        PlaylistEdit::SaveAlbum {
+            album_uri: album.uri.clone()
+        }
+    );
+    let albums = c.state().sections[&Section::Albums].data.clone().unwrap();
+    assert_eq!(albums[0], album);
+    // Spotify refuses: the album leaves the list again.
+    c.handle(
+        Input::Library(LibraryUpdate::EditFailed {
+            id,
+            reason: FailReason::Other,
+        }),
+        0,
+    );
+    assert!(!c.state().liked[&album.uri]);
+    let albums = c
+        .state()
+        .sections
+        .get(&Section::Albums)
+        .and_then(|s| s.data.clone());
+    assert!(albums.is_none_or(|a| a.iter().all(|x| x.uri != album.uri)));
+}

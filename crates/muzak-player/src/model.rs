@@ -140,6 +140,13 @@ pub enum PlaylistEdit {
     Unlike {
         track_uri: String,
     },
+    /// Save an album to the user's library.
+    SaveAlbum {
+        album_uri: String,
+    },
+    UnsaveAlbum {
+        album_uri: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

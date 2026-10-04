@@ -111,6 +111,10 @@ pub enum UiAction {
     ToggleLike,
     /// Switch collection screens between tiles and a list.
     ToggleListView,
+    /// From the add sheet: put the song in Liked Songs.
+    PickLiked,
+    /// Save the album to the library, or remove it.
+    ToggleSaveAlbum(String),
     /// Settings: name this device with the keyboard.
     RenameDevice,
     FindSpeakers,
