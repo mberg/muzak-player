@@ -1,0 +1,52 @@
+import { Theme } from "../theme.slint";
+import { TileData } from "../types.slint";
+
+export component Tile inherits Rectangle {
+    in property <TileData> data;
+    in property <length> art-size;
+    callback clicked();
+    border-radius: Theme.radius;
+    background: touch.pressed ? Theme.surface-hi : transparent;
+    VerticalLayout {
+        padding: 6px;
+        spacing: 6px;
+        Rectangle {
+            width: root.art-size;
+            height: root.art-size;
+            border-radius: Theme.radius - 4px;
+            clip: true;
+            background: Theme.surface;
+            Image {
+                source: @image-url("../icons/note.svg");
+                width: 40%;
+                height: 40%;
+                colorize: Theme.text-dim;
+                visible: !root.data.has-image;
+            }
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.data.image;
+                image-fit: cover;
+                opacity: root.data.has-image ? 1 : 0;
+                animate opacity { duration: 200ms; }
+            }
+        }
+        Text {
+            text: root.data.title;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 800;
+            overflow: elide;
+        }
+        Text {
+            text: root.data.subtitle;
+            color: Theme.text-dim;
+            font-size: Theme.font-small;
+            overflow: elide;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

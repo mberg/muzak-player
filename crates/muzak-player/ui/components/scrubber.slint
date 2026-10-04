@@ -1,0 +1,47 @@
+import { Theme } from "../theme.slint";
+
+// A draggable 0..1 bar. Reports the value once, on release.
+export component Scrubber inherits Rectangle {
+    in property <float> value;
+    callback changed(float);
+    property <float> drag-value;
+    property <float> shown: touch.pressed ? root.drag-value : Math.clamp(root.value, 0, 1);
+    min-width: 120px;
+    height: Theme.touch;
+    Rectangle {
+        y: (root.height - 8px) / 2;
+        width: root.width;
+        height: 8px;
+        border-radius: 4px;
+        background: Theme.surface-hi;
+    }
+    Rectangle {
+        x: 0;
+        y: (root.height - 8px) / 2;
+        width: root.width * root.shown;
+        height: 8px;
+        border-radius: 4px;
+        background: Theme.accent;
+    }
+    Rectangle {
+        x: root.width * root.shown - 13px;
+        y: (root.height - 26px) / 2;
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        background: Theme.text;
+    }
+    touch := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.drag-value = Math.clamp(self.mouse-x / self.width, 0, 1);
+            }
+            if (event.kind == PointerEventKind.up) {
+                root.changed(root.drag-value);
+            }
+        }
+        moved => {
+            root.drag-value = Math.clamp(self.mouse-x / self.width, 0, 1);
+        }
+    }
+}

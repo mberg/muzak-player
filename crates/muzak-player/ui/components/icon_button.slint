@@ -1,0 +1,24 @@
+import { Theme } from "../theme.slint";
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: Theme.touch;
+    in property <bool> primary: false;
+    in property <bool> active: false;
+    callback clicked();
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : (touch.pressed ? Theme.surface-hi : transparent);
+    Image {
+        source: root.icon;
+        width: root.size * 0.5;
+        height: root.size * 0.5;
+        colorize: root.primary ? Theme.accent-text : (root.active ? Theme.accent : Theme.text);
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

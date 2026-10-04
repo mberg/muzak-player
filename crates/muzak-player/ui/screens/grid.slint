@@ -1,0 +1,49 @@
+import { Theme } from "../theme.slint";
+import { TileData, LoadState } from "../types.slint";
+import { Tile } from "../components/tile.slint";
+import { StateMessage } from "../components/state_message.slint";
+
+export component GridScreen inherits Rectangle {
+    in property <string> title;
+    in property <[TileData]> tiles;
+    in property <LoadState> state;
+    callback open(string);
+    property <int> columns: 4;
+    property <length> pad: 16px;
+    property <length> header: 56px;
+    property <length> tile-w: (root.width - 2 * root.pad) / root.columns;
+    property <length> art: root.tile-w - 12px;
+    property <length> tile-h: root.art + 72px;
+    background: Theme.bg;
+    Text {
+        x: root.pad;
+        y: 12px;
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.font-title;
+        font-weight: 800;
+    }
+    Flickable {
+        x: 0;
+        y: root.header;
+        width: root.width;
+        height: root.height - root.header;
+        content-height: Math.ceil(root.tiles.length / root.columns) * root.tile-h + root.pad;
+        for tile[i] in root.tiles: Tile {
+            x: root.pad + Math.mod(i, root.columns) * root.tile-w;
+            y: Math.floor(i / root.columns) * root.tile-h;
+            width: root.tile-w;
+            height: root.tile-h;
+            art-size: root.art;
+            data: tile;
+            clicked => { root.open(tile.uri); }
+        }
+    }
+    if root.state != LoadState.ready: StateMessage {
+        x: 0;
+        y: root.header;
+        width: root.width;
+        height: root.height - root.header;
+        state: root.state;
+    }
+}

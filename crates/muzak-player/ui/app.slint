@@ -1,0 +1,156 @@
+import "fonts/Nunito-Bold.ttf";
+import "fonts/Nunito-ExtraBold.ttf";
+import { Theme } from "theme.slint";
+import { TileData, TrackData, ScreenKind, LoadState } from "types.slint";
+import { Rail } from "components/rail.slint";
+import { MiniPlayer } from "components/mini_player.slint";
+import { Banner } from "components/banner.slint";
+import { GridScreen } from "screens/grid.slint";
+import { DetailScreen } from "screens/detail.slint";
+import { NowPlayingScreen } from "screens/now_playing.slint";
+import { IdleOverlay } from "screens/idle.slint";
+import { AuthNeededScreen } from "screens/auth_needed.slint";
+
+export { TileData, TrackData, ScreenKind, LoadState }
+
+export component AppWindow inherits Window {
+    width: 800px;
+    height: 480px;
+    title: "Muzak";
+    background: Theme.bg;
+    default-font-family: "Nunito";
+
+    in property <ScreenKind> screen;
+    in property <int> section;
+    in property <string> grid-title;
+    in property <[TileData]> tiles;
+    in property <LoadState> grid-state;
+    in property <TileData> detail;
+    in property <[TrackData]> detail-tracks;
+    in property <LoadState> detail-state;
+    in property <bool> mini-visible;
+    in property <string> track-title;
+    in property <string> track-artists;
+    in property <image> track-art;
+    in property <bool> track-has-art;
+    in property <bool> playing;
+    in property <bool> loading;
+    in property <float> progress;
+    in property <string> position-text;
+    in property <string> duration-text;
+    in property <int> volume;
+    in property <bool> shuffle;
+    in property <int> repeat;
+    in property <string> banner;
+    in property <int> display-mode;
+    in property <string> clock;
+    in property <bool> auth-needed;
+
+    callback show-section(int);
+    callback open-collection(string);
+    callback back();
+    callback open-now-playing();
+    callback play-collection(string, bool);
+    callback play-track(string, int);
+    callback toggle-play();
+    callback next();
+    callback previous();
+    callback seek(float);
+    callback set-volume(int);
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback touched();
+
+    property <length> content-height: root.mini-visible ? root.height - Theme.mini-height : root.height;
+
+    Rail {
+        x: 0;
+        y: 0;
+        height: root.height;
+        selected: root.section;
+        select(i) => { root.show-section(i); }
+    }
+    GridScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.grid;
+        title: root.grid-title;
+        tiles: root.tiles;
+        state: root.grid-state;
+        open(uri) => { root.open-collection(uri); }
+    }
+    DetailScreen {
+        x: Theme.rail-width;
+        y: 0;
+        width: root.width - Theme.rail-width;
+        height: root.content-height;
+        visible: root.screen == ScreenKind.detail;
+        header: root.detail;
+        tracks: root.detail-tracks;
+        state: root.detail-state;
+        back => { root.back(); }
+        play(shuffle) => { root.play-collection(root.detail.uri, shuffle); }
+        play-track(i) => { root.play-track(root.detail.uri, i); }
+    }
+    if root.mini-visible: MiniPlayer {
+        x: Theme.rail-width;
+        y: root.height - Theme.mini-height;
+        width: root.width - Theme.rail-width;
+        title: root.track-title;
+        artists: root.track-artists;
+        art: root.track-art;
+        has-art: root.track-has-art;
+        playing: root.playing;
+        open => { root.open-now-playing(); }
+        toggle-play => { root.toggle-play(); }
+    }
+    NowPlayingScreen {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        visible: root.screen == ScreenKind.now-playing;
+        title: root.track-title;
+        artists: root.track-artists;
+        art: root.track-art;
+        has-art: root.track-has-art;
+        playing: root.playing;
+        loading: root.loading;
+        progress: root.progress;
+        position-text: root.position-text;
+        duration-text: root.duration-text;
+        volume: root.volume;
+        shuffle: root.shuffle;
+        repeat: root.repeat;
+        back => { root.back(); }
+        toggle-play => { root.toggle-play(); }
+        next => { root.next(); }
+        previous => { root.previous(); }
+        seek(v) => { root.seek(v); }
+        set-volume(v) => { root.set-volume(v); }
+        toggle-shuffle => { root.toggle-shuffle(); }
+        cycle-repeat => { root.cycle-repeat(); }
+    }
+    if root.banner != "": Banner {
+        x: (root.width - self.width) / 2;
+        y: 12px;
+        text: root.banner;
+    }
+    if root.auth-needed: AuthNeededScreen {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+    }
+    if root.display-mode != 0: IdleOverlay {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        mode: root.display-mode;
+        clock: root.clock;
+        touched => { root.touched(); }
+    }
+}

@@ -1,0 +1,17 @@
+import { Theme } from "../theme.slint";
+
+export component Banner inherits Rectangle {
+    in property <string> text;
+    height: 48px;
+    width: label.preferred-width + 40px;
+    border-radius: 24px;
+    background: Theme.accent;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: #00000080;
+    label := Text {
+        text: root.text;
+        color: Theme.accent-text;
+        font-size: Theme.font-body;
+        font-weight: 800;
+    }
+}

@@ -1,0 +1,12 @@
+# Copy to devices/<kid>.toml and edit.
+device_name = "Muzak"
+state_dir = "/var/lib/muzak"
+audio_backend = "alsa"
+# Headphone jack:
+audio_device = "plughw:CARD=Headphones"
+# Bluetooth speaker instead (pair it first, see the Task 14 checklist):
+# audio_device = "bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp"
+# bluetooth_speaker = "AA:BB:CC:DD:EE:FF"
+initial_volume = 60
+dim_after_secs = 180
+off_after_secs = 600

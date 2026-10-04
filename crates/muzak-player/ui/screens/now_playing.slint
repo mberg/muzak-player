@@ -1,0 +1,146 @@
+import { Theme } from "../theme.slint";
+import { IconButton } from "../components/icon_button.slint";
+import { Scrubber } from "../components/scrubber.slint";
+
+export component NowPlayingScreen inherits Rectangle {
+    in property <string> title;
+    in property <string> artists;
+    in property <image> art;
+    in property <bool> has-art;
+    in property <bool> playing;
+    in property <bool> loading;
+    in property <float> progress;
+    in property <string> position-text;
+    in property <string> duration-text;
+    in property <int> volume;
+    in property <bool> shuffle;
+    in property <int> repeat;
+    callback back();
+    callback toggle-play();
+    callback next();
+    callback previous();
+    callback seek(float);
+    callback set-volume(int);
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    background: Theme.bg;
+    // Absorbs taps so nothing underneath reacts.
+    TouchArea {}
+    HorizontalLayout {
+        padding: 20px;
+        spacing: 28px;
+        VerticalLayout {
+            spacing: 12px;
+            alignment: start;
+            IconButton {
+                icon: @image-url("../icons/back.svg");
+                clicked => { root.back(); }
+            }
+            Rectangle {
+                width: 320px;
+                height: 320px;
+                border-radius: Theme.radius;
+                clip: true;
+                background: Theme.surface;
+                Image {
+                    source: @image-url("../icons/note.svg");
+                    width: 35%;
+                    height: 35%;
+                    colorize: Theme.text-dim;
+                    visible: !root.has-art;
+                }
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.art;
+                    image-fit: cover;
+                    opacity: root.has-art ? 1 : 0;
+                    animate opacity { duration: 200ms; }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 14px;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 30px;
+                font-weight: 800;
+                wrap: word-wrap;
+                overflow: elide;
+                max-height: 80px;
+            }
+            Text {
+                text: root.loading ? "Loading…" : root.artists;
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                overflow: elide;
+            }
+            Scrubber {
+                value: root.progress;
+                changed(v) => { root.seek(v); }
+            }
+            HorizontalLayout {
+                Text { text: root.position-text; color: Theme.text-dim; font-size: Theme.font-small; }
+                Rectangle {}
+                Text { text: root.duration-text; color: Theme.text-dim; font-size: Theme.font-small; }
+            }
+            HorizontalLayout {
+                alignment: space-between;
+                IconButton {
+                    icon: @image-url("../icons/shuffle.svg");
+                    active: root.shuffle;
+                    clicked => { root.toggle-shuffle(); }
+                }
+                IconButton {
+                    icon: @image-url("../icons/previous.svg");
+                    size: 72px;
+                    clicked => { root.previous(); }
+                }
+                IconButton {
+                    icon: root.playing ? @image-url("../icons/pause.svg") : @image-url("../icons/play.svg");
+                    size: 88px;
+                    primary: true;
+                    clicked => { root.toggle-play(); }
+                }
+                IconButton {
+                    icon: @image-url("../icons/next.svg");
+                    size: 72px;
+                    clicked => { root.next(); }
+                }
+                Rectangle {
+                    width: Theme.touch;
+                    height: Theme.touch;
+                    IconButton {
+                        icon: @image-url("../icons/repeat.svg");
+                        active: root.repeat != 0;
+                        clicked => { root.cycle-repeat(); }
+                    }
+                    Text {
+                        visible: root.repeat == 2;
+                        text: "1";
+                        x: parent.width - 16px;
+                        y: 6px;
+                        font-size: 13px;
+                        font-weight: 800;
+                        color: Theme.accent;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Image {
+                    source: @image-url("../icons/volume.svg");
+                    width: 28px;
+                    height: 28px;
+                    colorize: Theme.text-dim;
+                }
+                Scrubber {
+                    value: root.volume / 100;
+                    changed(v) => { root.set-volume(Math.round(v * 100)); }
+                }
+            }
+        }
+    }
+}

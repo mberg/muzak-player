@@ -1,0 +1,23 @@
+import { Theme } from "../theme.slint";
+
+export component AuthNeededScreen inherits Rectangle {
+    background: Theme.bg;
+    TouchArea {}
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        Text {
+            text: "Ask a grown-up for help";
+            font-size: 34px;
+            font-weight: 800;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "This player needs to sign in to Spotify again.";
+            font-size: Theme.font-body;
+            color: Theme.text-dim;
+            horizontal-alignment: center;
+        }
+    }
+}

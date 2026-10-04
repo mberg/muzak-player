@@ -1,0 +1,8 @@
+# Raspberry Pi OS is based on Debian Trixie; building in Trixie keeps glibc compatible.
+FROM rust:1.97-trixie
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config cmake clang \
+        libasound2-dev libudev-dev libinput-dev libxkbcommon-dev \
+        libgbm-dev libdrm-dev libegl-dev libgles-dev libfontconfig-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
