@@ -1,0 +1,12 @@
+pause
+stop
+next song
+skip
+go back
+turn it up
+turn it down
+play graceland
+play the hobbit
+play paul simon
+play matilda
+play road trip
