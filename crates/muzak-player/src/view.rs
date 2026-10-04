@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::app::{AppState, DisplayMode, Notice, PlayStatus, Screen, SearchFilter, Slot};
+use crate::app::{
+    AppState, DisplayMode, Notice, PlayStatus, Screen, SearchFilter, Slot, TextPurpose,
+};
 use crate::library::matching::matches;
 use crate::model::{Collection, LIKED_URI, Repeat, Section, Track, liked_collection};
 
@@ -75,6 +77,7 @@ pub struct TileView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrackRowView {
+    pub uri: String,
     pub title: String,
     pub artists: String,
     pub duration: String,
@@ -86,10 +89,28 @@ pub struct DetailView {
     pub header: TileView,
     pub status: LoadStatus,
     pub tracks: Vec<TrackRowView>,
+    /// The signed-in account owns this playlist.
+    pub editable: bool,
+    pub editing: bool,
+}
+
+/// The add-to-playlist picker: the user's own playlists.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickerView {
+    pub playlists: Vec<TileView>,
+}
+
+/// The name dialog for a new or renamed playlist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextEntryView {
+    pub title: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NowView {
+    /// The playing song, for adding it to a playlist; empty when unknown.
+    pub track_uri: String,
     pub title: String,
     pub artists: String,
     pub image_url: Option<String>,
@@ -120,6 +141,12 @@ pub struct View {
     pub account: String,
     pub search: SearchView,
     pub artist: Option<ArtistView>,
+    pub picker: Option<PickerView>,
+    pub text_entry: Option<TextEntryView>,
+    /// Name of the playlist the delete confirmation asks about.
+    pub confirm_delete: Option<String>,
+    /// The on-screen keyboard is up, for search or a name.
+    pub keyboard: bool,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -147,6 +174,7 @@ pub fn build(state: &AppState) -> View {
         .unwrap_or_default();
     let pb = &state.playback;
     let has_playback = pb.track.is_some() || pb.context_uri.is_some();
+    let keyboard = state.keyboard_open || state.text_entry.is_some();
 
     View {
         screen,
@@ -156,7 +184,7 @@ pub fn build(state: &AppState) -> View {
         grid_status: status(grid_slot),
         detail: detail(state),
         now: now(state),
-        mini_visible: has_playback && screen != ScreenView::NowPlaying && !state.keyboard_open,
+        mini_visible: has_playback && screen != ScreenView::NowPlaying && !keyboard,
         banner: banner(state),
         display: state.display,
         auth_needed: state.auth_needed,
@@ -167,7 +195,35 @@ pub fn build(state: &AppState) -> View {
             .unwrap_or_default(),
         search: search(state),
         artist: artist(state),
+        picker: state.picker.as_ref().map(|_| PickerView {
+            playlists: own_playlists(state).iter().map(tile).collect(),
+        }),
+        text_entry: state.text_entry.as_ref().map(|entry| TextEntryView {
+            title: match entry.purpose {
+                TextPurpose::NewPlaylist { .. } => "New playlist".into(),
+                TextPurpose::Rename { .. } => "Rename playlist".into(),
+            },
+            text: entry.text.clone(),
+        }),
+        confirm_delete: state.confirm_delete.as_ref().map(|uri| {
+            find_collection(state, uri)
+                .map(|c| c.name)
+                .unwrap_or_default()
+        }),
+        keyboard,
     }
+}
+
+/// Playlists the signed-in account owns, which are the only ones it can change.
+fn own_playlists(state: &AppState) -> Vec<Collection> {
+    let Some(me) = state.account.as_ref() else {
+        return Vec::new();
+    };
+    section_items(state, Section::Playlists)
+        .iter()
+        .filter(|p| p.owner_id.as_deref() == Some(me.id.as_str()))
+        .cloned()
+        .collect()
 }
 
 fn row(kind: RowKind, c: &Collection) -> SearchRowView {
@@ -406,6 +462,7 @@ fn detail(state: &AppState) -> Option<DetailView> {
             tracks
                 .iter()
                 .map(|t| TrackRowView {
+                    uri: t.uri.clone(),
                     title: t.name.clone(),
                     artists: t.artists.clone(),
                     duration: fmt_ms(t.duration_ms),
@@ -414,7 +471,10 @@ fn detail(state: &AppState) -> Option<DetailView> {
                 .collect()
         })
         .unwrap_or_default();
+    let editable = own_playlists(state).iter().any(|p| p.uri == uri);
     Some(DetailView {
+        editing: editable && state.editing.as_deref() == Some(uri.as_str()),
+        editable,
         header,
         status: status(slot),
         tracks,
@@ -441,6 +501,7 @@ fn now(state: &AppState) -> NowView {
         0.0
     };
     NowView {
+        track_uri: pb.track.as_ref().map(|t| t.uri.clone()).unwrap_or_default(),
         title,
         artists,
         image_url,

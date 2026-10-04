@@ -10,20 +10,42 @@ export component DetailScreen inherits Rectangle {
     in property <TileData> header;
     in property <[TrackData]> tracks;
     in property <LoadState> state;
+    // The signed-in account owns this playlist.
+    in property <bool> editable;
+    in property <bool> editing;
     callback back();
     callback play(bool);
     callback play-track(int);
+    callback add(string);
+    callback edit();
+    callback finish-editing();
+    callback rename();
+    callback delete();
+    callback remove(int);
+    callback move-track(int, int);
+    // Drag state: which row is held, and how far it has moved.
+    property <int> drag-from: -1;
+    property <length> drag-dy: 0px;
+    property <int> drag-to: root.drag-from < 0 ? -1
+        : Math.max(0, Math.min(root.tracks.length - 1, root.drag-from + Math.round(root.drag-dy / Theme.touch)));
     background: Theme.bg;
     HorizontalLayout {
         padding: 16px;
         spacing: 16px;
         VerticalLayout {
-            width: 230px;
+            width: 240px;
             spacing: 10px;
             alignment: start;
-            IconButton {
-                icon: @image-url("../icons/back.svg");
-                clicked => { root.back(); }
+            HorizontalLayout {
+                IconButton {
+                    icon: @image-url("../icons/back.svg");
+                    clicked => { root.back(); }
+                }
+                Rectangle {}
+                if root.editable && !root.editing: IconButton {
+                    icon: @image-url("../icons/edit.svg");
+                    clicked => { root.edit(); }
+                }
             }
             Rectangle {
                 width: 180px;
@@ -56,7 +78,7 @@ export component DetailScreen inherits Rectangle {
                 overflow: elide;
                 max-height: 60px;
             }
-            HorizontalLayout {
+            if !root.editing: HorizontalLayout {
                 spacing: 10px;
                 alignment: start;
                 PillButton {
@@ -70,12 +92,49 @@ export component DetailScreen inherits Rectangle {
                     clicked => { root.play(true); }
                 }
             }
+            if root.editing: HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                IconButton {
+                    size: 52px;
+                    icon: @image-url("../icons/edit.svg");
+                    clicked => { root.rename(); }
+                }
+                IconButton {
+                    size: 52px;
+                    icon: @image-url("../icons/delete.svg");
+                    clicked => { root.delete(); }
+                }
+                PillButton {
+                    min-width: 96px;
+                    label: "Done";
+                    primary: true;
+                    clicked => { root.finish-editing(); }
+                }
+            }
         }
         Rectangle {
             ListView {
                 for track[i] in root.tracks: TrackRow {
                     data: track;
+                    editing: root.editing;
+                    drag-offset: i == root.drag-from ? root.drag-dy : 0px;
+                    drop-marker: i != root.drag-to || i == root.drag-from ? 0 : (root.drag-to < root.drag-from ? 1 : 2);
                     clicked => { root.play-track(i); }
+                    add => { root.add(track.uri); }
+                    remove => { root.remove(i); }
+                    drag-start => {
+                        root.drag-from = i;
+                        root.drag-dy = 0px;
+                    }
+                    drag-move(dy) => { root.drag-dy = dy; }
+                    drag-end => {
+                        if (root.drag-from >= 0 && root.drag-to != root.drag-from) {
+                            root.move-track(root.drag-from, root.drag-to);
+                        }
+                        root.drag-from = -1;
+                        root.drag-dy = 0px;
+                    }
                 }
             }
             if root.state != LoadState.ready: StateMessage {

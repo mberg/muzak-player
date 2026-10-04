@@ -134,11 +134,11 @@ impl Core {
             self.state.keyboard_open = false;
         }
         // Edit mode belongs to the playlist on screen; leaving it ends editing.
-        if let Some(uri) = &self.state.editing {
-            if self.state.screen != Screen::Detail(uri.clone()) {
-                self.state.editing = None;
-                self.state.confirm_delete = None;
-            }
+        if let Some(uri) = &self.state.editing
+            && self.state.screen != Screen::Detail(uri.clone())
+        {
+            self.state.editing = None;
+            self.state.confirm_delete = None;
         }
         fx
     }

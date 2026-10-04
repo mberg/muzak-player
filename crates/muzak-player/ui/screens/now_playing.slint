@@ -23,6 +23,9 @@ export component NowPlayingScreen inherits Rectangle {
     callback set-volume(int);
     callback toggle-shuffle();
     callback cycle-repeat();
+    callback add();
+    // Whether there is a song to add to a playlist.
+    in property <bool> can-add;
     background: Theme.bg;
     // Absorbs taps so nothing underneath reacts.
     TouchArea {}
@@ -142,5 +145,11 @@ export component NowPlayingScreen inherits Rectangle {
                 }
             }
         }
+    }
+    if root.can-add: IconButton {
+        x: root.width - self.width - 16px;
+        y: 16px;
+        icon: @image-url("../icons/plus.svg");
+        clicked => { root.add(); }
     }
 }

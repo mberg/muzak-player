@@ -13,6 +13,9 @@ import { AuthNeededScreen } from "screens/auth_needed.slint";
 import { SearchScreen } from "screens/search.slint";
 import { ArtistScreen } from "screens/artist.slint";
 import { Keyboard } from "components/keyboard.slint";
+import { PlaylistPicker } from "components/picker.slint";
+import { NameDialog } from "components/name_dialog.slint";
+import { ConfirmDelete } from "components/confirm_dialog.slint";
 
 export { TileData, TrackData, ScreenKind, LoadState, SearchRowData }
 
@@ -58,6 +61,15 @@ export component AppWindow inherits Window {
     in property <TileData> artist;
     in property <[TileData]> artist-albums;
     in property <LoadState> artist-state;
+    in property <bool> detail-editable;
+    in property <bool> detail-editing;
+    in property <string> now-track-uri;
+    in property <bool> picker-open;
+    in property <[TileData]> picker-playlists;
+    in property <bool> name-open;
+    in property <string> name-title;
+    in property <string> name-text;
+    in property <string> confirm-delete;
 
     callback show-section(int);
     callback open-collection(string);
@@ -83,6 +95,20 @@ export component AppWindow inherits Window {
     callback open-artist(string);
     callback play-artist(string);
     callback play-song(string);
+    callback keyboard-done();
+    callback open-picker(string);
+    callback close-picker();
+    callback pick-playlist(string);
+    callback new-playlist();
+    callback cancel-name();
+    callback edit-playlist(string);
+    callback finish-editing();
+    callback rename-playlist();
+    callback ask-delete();
+    callback confirm-delete-playlist();
+    callback cancel-delete();
+    callback remove-track(int);
+    callback move-track(int, int);
 
     property <length> content-height: root.mini-visible ? root.height - Theme.mini-height : root.height;
 
@@ -119,6 +145,15 @@ export component AppWindow inherits Window {
         back => { root.back(); }
         play(shuffle) => { root.play-collection(root.detail.uri, shuffle); }
         play-track(i) => { root.play-track(root.detail.uri, i); }
+        editable: root.detail-editable;
+        editing: root.detail-editing;
+        add(uri) => { root.open-picker(uri); }
+        edit => { root.edit-playlist(root.detail.uri); }
+        finish-editing => { root.finish-editing(); }
+        rename => { root.rename-playlist(); }
+        delete => { root.ask-delete(); }
+        remove(i) => { root.remove-track(i); }
+        move-track(from, to) => { root.move-track(from, to); }
     }
     SearchScreen {
         x: 0;
@@ -135,6 +170,7 @@ export component AppWindow inherits Window {
         open(uri) => { root.open-collection(uri); }
         open-artist(uri) => { root.open-artist(uri); }
         play-song(uri) => { root.play-song(uri); }
+        add-song(uri) => { root.open-picker(uri); }
         clear => { root.clear-search(); }
         open-keyboard => { root.open-keyboard(); }
         close => { root.close-search(); }
@@ -154,15 +190,7 @@ export component AppWindow inherits Window {
         play => { root.play-artist(root.artist.uri); }
         open(uri) => { root.open-collection(uri); }
     }
-    kb := Keyboard {
-        x: 0;
-        y: root.height - self.height;
-        width: root.width;
-        visible: root.keyboard-open && root.screen == ScreenKind.search;
-        key(text) => { root.key-pressed(text); }
-        backspace => { root.backspace(); }
-        done => { root.close-keyboard(); }
-    }
+
     if root.mini-visible: MiniPlayer {
         x: root.screen == ScreenKind.search ? 0 : Theme.rail-width;
         y: root.height - Theme.mini-height;
@@ -201,6 +229,46 @@ export component AppWindow inherits Window {
         set-volume(v) => { root.set-volume(v); }
         toggle-shuffle => { root.toggle-shuffle(); }
         cycle-repeat => { root.cycle-repeat(); }
+        can-add: root.now-track-uri != "";
+        add => { root.open-picker(root.now-track-uri); }
+    }
+    if root.picker-open: PlaylistPicker {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        playlists: root.picker-playlists;
+        pick(uri) => { root.pick-playlist(uri); }
+        new-playlist => { root.new-playlist(); }
+        close => { root.close-picker(); }
+    }
+    if root.name-open: NameDialog {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height - kb.height;
+        title: root.name-title;
+        text: root.name-text;
+        save => { root.keyboard-done(); }
+        cancel => { root.cancel-name(); }
+    }
+    kb := Keyboard {
+        x: 0;
+        y: root.height - self.height;
+        width: root.width;
+        visible: root.keyboard-open;
+        key(text) => { root.key-pressed(text); }
+        backspace => { root.backspace(); }
+        done => { root.keyboard-done(); }
+    }
+    if root.confirm-delete != "": ConfirmDelete {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        name: root.confirm-delete;
+        confirm => { root.confirm-delete-playlist(); }
+        cancel => { root.cancel-delete(); }
     }
     if root.banner != "": Banner {
         x: (root.width - self.width) / 2;

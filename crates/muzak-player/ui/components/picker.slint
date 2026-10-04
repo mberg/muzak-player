@@ -1,0 +1,105 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { TileData } from "../types.slint";
+
+component PickerRow inherits Rectangle {
+    in property <string> title;
+    in property <image> image;
+    in property <bool> has-image;
+    in property <bool> is-new;
+    callback clicked();
+    height: 60px;
+    border-radius: 10px;
+    background: touch.pressed ? Theme.surface-hi : transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 6px;
+                clip: true;
+                background: root.is-new ? Theme.accent : Theme.surface-hi;
+                Image {
+                    source: root.is-new ? @image-url("../icons/plus.svg") : @image-url("../icons/note.svg");
+                    width: 50%;
+                    height: 50%;
+                    colorize: root.is-new ? Theme.accent-text : Theme.text-dim;
+                    visible: !root.has-image;
+                }
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.image;
+                    image-fit: cover;
+                    visible: root.has-image;
+                }
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 800;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// "Add to playlist": New playlist first, then the user's own playlists.
+export component PlaylistPicker inherits Rectangle {
+    in property <[TileData]> playlists;
+    callback pick(string);
+    callback new-playlist();
+    callback close();
+    background: #000000a0;
+    // A tap outside the sheet closes it.
+    TouchArea {
+        clicked => { root.close(); }
+    }
+    Rectangle {
+        width: 520px;
+        height: root.height - 60px;
+        border-radius: Theme.radius;
+        background: Theme.surface;
+        // Taps inside the sheet don't close it.
+        TouchArea {}
+        Text {
+            x: 20px;
+            y: 18px;
+            text: "Add to playlist";
+            color: Theme.text;
+            font-size: 22px;
+            font-weight: 800;
+        }
+        PickerRow {
+            x: 8px;
+            y: 60px;
+            width: parent.width - 16px;
+            title: "New playlist";
+            is-new: true;
+            clicked => { root.new-playlist(); }
+        }
+        Rectangle {
+            x: 8px;
+            y: 124px;
+            width: parent.width - 16px;
+            height: parent.height - 132px;
+            ListView {
+                for p in root.playlists: PickerRow {
+                    title: p.title;
+                    image: p.image;
+                    has-image: p.has-image;
+                    clicked => { root.pick(p.uri); }
+                }
+            }
+        }
+    }
+}

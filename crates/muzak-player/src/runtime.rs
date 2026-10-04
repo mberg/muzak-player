@@ -223,5 +223,29 @@ mod tests {
                 .as_ref()
                 .is_some_and(|r| !r.playlists.is_empty())
         });
+
+        // Editing: add the playing song to "Bedtime" (fake1) and see Spotify's answer come back.
+        wait_for(&|s| s.account.is_some());
+        let song = "spotify:track:fake-spotify-playlist-fake0-1";
+        inputs
+            .send(Input::Ui(UiAction::OpenCollection(
+                "spotify:playlist:fake1".into(),
+            )))
+            .unwrap();
+        inputs
+            .send(Input::Ui(UiAction::OpenPicker(song.into())))
+            .unwrap();
+        inputs
+            .send(Input::Ui(UiAction::PickPlaylist(
+                "spotify:playlist:fake1".into(),
+            )))
+            .unwrap();
+        wait_for(&|s| {
+            s.tracks
+                .get("spotify:playlist:fake1")
+                .and_then(|slot| slot.data.as_ref())
+                .is_some_and(|tracks| tracks.len() == 13 && tracks[12].uri == song)
+                && !s.tracks["spotify:playlist:fake1"].loading
+        });
     }
 }

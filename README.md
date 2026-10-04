@@ -145,6 +145,26 @@ Check, with the real account:
 - [ ] A playlist owned by someone else says Spotify won't list its songs, and Play still works.
 - [ ] With Wi-Fi off, library matches still show, with a "No internet right now" note.
 
+### 5. Playlists
+
+Editing needs two more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
+
+```bash
+cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
+cp secrets/dev/web-auth.json dev/state/
+```
+
+Check:
+
+- [ ] The plus button on a track row, on Now Playing, and on a search song opens "Add to playlist" with only your own playlists.
+- [ ] Picking one shows "Added to <name>". Adding the same song again shows "Already in <name>".
+- [ ] "New playlist" opens a name field with the keyboard. Save creates it at the top of Playlists with the song in it.
+- [ ] Your own playlists show a pencil next to Back. Someone else's don't.
+- [ ] In edit mode, the minus button removes a song, and dragging the handle on the left moves it.
+- [ ] Rename changes the name everywhere. Delete asks first, then removes the playlist and returns to Playlists.
+- [ ] The Spotify app on your phone shows each change.
+- [ ] With Wi-Fi off, an edit shows "No internet right now" and nothing changes.
+
 ## Testing on the Pi
 
 Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/hardware-checklist.md). In short:

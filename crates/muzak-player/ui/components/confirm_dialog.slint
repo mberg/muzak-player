@@ -1,0 +1,68 @@
+import { Theme } from "../theme.slint";
+
+component DialogButton inherits Rectangle {
+    in property <string> label;
+    in property <color> fill: Theme.surface-hi;
+    in property <color> text-color: Theme.text;
+    callback clicked();
+    height: Theme.touch;
+    border-radius: root.height / 2;
+    background: touch.pressed ? root.fill.darker(0.2) : root.fill;
+    Text {
+        text: root.label;
+        color: root.text-color;
+        font-size: Theme.font-body;
+        font-weight: 800;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component ConfirmDelete inherits Rectangle {
+    in property <string> name;
+    callback confirm();
+    callback cancel();
+    background: #000000a0;
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+    Rectangle {
+        width: 460px;
+        height: 220px;
+        border-radius: Theme.radius;
+        background: Theme.surface;
+        TouchArea {}
+        VerticalLayout {
+            padding: 24px;
+            spacing: 12px;
+            Text {
+                text: "Delete \"" + root.name + "\"?";
+                color: Theme.text;
+                font-size: 22px;
+                font-weight: 800;
+                wrap: word-wrap;
+                overflow: elide;
+            }
+            Text {
+                text: "It will be removed from your Spotify library.";
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                wrap: word-wrap;
+            }
+            Rectangle {}
+            HorizontalLayout {
+                spacing: 12px;
+                DialogButton {
+                    label: "Cancel";
+                    clicked => { root.cancel(); }
+                }
+                DialogButton {
+                    label: "Delete";
+                    fill: Theme.danger;
+                    clicked => { root.confirm(); }
+                }
+            }
+        }
+    }
+}

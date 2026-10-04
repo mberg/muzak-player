@@ -69,6 +69,7 @@ struct Bridge {
     tracks: Rc<VecModel<TrackData>>,
     search_rows: Rc<VecModel<SearchRowData>>,
     artist_albums: Rc<VecModel<TileData>>,
+    picker_playlists: Rc<VecModel<TileData>>,
     last: Option<AppState>,
 }
 
@@ -90,6 +91,8 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
     let artist_albums = Rc::new(VecModel::<TileData>::default());
     window.set_search_rows(ModelRc::from(search_rows.clone()));
     window.set_artist_albums(ModelRc::from(artist_albums.clone()));
+    let picker_playlists = Rc::new(VecModel::<TileData>::default());
+    window.set_picker_playlists(ModelRc::from(picker_playlists.clone()));
     let bridge = Bridge {
         window: window.as_weak(),
         images: Images {
@@ -103,6 +106,7 @@ pub fn install(window: &AppWindow, image_requests: UnboundedSender<String>) {
         tracks,
         search_rows,
         artist_albums,
+        picker_playlists,
         last: None,
     };
     BRIDGE.with(|cell| *cell.borrow_mut() = Some(bridge));
@@ -211,8 +215,41 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     window.on_open_artist(move |uri| s(UiAction::OpenArtist(uri.to_string())));
     let s = send.clone();
     window.on_play_artist(move |uri| s(UiAction::PlayArtist(uri.to_string())));
-    let s = send;
+    let s = send.clone();
     window.on_play_song(move |uri| s(UiAction::PlaySong(uri.to_string())));
+    let s = send.clone();
+    window.on_keyboard_done(move || s(UiAction::KeyboardDone));
+    let s = send.clone();
+    window.on_open_picker(move |uri| s(UiAction::OpenPicker(uri.to_string())));
+    let s = send.clone();
+    window.on_close_picker(move || s(UiAction::ClosePicker));
+    let s = send.clone();
+    window.on_pick_playlist(move |uri| s(UiAction::PickPlaylist(uri.to_string())));
+    let s = send.clone();
+    window.on_new_playlist(move || s(UiAction::NewPlaylist));
+    let s = send.clone();
+    window.on_cancel_name(move || s(UiAction::CancelText));
+    let s = send.clone();
+    window.on_edit_playlist(move |uri| s(UiAction::EditPlaylist(uri.to_string())));
+    let s = send.clone();
+    window.on_finish_editing(move || s(UiAction::FinishEditing));
+    let s = send.clone();
+    window.on_rename_playlist(move || s(UiAction::RenamePlaylist));
+    let s = send.clone();
+    window.on_ask_delete(move || s(UiAction::AskDelete));
+    let s = send.clone();
+    window.on_confirm_delete_playlist(move || s(UiAction::ConfirmDelete));
+    let s = send.clone();
+    window.on_cancel_delete(move || s(UiAction::CancelDelete));
+    let s = send.clone();
+    window.on_remove_track(move |i| s(UiAction::RemoveTrack(i.max(0) as usize)));
+    let s = send;
+    window.on_move_track(move |from, to| {
+        s(UiAction::MoveTrack {
+            from: from.max(0) as usize,
+            to: to.max(0) as usize,
+        })
+    });
 }
 
 impl Bridge {
@@ -247,6 +284,8 @@ impl Bridge {
             w.set_detail(tile_data(&mut self.images, &detail.header));
             sync(&self.tracks, detail.tracks.iter().map(track_data).collect());
             w.set_detail_state(load_state(detail.status));
+            w.set_detail_editable(detail.editable);
+            w.set_detail_editing(detail.editing);
         }
 
         let art = self.images.get(&v.now.image_url);
@@ -274,7 +313,35 @@ impl Bridge {
 
         // Search rows and artist albums are built only while shown, so their covers are
         // requested only then.
-        w.set_keyboard_open(v.search.keyboard);
+        w.set_keyboard_open(v.keyboard);
+        w.set_now_track_uri(v.now.track_uri.as_str().into());
+        w.set_picker_open(v.picker.is_some());
+        if let Some(picker) = &v.picker {
+            let rows = picker
+                .playlists
+                .iter()
+                .map(|t| tile_data(&mut self.images, t))
+                .collect();
+            sync(&self.picker_playlists, rows);
+        }
+        w.set_name_open(v.text_entry.is_some());
+        if let Some(entry) = &v.text_entry {
+            w.set_name_title(entry.title.as_str().into());
+            w.set_name_text(entry.text.as_str().into());
+        }
+        w.set_confirm_delete(
+            v.confirm_delete
+                .as_deref()
+                .map(|name| {
+                    if name.is_empty() {
+                        "this playlist"
+                    } else {
+                        name
+                    }
+                })
+                .unwrap_or_default()
+                .into(),
+        );
         w.set_search_query(v.search.query.as_str().into());
         w.set_search_state(load_state(v.search.status));
         w.set_search_note(v.search.note.as_str().into());
@@ -358,6 +425,7 @@ fn tile_data(images: &mut Images, t: &TileView) -> TileData {
 
 fn track_data(t: &TrackRowView) -> TrackData {
     TrackData {
+        uri: t.uri.as_str().into(),
         title: t.title.as_str().into(),
         artists: t.artists.as_str().into(),
         duration: t.duration.as_str().into(),

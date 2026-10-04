@@ -16,6 +16,7 @@ export component SearchScreen inherits Rectangle {
     callback open(string);
     callback open-artist(string);
     callback play-song(string);
+    callback add-song(string);
     callback clear();
     callback open-keyboard();
     callback close();
@@ -109,6 +110,7 @@ export component SearchScreen inherits Rectangle {
         ListView {
             for row in root.rows: SearchRow {
                 data: row;
+                add => { root.add-song(row.uri); }
                 clicked => {
                     if (row.kind == 1) {
                         root.play-song(row.uri);
