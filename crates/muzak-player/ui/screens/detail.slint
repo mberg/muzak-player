@@ -5,7 +5,6 @@ import { IconButton } from "../components/icon_button.slint";
 import { PillButton } from "../components/pill_button.slint";
 import { TrackRow } from "../components/track_row.slint";
 import { StateMessage } from "../components/state_message.slint";
-import { BackLink } from "../components/back_link.slint";
 
 // A small text button for the bar above the song list.
 component BarButton inherits Rectangle {
@@ -88,10 +87,6 @@ export component DetailScreen inherits Rectangle {
             width: root.art;
             spacing: 10px;
             alignment: start;
-            if root.back-label != "": BackLink {
-                label: root.back-label;
-                clicked => { root.back(); }
-            }
             Rectangle {
                 width: root.art;
                 height: root.art;
@@ -125,12 +120,38 @@ export component DetailScreen inherits Rectangle {
                     overflow: elide;
                     max-height: 52px;
                 }
-                Text {
+                // Inside the artist drill-down the artist's name is the way back to them.
+                if root.back-label == "": Text {
                     text: root.header.subtitle;
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     overflow: elide;
                     visible: root.header.subtitle != "";
+                }
+                if root.back-label != "": Rectangle {
+                    height: artist-link.preferred-height + 8px;
+                    artist-link := HorizontalLayout {
+                        spacing: 2px;
+                        alignment: start;
+                        Image {
+                            source: @image-url("../icons/back.svg");
+                            width: 16px;
+                            height: 16px;
+                            y: (parent.height - self.height) / 2;
+                            colorize: Theme.accent;
+                        }
+                        Text {
+                            text: root.back-label;
+                            color: back-touch.pressed ? Theme.accent.darker(0.2) : Theme.accent;
+                            font-size: Theme.font-small;
+                            font-weight: 800;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    back-touch := TouchArea {
+                        clicked => { root.back(); }
+                    }
                 }
             }
             HorizontalLayout {
