@@ -271,6 +271,7 @@ export component AppWindow inherits Window {
         y: root.height - self.height;
         width: root.width;
         visible: root.keyboard-open;
+        shown: root.keyboard-open;
         key(text) => { root.key-pressed(text); }
         backspace => { root.backspace(); }
         done => { root.keyboard-done(); }

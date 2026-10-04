@@ -32,6 +32,14 @@ export component Keyboard inherits Rectangle {
     callback key(string);
     callback backspace();
     callback done();
+    // Set while the keyboard is on screen. Each time it appears it takes keyboard focus, so a
+    // Mac's physical keyboard types into it; focusing it while hidden does nothing.
+    in property <bool> shown;
+    changed shown => {
+        if (self.shown) {
+            keys.focus();
+        }
+    }
     height: 240px;
     background: Theme.surface;
     // Absorbs taps between keys so nothing underneath reacts.
@@ -56,7 +64,11 @@ export component Keyboard inherits Rectangle {
             accept
         }
     }
-    init => { keys.focus(); }
+    init => {
+        if (self.shown) {
+            keys.focus();
+        }
+    }
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
