@@ -4,8 +4,9 @@
 pub const RATE: usize = 16_000;
 /// Loudness is judged over 20 ms frames.
 const FRAME: usize = RATE / 50;
-/// The request ends after this much quiet once speech started.
-const END_SILENCE: usize = RATE * 8 / 10;
+/// The request ends after this much quiet once speech started. Long enough for the pauses
+/// people make mid-sentence.
+const END_SILENCE: usize = RATE * 12 / 10;
 /// Give up if nobody speaks within this long after the wake word.
 const NO_SPEECH: usize = RATE * 4;
 /// The longest request.
@@ -17,12 +18,13 @@ const PRE_ROLL: usize = RATE;
 /// request ends after this much quiet (the command may already be in the audio from before).
 const PAUSE_AFTER_WAKE: usize = RATE * 2;
 /// Speech must be this much louder than the room was before the wake word...
-const SPEECH_OVER_NOISE: f32 = 2.5;
-/// ...and at least this loud (RMS of samples in -1.0..1.0).
-const MIN_SPEECH: f32 = 0.01;
+const SPEECH_OVER_NOISE: f32 = 3.0;
+/// ...and at least this loud (RMS of samples in -1.0..1.0). A MacBook microphone measured a
+/// quiet room at about 0.0005 and ordinary speech at 0.003-0.015.
+const MIN_SPEECH: f32 = 0.0015;
 /// The room's noise counts for at most this when judging speech, so loud music before the
 /// wake word (which is then turned down) can't hide the request.
-const MAX_NOISE: f32 = 0.02;
+const MAX_NOISE: f32 = 0.002;
 
 /// Spots the wake word in a stream of 16 kHz audio.
 pub trait WakeWord {
@@ -194,9 +196,17 @@ mod tests {
         vec![0.0; (secs * RATE as f32) as usize]
     }
 
+    /// Speech at a level a MacBook microphone measured (RMS about 0.01).
     fn speech(secs: f32) -> Vec<f32> {
         (0..(secs * RATE as f32) as usize)
-            .map(|i| 0.2 * (i as f32 * 0.05).sin())
+            .map(|i| 0.014 * (i as f32 * 0.05).sin())
+            .collect()
+    }
+
+    /// A quiet room (RMS about 0.0005), like the same microphone measured.
+    fn room(secs: f32) -> Vec<f32> {
+        (0..(secs * RATE as f32) as usize)
+            .map(|i| 0.0007 * (i as f32 * 1.3).sin())
             .collect()
     }
 
@@ -225,10 +235,10 @@ mod tests {
         // A short pause mid-sentence doesn't end it.
         assert!(l.push(&silence(0.4)).is_empty());
         assert!(l.push(&speech(0.5)).is_empty());
-        let heard = l.push(&silence(1.0));
+        let heard = l.push(&silence(1.4));
         // A second from before the wake word, 2 s of speech, the pause, and the quiet after.
         assert!(
-            (3.6..4.4).contains(&secs(request(&heard))),
+            (4.3..4.9).contains(&secs(request(&heard))),
             "{}",
             secs(request(&heard))
         );
@@ -259,7 +269,25 @@ mod tests {
         l.push(&wake());
         assert!(l.push(&silence(1.5)).is_empty(), "waiting for the request");
         assert!(l.push(&speech(1.0)).is_empty());
-        let heard = l.push(&silence(1.0));
+        let heard = l.push(&silence(1.4));
+        assert!(secs(request(&heard)) > 3.0);
+    }
+
+    #[test]
+    fn soft_speech_and_pauses_mid_sentence_do_not_end_the_request() {
+        let mut l = Listener::new(FakeWake);
+        l.push(&room(2.0));
+        l.listen_now();
+        l.push(&speech(1.0));
+        // Softer words, then a breath.
+        let soft: Vec<f32> = speech(0.6).iter().map(|s| s * 0.35).collect();
+        assert!(l.push(&soft).is_empty());
+        assert!(
+            l.push(&room(0.9)).is_empty(),
+            "a pause mid-sentence isn't the end"
+        );
+        assert!(l.push(&speech(0.8)).is_empty());
+        let heard = l.push(&room(1.4));
         assert!(secs(request(&heard)) > 3.0);
     }
 
@@ -272,8 +300,8 @@ mod tests {
         assert_eq!(l.push(&silence(0.2)), [Heard::Nothing]);
         l.listen_now();
         l.push(&speech(1.0));
-        let heard = l.push(&silence(1.0));
-        assert!((1.7..1.9).contains(&secs(request(&heard))));
+        let heard = l.push(&silence(1.4));
+        assert!((2.1..2.3).contains(&secs(request(&heard))));
     }
 
     #[test]
@@ -288,11 +316,12 @@ mod tests {
     fn loud_music_before_the_wake_word_does_not_hide_the_request() {
         let mut l = Listener::new(FakeWake);
         // Loud music for a while, then the wake word; the music is turned down to a hum.
-        l.push(&speech(5.0));
+        let music: Vec<f32> = speech(5.0).iter().map(|s| s * 4.0).collect();
+        l.push(&music);
         l.push(&wake());
-        let hum: Vec<f32> = speech(1.0).iter().map(|s| s * 0.05).collect();
+        let hum: Vec<f32> = speech(1.0).iter().map(|s| s * 0.1).collect();
         assert!(l.push(&hum).is_empty());
-        let request: Vec<f32> = speech(1.0).iter().map(|s| s * 0.4).collect();
+        let request = speech(1.0);
         l.push(&request);
         let heard = l.push(&hum.repeat(2));
         assert!(matches!(heard.as_slice(), [Heard::Request(_)]), "{heard:?}");
