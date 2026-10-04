@@ -45,6 +45,7 @@ export component AppWindow inherits Window {
     in property <int> display-mode;
     in property <string> clock;
     in property <bool> auth-needed;
+    in property <string> account;
 
     callback show-section(int);
     callback open-collection(string);
@@ -68,6 +69,7 @@ export component AppWindow inherits Window {
         y: 0;
         height: root.height;
         selected: root.section;
+        account: root.account;
         select(i) => { root.show-section(i); }
     }
     GridScreen {

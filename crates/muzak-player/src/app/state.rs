@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::model::{Collection, Repeat, Section, Track};
+use crate::model::{Account, Collection, Repeat, Section, Track};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
@@ -76,4 +76,6 @@ pub struct AppState {
     pub online: bool,
     pub auth_needed: bool,
     pub speaker_connected: bool,
+    /// The account the library comes from, once known.
+    pub account: Option<Account>,
 }

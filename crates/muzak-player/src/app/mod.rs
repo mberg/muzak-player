@@ -53,6 +53,7 @@ impl Core {
             online: true,
             auth_needed: false,
             speaker_connected: true,
+            account: None,
         };
         let mut core = Core {
             state,
@@ -65,6 +66,7 @@ impl Core {
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
             core.request_section(section, &mut fx);
         }
+        fx.push(Effect::Library(LibraryRequest::Account));
         fx.push(Effect::Display(DisplayMode::Active));
         (core, fx)
     }
@@ -252,6 +254,7 @@ impl Core {
                 slot.failed = slot.data.is_none();
                 self.on_failure(reason);
             }
+            LibraryUpdate::Account(account) => self.state.account = Some(account),
         }
     }
 
@@ -389,6 +392,9 @@ impl Core {
             });
         if let Some(uri) = open_detail {
             self.request_tracks(&uri, fx);
+        }
+        if self.state.account.is_none() {
+            fx.push(Effect::Library(LibraryRequest::Account));
         }
     }
 }

@@ -71,6 +71,8 @@ pub struct View {
     pub banner: Option<String>,
     pub display: DisplayMode,
     pub auth_needed: bool,
+    /// Small label in the rail naming the signed-in account; empty until known.
+    pub account: String,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -109,6 +111,11 @@ pub fn build(state: &AppState) -> View {
         banner: banner(state),
         display: state.display,
         auth_needed: state.auth_needed,
+        account: state
+            .account
+            .as_ref()
+            .map(|a| a.name.clone())
+            .unwrap_or_default(),
     }
 }
 

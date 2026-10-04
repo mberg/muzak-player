@@ -83,6 +83,7 @@ cargo run -p muzak-setup -- probe --state-dir secrets/dev
 
 - [ ] Each line shows `HTTP 200`. At least one of the two "playlist items" lines must be 200.
 - [ ] The last line reads `All endpoints work with librespot tokens.`
+- [ ] The first lines name the library and playback accounts, and they match. To check which account a device uses later, look at the small label at the bottom of the left rail.
 
 **If probe fails** with a 403 from Spotify's token service ("Invalid request") or 401/403 on the endpoints, Spotify is refusing to give the librespot session a Web API token. Playback still works, but the library has to come through your own Spotify developer app instead. This is "Contingency A" in the plan:
 

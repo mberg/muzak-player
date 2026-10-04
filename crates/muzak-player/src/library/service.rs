@@ -8,7 +8,9 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use super::LibrarySource;
 use super::cache::{DiskCache, tracks_key};
 use crate::app::{Input, LibraryRequest, LibraryUpdate};
-use crate::model::{Collection, Track};
+use crate::model::{Account, Collection, Track};
+
+const ACCOUNT_KEY: &str = "account";
 
 pub fn spawn_library<S: LibrarySource>(
     source: Arc<S>,
@@ -93,6 +95,22 @@ async fn serve<S: LibrarySource>(
                         reason: e.reason(),
                     });
                 }
+            }
+        }
+        LibraryRequest::Account => {
+            if let Some(account) = cache.read::<Account>(ACCOUNT_KEY) {
+                send(LibraryUpdate::Account(account));
+            }
+            match source.account().await {
+                Ok(account) => {
+                    if let Err(e) = cache.write(ACCOUNT_KEY, &account) {
+                        tracing::warn!("cache write failed for {ACCOUNT_KEY}: {e}");
+                    }
+                    tracing::info!("library account: {} ({})", account.name, account.id);
+                    send(LibraryUpdate::Account(account));
+                }
+                // Only the rail label depends on this, so a failure is just logged.
+                Err(e) => tracing::warn!("loading the account failed: {e}"),
             }
         }
     }

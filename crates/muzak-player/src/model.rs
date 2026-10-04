@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Pseudo-collection URI for the kid's Liked Songs. The player maps it to
+/// Pseudo-collection URI for the account's Liked Songs. The player maps it to
 /// `spotify:user:<username>:collection`, the library to `/me/tracks`.
 pub const LIKED_URI: &str = "muzak:liked";
 
@@ -77,6 +77,14 @@ pub struct Track {
     pub album: String,
     pub image_url: Option<String>,
     pub duration_ms: u32,
+}
+
+/// The Spotify account the library is read from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Account {
+    pub id: String,
+    /// Spotify display name; falls back to the ID when the account has none.
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
