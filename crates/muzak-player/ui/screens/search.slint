@@ -1,0 +1,121 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { SearchRowData, LoadState } from "../types.slint";
+import { SearchRow } from "../components/search_row.slint";
+import { StateMessage } from "../components/state_message.slint";
+
+export component SearchScreen inherits Rectangle {
+    in property <string> query;
+    in property <bool> keyboard;
+    in property <[SearchRowData]> rows;
+    in property <LoadState> state;
+    in property <string> note;
+    // Height the docked keyboard covers at the bottom of this screen.
+    in property <length> keyboard-height;
+    callback open(string);
+    callback open-artist(string);
+    callback play-song(string);
+    callback clear();
+    callback open-keyboard();
+    property <length> bar: 76px;
+    property <length> results-height: root.height - root.bar - (root.keyboard ? root.keyboard-height : 0px);
+    background: Theme.bg;
+    Rectangle {
+        x: 16px;
+        y: 12px;
+        width: parent.width - 32px;
+        height: 52px;
+        border-radius: 26px;
+        background: Theme.surface;
+        border-width: root.keyboard ? 2px : 0px;
+        border-color: Theme.accent;
+        TouchArea {
+            clicked => { root.open-keyboard(); }
+        }
+        HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 6px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    source: @image-url("../icons/search.svg");
+                    width: 24px;
+                    height: 24px;
+                    colorize: Theme.text-dim;
+                }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: root.query == "" ? "Search songs, albums, artists" : root.query;
+                color: root.query == "" ? Theme.text-dim : Theme.text;
+                font-size: Theme.font-body;
+                font-weight: root.query == "" ? 400 : 800;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.query != "": Rectangle {
+                width: 44px;
+                clear-touch := TouchArea {
+                    clicked => { root.clear(); }
+                }
+                Image {
+                    source: @image-url("../icons/close.svg");
+                    width: 22px;
+                    height: 22px;
+                    colorize: clear-touch.pressed ? Theme.text : Theme.text-dim;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 8px;
+        y: root.bar;
+        width: parent.width - 16px;
+        height: root.results-height;
+        ListView {
+            for row in root.rows: SearchRow {
+                data: row;
+                clicked => {
+                    if (row.kind == 1) {
+                        root.play-song(row.uri);
+                    } else if (row.kind == 3) {
+                        root.open-artist(row.uri);
+                    } else {
+                        root.open(row.uri);
+                    }
+                }
+            }
+        }
+        if root.state != LoadState.ready: StateMessage {
+            width: parent.width;
+            height: parent.height;
+            state: root.state;
+            empty-text: "Nothing found";
+            failed-text: "Can't search right now";
+        }
+        if root.query == "" && root.rows.length == 0: Text {
+            text: "Find songs, albums, artists and playlists";
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+        }
+        if root.note != "": Rectangle {
+            y: parent.height - 36px;
+            height: 32px;
+            width: self.preferred-width;
+            x: (parent.width - self.width) / 2;
+            border-radius: 16px;
+            background: Theme.surface-hi;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                Text {
+                    text: root.note;
+                    color: Theme.text-dim;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

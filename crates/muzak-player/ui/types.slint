@@ -13,6 +13,16 @@ export struct TrackData {
     current: bool,
 }
 
-export enum ScreenKind { grid, detail, now-playing }
+export enum ScreenKind { grid, detail, now-playing, search, artist }
 
-export enum LoadState { loading, empty, failed, ready }
+export enum LoadState { loading, empty, failed, forbidden, ready }
+
+// kind: 0 header, 1 song, 2 album, 3 artist, 4 playlist.
+export struct SearchRowData {
+    kind: int,
+    title: string,
+    subtitle: string,
+    image: image,
+    has-image: bool,
+    uri: string,
+}

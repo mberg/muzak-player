@@ -14,6 +14,9 @@ use crate::model::{LIKED_URI, Section, Track};
 const NOTICE_MS: u64 = 4_000;
 /// Identical play requests closer together than this are treated as one.
 const DOUBLE_TAP_MS: u64 = 1_000;
+/// A search goes out once typing has paused this long.
+const SEARCH_PAUSE_MS: u64 = 400;
+const MAX_QUERY_CHARS: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct CoreConfig {
@@ -64,6 +67,9 @@ impl Core {
             auth_needed: false,
             speaker_connected: true,
             account: None,
+            search: Default::default(),
+            keyboard_open: false,
+            artist_albums: Default::default(),
         };
         let mut core = Core {
             state,
@@ -96,13 +102,80 @@ impl Core {
             Input::Library(update) => self.on_library(update),
             Input::Speaker { connected } => self.state.speaker_connected = connected,
             Input::AuthInvalid => self.state.auth_needed = true,
-            Input::Tick => self.on_tick(now_ms, &mut fx),
+            Input::Tick => {
+                self.on_tick(now_ms, &mut fx);
+                self.maybe_search(now_ms, &mut fx);
+            }
+            Input::SearchTick => self.maybe_search(now_ms, &mut fx),
+        }
+        if self.state.screen != Screen::Search {
+            self.state.keyboard_open = false;
         }
         fx
     }
 
+    /// The runtime sends `Input::SearchTick` only while this is true.
+    pub fn wants_search_tick(&self) -> bool {
+        self.state.screen == Screen::Search
+    }
+
+    fn maybe_search(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let search = &mut self.state.search;
+        if search.query == search.sent || now_ms.saturating_sub(search.edited_ms) < SEARCH_PAUSE_MS
+        {
+            return;
+        }
+        search.sent = search.query.clone();
+        let query = search.query.trim().to_string();
+        if query.is_empty() {
+            search.results = Slot::default();
+            return;
+        }
+        search.results.loading = true;
+        fx.push(Effect::Library(LibraryRequest::Search(query)));
+    }
+
+    fn edit_query(&mut self, now_ms: u64, change: impl FnOnce(&mut String)) {
+        if self.state.screen != Screen::Search {
+            return;
+        }
+        let search = &mut self.state.search;
+        change(&mut search.query);
+        if let Some((cut, _)) = search.query.char_indices().nth(MAX_QUERY_CHARS) {
+            search.query.truncate(cut);
+        }
+        search.edited_ms = now_ms;
+    }
+
+    /// Finds a song by URI in search results or any loaded track list.
+    fn find_track(&self, uri: &str) -> Option<Track> {
+        let from_search = self
+            .state
+            .search
+            .results
+            .data
+            .iter()
+            .flat_map(|r| r.tracks.iter());
+        let from_lists = self
+            .state
+            .tracks
+            .values()
+            .filter_map(|slot| slot.data.as_ref())
+            .flat_map(|tracks| tracks.iter());
+        from_search
+            .chain(from_lists)
+            .find(|t| t.uri == uri)
+            .cloned()
+    }
+
     fn on_ui(&mut self, action: UiAction, now_ms: u64, fx: &mut Vec<Effect>) {
         match action {
+            UiAction::ShowSection(Section::Search) => {
+                self.state.section = Section::Search;
+                self.state.back_stack.clear();
+                self.state.screen = Screen::Search;
+                self.state.keyboard_open = true;
+            }
             UiAction::ShowSection(Section::Liked) => {
                 self.state.section = Section::Liked;
                 self.state.back_stack.clear();
@@ -201,6 +274,42 @@ impl Core {
                 fx.push(Effect::Player(PlayerCommand::SetRepeat(repeat)));
             }
             UiAction::Touch => {}
+            UiAction::KeyPressed(text) => self.edit_query(now_ms, |q| q.push_str(&text)),
+            UiAction::Backspace => self.edit_query(now_ms, |q| {
+                q.pop();
+            }),
+            UiAction::ClearSearch => {
+                self.edit_query(now_ms, String::clear);
+                // Clearing is deliberate, so there is no reason to wait.
+                self.maybe_search(u64::MAX, fx);
+            }
+            UiAction::OpenKeyboard => {
+                self.state.keyboard_open = self.state.screen == Screen::Search;
+            }
+            UiAction::CloseKeyboard => self.state.keyboard_open = false,
+            UiAction::OpenArtist(uri) => {
+                self.navigate(Screen::Artist(uri.clone()));
+                self.state
+                    .artist_albums
+                    .entry(uri.clone())
+                    .or_default()
+                    .loading = true;
+                fx.push(Effect::Library(LibraryRequest::ArtistAlbums {
+                    artist_uri: uri,
+                }));
+            }
+            UiAction::PlayArtist(uri) => {
+                self.start_playback(uri, Start::Shuffled, false, now_ms, fx);
+            }
+            UiAction::PlaySong(uri) => {
+                let Some(track) = self.find_track(&uri) else {
+                    return;
+                };
+                // Play it in its album so music continues afterwards.
+                let context = track.album_uri.clone().unwrap_or_else(|| track.uri.clone());
+                let shuffle = self.state.playback.shuffle;
+                self.start_playback(context, Start::Track(track), shuffle, now_ms, fx);
+            }
         }
     }
 
@@ -270,6 +379,41 @@ impl Core {
                 reason,
             } => {
                 let slot = self.state.tracks.entry(collection_uri).or_default();
+                slot.loading = false;
+                if reason == FailReason::Forbidden {
+                    slot.forbidden = slot.data.is_none();
+                } else {
+                    slot.failed = slot.data.is_none();
+                }
+                self.on_failure(reason);
+            }
+            LibraryUpdate::SearchResults { query, results } => {
+                if query == self.state.search.sent.trim() {
+                    let slot = &mut self.state.search.results;
+                    slot.data = Some(Arc::new(results));
+                    slot.loading = false;
+                    slot.failed = false;
+                    self.state.online = true;
+                }
+            }
+            LibraryUpdate::SearchFailed { query, reason } => {
+                if query == self.state.search.sent.trim() {
+                    let slot = &mut self.state.search.results;
+                    slot.data = None;
+                    slot.loading = false;
+                    slot.failed = true;
+                    self.on_failure(reason);
+                }
+            }
+            LibraryUpdate::ArtistAlbums { artist_uri, albums } => {
+                let slot = self.state.artist_albums.entry(artist_uri).or_default();
+                slot.data = Some(Arc::new(albums));
+                slot.loading = false;
+                slot.failed = false;
+                self.state.online = true;
+            }
+            LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
+                let slot = self.state.artist_albums.entry(artist_uri).or_default();
                 slot.loading = false;
                 slot.failed = slot.data.is_none();
                 self.on_failure(reason);

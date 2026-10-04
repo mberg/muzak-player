@@ -1,0 +1,116 @@
+import { Theme } from "../theme.slint";
+
+component KeyCap inherits Rectangle {
+    in property <string> label;
+    in property <string> value: root.label;
+    in property <image> icon;
+    in property <bool> special: false;
+    callback tapped(string);
+    border-radius: 8px;
+    background: touch.pressed ? Theme.surface-hi : (root.special ? Theme.bg : #3a3555);
+    if root.label != "": Text {
+        text: root.label;
+        color: Theme.text;
+        font-size: 22px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.label == "": Image {
+        source: root.icon;
+        width: 28px;
+        height: 28px;
+        colorize: Theme.text;
+    }
+    touch := TouchArea {
+        clicked => { root.tapped(root.value); }
+    }
+}
+
+// On-screen keyboard. On a Mac the physical keyboard types into it too.
+export component Keyboard inherits Rectangle {
+    callback key(string);
+    callback backspace();
+    callback done();
+    height: 240px;
+    background: Theme.surface;
+    // Absorbs taps between keys so nothing underneath reacts.
+    TouchArea {}
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Backspace) {
+                root.backspace();
+                return accept;
+            }
+            if (event.text == Key.Return || event.text == Key.Escape) {
+                root.done();
+                return accept;
+            }
+            if (event.modifiers.control || event.modifiers.meta || event.text == Key.Tab
+                || event.text == Key.LeftArrow || event.text == Key.RightArrow
+                || event.text == Key.UpArrow || event.text == Key.DownArrow
+                || event.text == Key.Delete || event.text == "") {
+                return reject;
+            }
+            root.key(event.text);
+            accept
+        }
+    }
+    init => { keys.focus(); }
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 6px;
+            for k in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]: KeyCap {
+                label: k;
+                tapped(v) => { root.key(v); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            for k in ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]: KeyCap {
+                label: k;
+                tapped(v) => { root.key(v); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            padding-left: 36px;
+            padding-right: 36px;
+            for k in ["a", "s", "d", "f", "g", "h", "j", "k", "l"]: KeyCap {
+                label: k;
+                tapped(v) => { root.key(v); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            padding-left: 36px;
+            for k in ["z", "x", "c", "v", "b", "n", "m", "'", "&"]: KeyCap {
+                label: k;
+                tapped(v) => { root.key(v); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            KeyCap {
+                horizontal-stretch: 2;
+                special: true;
+                icon: @image-url("../icons/backspace.svg");
+                tapped => { root.backspace(); }
+            }
+            KeyCap {
+                horizontal-stretch: 6;
+                label: "space";
+                value: " ";
+                tapped(v) => { root.key(v); }
+            }
+            KeyCap {
+                horizontal-stretch: 2;
+                special: true;
+                label: "Done";
+                tapped => { root.done(); }
+            }
+        }
+    }
+}

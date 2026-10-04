@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::{FetchError, LibrarySource};
 use crate::model::{
-    Account, Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection,
+    Account, Collection, CollectionKind, LIKED_URI, SearchResults, Section, Track, liked_collection,
 };
 
 pub struct FakeCatalog {
@@ -66,6 +66,13 @@ impl FakeCatalog {
     }
 
     pub fn tracks_for(&self, uri: &str) -> Vec<Track> {
+        if uri == fake_artist().uri {
+            return self
+                .albums
+                .iter()
+                .flat_map(|a| self.tracks_for(&a.uri))
+                .collect();
+        }
         self.tracks.get(uri).cloned().unwrap_or_default()
     }
 }
@@ -87,6 +94,17 @@ fn fake_tracks(collection_uri: &str, collection: &str, n: u32) -> Vec<Track> {
             album_uri: Some(collection_uri.to_string()),
         })
         .collect()
+}
+
+/// The one artist in the fake catalog; every fake song is by it.
+pub fn fake_artist() -> Collection {
+    Collection {
+        uri: "spotify:artist:fake".into(),
+        kind: CollectionKind::Artist,
+        name: "The Fake Band".into(),
+        subtitle: "Artist".into(),
+        image_url: None,
+    }
 }
 
 pub struct FakeSource {
@@ -119,6 +137,47 @@ impl LibrarySource for FakeSource {
     async fn tracks(&self, collection_uri: &str) -> Result<Vec<Track>, FetchError> {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(self.catalog.tracks_for(collection_uri))
+    }
+
+    async fn search(&self, query: &str) -> Result<SearchResults, FetchError> {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let q = query.to_lowercase();
+        let hit = |name: &str| name.to_lowercase().contains(&q);
+        let collections = self.catalog.playlists.iter().chain(&self.catalog.albums);
+        let tracks = collections
+            .clone()
+            .flat_map(|c| self.catalog.tracks_for(&c.uri))
+            .filter(|t| hit(&t.name))
+            .take(20)
+            .collect();
+        let artist = fake_artist();
+        Ok(SearchResults {
+            tracks,
+            artists: if hit(&artist.name) {
+                vec![artist]
+            } else {
+                vec![]
+            },
+            albums: self
+                .catalog
+                .albums
+                .iter()
+                .filter(|c| hit(&c.name))
+                .cloned()
+                .collect(),
+            playlists: self
+                .catalog
+                .playlists
+                .iter()
+                .filter(|c| hit(&c.name))
+                .cloned()
+                .collect(),
+        })
+    }
+
+    async fn artist_albums(&self, _artist_uri: &str) -> Result<Vec<Collection>, FetchError> {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok(self.catalog.albums.clone())
     }
 
     async fn account(&self) -> Result<Account, FetchError> {

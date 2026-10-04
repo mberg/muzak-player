@@ -3,13 +3,19 @@
 use std::sync::Arc;
 
 use crate::app::{AppState, DisplayMode, Notice, PlayStatus, Screen, Slot};
-use crate::model::{Collection, LIKED_URI, Repeat, Section, liked_collection};
+use crate::library::matching::matches;
+use crate::model::{Collection, LIKED_URI, Repeat, Section, Track, liked_collection};
+
+/// Library matches shown per kind before the catalog results.
+const LIBRARY_MATCHES: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenView {
     Grid,
     Detail,
     NowPlaying,
+    Search,
+    Artist,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,7 +23,45 @@ pub enum LoadStatus {
     Loading,
     Empty,
     Failed,
+    /// Spotify won't list it for this app, though playing it works.
+    Forbidden,
     Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowKind {
+    Header,
+    Song,
+    Album,
+    Artist,
+    Playlist,
+}
+
+/// One line of search results: a group header or a result.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchRowView {
+    pub kind: RowKind,
+    pub title: String,
+    pub subtitle: String,
+    pub image_url: Option<String>,
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchView {
+    pub query: String,
+    pub keyboard: bool,
+    pub rows: Vec<SearchRowView>,
+    pub status: LoadStatus,
+    /// Shown under library matches when the Spotify search could not run.
+    pub note: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtistView {
+    pub header: TileView,
+    pub albums: Vec<TileView>,
+    pub status: LoadStatus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,6 +117,8 @@ pub struct View {
     pub auth_needed: bool,
     /// Small label in the rail naming the signed-in account; empty until known.
     pub account: String,
+    pub search: SearchView,
+    pub artist: Option<ArtistView>,
 }
 
 pub fn fmt_ms(ms: u32) -> String {
@@ -85,10 +131,12 @@ pub fn build(state: &AppState) -> View {
         Screen::Grid(_) => ScreenView::Grid,
         Screen::Detail(_) => ScreenView::Detail,
         Screen::NowPlaying => ScreenView::NowPlaying,
+        Screen::Search => ScreenView::Search,
+        Screen::Artist(_) => ScreenView::Artist,
     };
     let grid_section = match state.screen {
         Screen::Grid(section) => section,
-        _ if state.section == Section::Liked => Section::Playlists,
+        _ if matches!(state.section, Section::Liked | Section::Search) => Section::Playlists,
         _ => state.section,
     };
     let grid_slot = state.sections.get(&grid_section);
@@ -107,7 +155,7 @@ pub fn build(state: &AppState) -> View {
         grid_status: status(grid_slot),
         detail: detail(state),
         now: now(state),
-        mini_visible: has_playback && screen != ScreenView::NowPlaying,
+        mini_visible: has_playback && screen != ScreenView::NowPlaying && !state.keyboard_open,
         banner: banner(state),
         display: state.display,
         auth_needed: state.auth_needed,
@@ -116,6 +164,163 @@ pub fn build(state: &AppState) -> View {
             .as_ref()
             .map(|a| a.name.clone())
             .unwrap_or_default(),
+        search: search(state),
+        artist: artist(state),
+    }
+}
+
+fn row(kind: RowKind, c: &Collection) -> SearchRowView {
+    SearchRowView {
+        kind,
+        title: c.name.clone(),
+        subtitle: c.subtitle.clone(),
+        image_url: c.image_url.clone(),
+        uri: c.uri.clone(),
+    }
+}
+
+fn song_row(t: &Track) -> SearchRowView {
+    SearchRowView {
+        kind: RowKind::Song,
+        title: t.name.clone(),
+        subtitle: t.artists.clone(),
+        image_url: t.image_url.clone(),
+        uri: t.uri.clone(),
+    }
+}
+
+fn header_row(title: &str) -> SearchRowView {
+    SearchRowView {
+        kind: RowKind::Header,
+        title: title.into(),
+        subtitle: String::new(),
+        image_url: None,
+        uri: String::new(),
+    }
+}
+
+fn section_items(state: &AppState, section: Section) -> &[Collection] {
+    state
+        .sections
+        .get(&section)
+        .and_then(|slot| slot.data.as_deref())
+        .map_or(&[], Vec::as_slice)
+}
+
+/// Matches from the user's own playlists, saved albums and Liked Songs.
+fn library_rows(state: &AppState, query: &str) -> Vec<SearchRowView> {
+    let mut rows = Vec::new();
+    let liked = state
+        .tracks
+        .get(LIKED_URI)
+        .and_then(|slot| slot.data.as_deref())
+        .map_or(&[][..], Vec::as_slice);
+    rows.extend(
+        liked
+            .iter()
+            .filter(|t| matches(&format!("{} {}", t.name, t.artists), query))
+            .take(LIBRARY_MATCHES)
+            .map(song_row),
+    );
+    rows.extend(
+        section_items(state, Section::Albums)
+            .iter()
+            .filter(|c| matches(&format!("{} {}", c.name, c.subtitle), query))
+            .take(LIBRARY_MATCHES)
+            .map(|c| row(RowKind::Album, c)),
+    );
+    rows.extend(
+        section_items(state, Section::Playlists)
+            .iter()
+            .filter(|c| matches(&c.name, query))
+            .take(LIBRARY_MATCHES)
+            .map(|c| row(RowKind::Playlist, c)),
+    );
+    rows
+}
+
+fn search(state: &AppState) -> SearchView {
+    let s = &state.search;
+    let query = s.query.trim();
+    let mut rows = Vec::new();
+    let library = library_rows(state, query);
+    let has_library = !library.is_empty();
+    if has_library {
+        rows.push(header_row("In your library"));
+        rows.extend(library);
+    }
+    // Catalog results count only when they belong to what is typed now.
+    let current = !query.is_empty() && s.sent.trim() == query;
+    let catalog = s.results.data.as_ref().filter(|_| current);
+    if let Some(found) = catalog {
+        let shown: std::collections::HashSet<String> = rows.iter().map(|r| r.uri.clone()).collect();
+        let fresh = |r: &SearchRowView| !shown.contains(&r.uri);
+        let catalog_rows: Vec<SearchRowView> = found
+            .tracks
+            .iter()
+            .map(song_row)
+            .chain(found.artists.iter().map(|c| row(RowKind::Artist, c)))
+            .chain(found.albums.iter().map(|c| row(RowKind::Album, c)))
+            .chain(found.playlists.iter().map(|c| row(RowKind::Playlist, c)))
+            .filter(fresh)
+            .collect();
+        if !catalog_rows.is_empty() {
+            rows.push(header_row("On Spotify"));
+            rows.extend(catalog_rows);
+        }
+    }
+    let catalog_failed = current && s.results.failed;
+    let status = if query.is_empty() || !rows.is_empty() {
+        LoadStatus::Ready
+    } else if catalog_failed {
+        LoadStatus::Failed
+    } else if s.results.loading || !current {
+        LoadStatus::Loading
+    } else {
+        LoadStatus::Empty
+    };
+    let note = match (catalog_failed && has_library, state.online) {
+        (false, _) => String::new(),
+        (true, true) => "Can't search Spotify right now".into(),
+        (true, false) => "No internet right now".into(),
+    };
+    SearchView {
+        query: s.query.clone(),
+        keyboard: state.keyboard_open,
+        rows,
+        status,
+        note,
+    }
+}
+
+fn artist(state: &AppState) -> Option<ArtistView> {
+    let uri = std::iter::once(&state.screen)
+        .chain(state.back_stack.iter().rev())
+        .find_map(|screen| match screen {
+            Screen::Artist(uri) => Some(uri.clone()),
+            _ => None,
+        })?;
+    let header = find_collection(state, &uri)
+        .map(|c| tile(&c))
+        .unwrap_or_else(|| blank_tile(&uri));
+    let slot = state.artist_albums.get(&uri);
+    let albums = slot
+        .and_then(|s| s.data.as_ref())
+        .map(|albums| albums.iter().map(tile).collect())
+        .unwrap_or_default();
+    Some(ArtistView {
+        header,
+        albums,
+        status: status(slot),
+    })
+}
+
+fn blank_tile(uri: &str) -> TileView {
+    TileView {
+        uri: uri.to_string(),
+        title: String::new(),
+        subtitle: String::new(),
+        image_url: None,
     }
 }
 
@@ -134,6 +339,9 @@ fn status<T>(slot: Option<&Slot<Vec<T>>>) -> LoadStatus {
             data: Some(data), ..
         }) if data.is_empty() => LoadStatus::Empty,
         Some(Slot { data: Some(_), .. }) => LoadStatus::Ready,
+        Some(Slot {
+            forbidden: true, ..
+        }) => LoadStatus::Forbidden,
         Some(Slot { failed: true, .. }) => LoadStatus::Failed,
         _ => LoadStatus::Loading,
     }
@@ -143,11 +351,21 @@ fn find_collection(state: &AppState, uri: &str) -> Option<Collection> {
     if uri == LIKED_URI {
         return Some(liked_collection());
     }
-    state
+    let from_sections = state
         .sections
         .values()
+        .chain(state.artist_albums.values())
         .filter_map(|slot| slot.data.as_ref())
-        .flat_map(|items: &Arc<Vec<Collection>>| items.iter())
+        .flat_map(|items: &Arc<Vec<Collection>>| items.iter());
+    let from_search = state.search.results.data.iter().flat_map(|found| {
+        found
+            .albums
+            .iter()
+            .chain(&found.playlists)
+            .chain(&found.artists)
+    });
+    from_sections
+        .chain(from_search)
         .find(|c| c.uri == uri)
         .cloned()
 }
@@ -161,12 +379,7 @@ fn detail(state: &AppState) -> Option<DetailView> {
         })?;
     let header = find_collection(state, &uri)
         .map(|c| tile(&c))
-        .unwrap_or(TileView {
-            uri: uri.clone(),
-            title: String::new(),
-            subtitle: String::new(),
-            image_url: None,
-        });
+        .unwrap_or_else(|| blank_tile(&uri));
     let slot = state.tracks.get(&uri);
     let current_uri = state.playback.track.as_ref().map(|t| t.uri.as_str());
     let tracks = slot
@@ -413,5 +626,168 @@ mod tests {
             build(c.state()).banner.as_deref(),
             Some("No internet right now")
         );
+    }
+
+    // ---- Search ----
+
+    fn search_for(c: &mut crate::app::Core, query: &str) {
+        c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+        c.handle(ui(UiAction::KeyPressed(query.into())), 0);
+        c.handle(Input::SearchTick, 1_000);
+    }
+
+    fn catalog(c: &mut crate::app::Core, query: &str, results: crate::model::SearchResults) {
+        c.handle(
+            Input::Library(LibraryUpdate::SearchResults {
+                query: query.into(),
+                results,
+            }),
+            1_000,
+        );
+    }
+
+    fn kinds(v: &View) -> Vec<(RowKind, String)> {
+        v.search
+            .rows
+            .iter()
+            .map(|r| (r.kind, r.title.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn library_matches_come_first_and_are_not_repeated() {
+        let mut c = core();
+        c.handle(
+            Input::Library(LibraryUpdate::Section {
+                section: Section::Playlists,
+                items: vec![playlist(1), playlist(2)],
+            }),
+            0,
+        );
+        search_for(&mut c, "playlist 1");
+        catalog(
+            &mut c,
+            "playlist 1",
+            crate::model::SearchResults {
+                playlists: vec![playlist(1), playlist(3)],
+                ..Default::default()
+            },
+        );
+        let v = build(c.state());
+        assert_eq!(
+            kinds(&v),
+            [
+                (RowKind::Header, "In your library".to_string()),
+                (RowKind::Playlist, "Playlist 1".to_string()),
+                (RowKind::Header, "On Spotify".to_string()),
+                (RowKind::Playlist, "Playlist 3".to_string()),
+            ]
+        );
+        assert_eq!(v.search.status, LoadStatus::Ready);
+    }
+
+    #[test]
+    fn liked_songs_match_on_title_or_artist() {
+        let mut c = core();
+        with_tracks(&mut c, LIKED_URI, 3);
+        search_for(&mut c, "band song 2");
+        let v = build(c.state());
+        assert_eq!(v.search.rows[1].kind, RowKind::Song);
+        assert_eq!(v.search.rows[1].title, "Song 2");
+    }
+
+    #[test]
+    fn search_status_is_loading_then_empty() {
+        let mut c = core();
+        search_for(&mut c, "zzz");
+        assert_eq!(build(c.state()).search.status, LoadStatus::Loading);
+        catalog(&mut c, "zzz", Default::default());
+        assert_eq!(build(c.state()).search.status, LoadStatus::Empty);
+    }
+
+    #[test]
+    fn empty_query_is_ready_with_no_rows() {
+        let mut c = core();
+        c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+        let v = build(c.state());
+        assert_eq!(v.screen, ScreenView::Search);
+        assert!(v.search.rows.is_empty());
+        assert_eq!(v.search.status, LoadStatus::Ready);
+        assert!(v.search.keyboard);
+    }
+
+    #[test]
+    fn failed_search_keeps_library_rows_with_a_note() {
+        let mut c = core();
+        c.handle(
+            Input::Library(LibraryUpdate::Section {
+                section: Section::Playlists,
+                items: vec![playlist(1)],
+            }),
+            0,
+        );
+        search_for(&mut c, "playlist");
+        c.handle(
+            Input::Library(LibraryUpdate::SearchFailed {
+                query: "playlist".into(),
+                reason: FailReason::Offline,
+            }),
+            1_000,
+        );
+        let v = build(c.state());
+        assert_eq!(v.search.status, LoadStatus::Ready);
+        assert_eq!(v.search.note, "No internet right now");
+    }
+
+    #[test]
+    fn detail_header_comes_from_search_results() {
+        let mut c = core();
+        search_for(&mut c, "p");
+        catalog(
+            &mut c,
+            "p",
+            crate::model::SearchResults {
+                playlists: vec![playlist(5)],
+                ..Default::default()
+            },
+        );
+        c.handle(ui(UiAction::OpenCollection(playlist(5).uri)), 1_000);
+        assert_eq!(build(c.state()).detail.unwrap().header.title, "Playlist 5");
+    }
+
+    #[test]
+    fn forbidden_detail_has_its_own_status() {
+        let mut c = core();
+        c.handle(
+            ui(UiAction::OpenCollection("spotify:playlist:p9".into())),
+            0,
+        );
+        c.handle(
+            Input::Library(LibraryUpdate::TracksFailed {
+                collection_uri: "spotify:playlist:p9".into(),
+                reason: FailReason::Forbidden,
+            }),
+            0,
+        );
+        assert_eq!(
+            build(c.state()).detail.unwrap().status,
+            LoadStatus::Forbidden
+        );
+    }
+
+    #[test]
+    fn keyboard_hides_the_mini_player() {
+        let mut c = core();
+        c.handle(
+            ui(UiAction::PlayCollection {
+                uri: "spotify:album:a1".into(),
+                shuffle: false,
+            }),
+            0,
+        );
+        c.handle(ui(UiAction::ShowSection(Section::Search)), 5_000);
+        assert!(!build(c.state()).mini_visible);
+        c.handle(ui(UiAction::CloseKeyboard), 5_000);
+        assert!(build(c.state()).mini_visible);
     }
 }

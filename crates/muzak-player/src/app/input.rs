@@ -1,5 +1,5 @@
 use crate::app::state::DisplayMode;
-use crate::model::{Account, Collection, Repeat, Section, Track};
+use crate::model::{Account, Collection, Repeat, SearchResults, Section, Track};
 
 /// Everything the core reacts to.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +13,8 @@ pub enum Input {
     AuthInvalid,
     /// Sent once a second by the runtime.
     Tick,
+    /// Sent every 150ms while the search screen is open, to send a search soon after typing stops.
+    SearchTick,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +44,16 @@ pub enum UiAction {
     CycleRepeat,
     /// A tap on the dim/off overlay; only wakes the screen.
     Touch,
+    /// Text typed on the on-screen or physical keyboard.
+    KeyPressed(String),
+    Backspace,
+    ClearSearch,
+    OpenKeyboard,
+    CloseKeyboard,
+    OpenArtist(String),
+    PlayArtist(String),
+    /// Play one song picked from search results, by track URI.
+    PlaySong(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +100,22 @@ pub enum LibraryUpdate {
         reason: FailReason,
     },
     Account(Account),
+    SearchResults {
+        query: String,
+        results: SearchResults,
+    },
+    SearchFailed {
+        query: String,
+        reason: FailReason,
+    },
+    ArtistAlbums {
+        artist_uri: String,
+        albums: Vec<Collection>,
+    },
+    ArtistAlbumsFailed {
+        artist_uri: String,
+        reason: FailReason,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,4 +163,6 @@ pub enum LibraryRequest {
     Section(Section),
     Tracks { collection_uri: String },
     Account,
+    Search(String),
+    ArtistAlbums { artist_uri: String },
 }

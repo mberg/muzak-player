@@ -1,0 +1,79 @@
+import { Theme } from "../theme.slint";
+import { SearchRowData } from "../types.slint";
+
+// One search result, or a group header when kind is 0.
+// Kinds: 0 header, 1 song, 2 album, 3 artist, 4 playlist.
+export component SearchRow inherits Rectangle {
+    in property <SearchRowData> data;
+    callback clicked();
+    height: root.data.kind == 0 ? 40px : 64px;
+    border-radius: 10px;
+    background: touch.pressed && root.data.kind != 0 ? Theme.surface-hi : transparent;
+    if root.data.kind == 0: Text {
+        x: 12px;
+        y: parent.height - self.height - 4px;
+        text: root.data.title;
+        color: Theme.accent;
+        font-size: Theme.font-small;
+        font-weight: 800;
+    }
+    if root.data.kind != 0: HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                border-radius: root.data.kind == 3 ? 24px : 6px;
+                clip: true;
+                background: Theme.surface;
+                Image {
+                    source: root.data.kind == 3 ? @image-url("../icons/artist.svg") : @image-url("../icons/note.svg");
+                    width: 50%;
+                    height: 50%;
+                    colorize: Theme.text-dim;
+                    visible: !root.data.has-image;
+                }
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.data.image;
+                    image-fit: cover;
+                    visible: root.data.has-image;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            min-width: 0;
+            Text {
+                text: root.data.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 800;
+                overflow: elide;
+            }
+            Text {
+                text: root.data.subtitle;
+                color: Theme.text-dim;
+                font-size: Theme.font-small;
+                overflow: elide;
+            }
+        }
+        Text {
+            width: 72px;
+            text: root.data.kind == 1 ? "Song" : root.data.kind == 2 ? "Album" : root.data.kind == 3 ? "Artist" : "Playlist";
+            color: Theme.text-dim;
+            font-size: 13px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.data.kind != 0;
+        clicked => { root.clicked(); }
+    }
+}
