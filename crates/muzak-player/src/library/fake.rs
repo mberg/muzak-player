@@ -1,18 +1,28 @@
 //! In-memory catalog for `--fake` mode: UI work without a Spotify account.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::{FetchError, LibrarySource};
 use crate::model::{
-    Account, Collection, CollectionKind, LIKED_URI, SearchResults, Section, Track, liked_collection,
+    Account, Collection, CollectionKind, EditOutcome, LIKED_URI, PlaylistEdit, SearchResults,
+    Section, Track, liked_collection,
 };
 
+/// The fake account's Spotify ID; it owns every fake playlist but the last.
+pub const FAKE_ACCOUNT_ID: &str = "fake";
+
+/// Shared by the fake library and the fake player, so playlist edits are heard.
 pub struct FakeCatalog {
-    pub playlists: Vec<Collection>,
-    pub albums: Vec<Collection>,
+    data: Mutex<Data>,
+}
+
+struct Data {
+    playlists: Vec<Collection>,
+    albums: Vec<Collection>,
     tracks: HashMap<String, Vec<Track>>,
+    created: usize,
 }
 
 impl FakeCatalog {
@@ -34,13 +44,18 @@ impl FakeCatalog {
         let playlists: Vec<Collection> = playlist_names
             .iter()
             .enumerate()
-            .map(|(i, name)| Collection {
-                uri: format!("spotify:playlist:fake{i}"),
-                kind: CollectionKind::Playlist,
-                name: name.to_string(),
-                subtitle: "Mum".into(),
-                image_url: None,
-                ..Default::default()
+            .map(|(i, name)| {
+                // The last playlist belongs to someone else, so it can't be edited.
+                let mine = i + 1 < playlist_names.len();
+                Collection {
+                    uri: format!("spotify:playlist:fake{i}"),
+                    kind: CollectionKind::Playlist,
+                    name: name.to_string(),
+                    subtitle: if mine { "Fake Account" } else { "Someone Else" }.into(),
+                    image_url: None,
+                    owner_id: Some(if mine { FAKE_ACCOUNT_ID } else { "someone" }.into()),
+                    snapshot_id: None,
+                }
             })
             .collect();
         let albums: Vec<Collection> = album_names
@@ -61,21 +76,121 @@ impl FakeCatalog {
         }
         tracks.insert(LIKED_URI.to_string(), fake_tracks(LIKED_URI, "Liked", 20));
         Self {
-            playlists,
-            albums,
-            tracks,
+            data: Mutex::new(Data {
+                playlists,
+                albums,
+                tracks,
+                created: 0,
+            }),
         }
     }
 
+    pub fn playlists(&self) -> Vec<Collection> {
+        self.data.lock().unwrap().playlists.clone()
+    }
+
+    pub fn albums(&self) -> Vec<Collection> {
+        self.data.lock().unwrap().albums.clone()
+    }
+
     pub fn tracks_for(&self, uri: &str) -> Vec<Track> {
+        let data = self.data.lock().unwrap();
         if uri == fake_artist().uri {
-            return self
+            return data
                 .albums
                 .iter()
-                .flat_map(|a| self.tracks_for(&a.uri))
+                .flat_map(|a| data.tracks.get(&a.uri).cloned().unwrap_or_default())
                 .collect();
         }
-        self.tracks.get(uri).cloned().unwrap_or_default()
+        data.tracks.get(uri).cloned().unwrap_or_default()
+    }
+
+    /// Every song in the catalog, for looking up a track URI.
+    fn find_track(data: &Data, uri: &str) -> Option<Track> {
+        data.tracks
+            .values()
+            .flatten()
+            .find(|t| t.uri == uri)
+            .cloned()
+    }
+
+    pub fn apply(&self, edit: PlaylistEdit) -> Result<EditOutcome, FetchError> {
+        let mut data = self.data.lock().unwrap();
+        let owned = |data: &Data, uri: &str| {
+            data.playlists
+                .iter()
+                .any(|p| p.uri == uri && p.owner_id.as_deref() == Some(FAKE_ACCOUNT_ID))
+        };
+        let check = |data: &Data, uri: &str| {
+            if owned(data, uri) {
+                Ok(())
+            } else {
+                Err(FetchError::Forbidden)
+            }
+        };
+        match edit {
+            PlaylistEdit::Add {
+                playlist_uri,
+                track_uri,
+            } => {
+                check(&data, &playlist_uri)?;
+                let track = Self::find_track(&data, &track_uri).ok_or(FetchError::NotFound)?;
+                data.tracks.entry(playlist_uri).or_default().push(track);
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Create { name, track_uri } => {
+                let track = Self::find_track(&data, &track_uri).ok_or(FetchError::NotFound)?;
+                data.created += 1;
+                let created = Collection {
+                    uri: format!("spotify:playlist:fake-new{}", data.created),
+                    kind: CollectionKind::Playlist,
+                    name,
+                    subtitle: "Fake Account".into(),
+                    image_url: None,
+                    owner_id: Some(FAKE_ACCOUNT_ID.into()),
+                    snapshot_id: None,
+                };
+                data.playlists.insert(0, created.clone());
+                data.tracks.insert(created.uri.clone(), vec![track]);
+                Ok(EditOutcome::Created(created))
+            }
+            PlaylistEdit::Remove {
+                playlist_uri,
+                track_uri,
+                ..
+            } => {
+                check(&data, &playlist_uri)?;
+                if let Some(list) = data.tracks.get_mut(&playlist_uri) {
+                    list.retain(|t| t.uri != track_uri);
+                }
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Move {
+                playlist_uri,
+                from,
+                to,
+                ..
+            } => {
+                check(&data, &playlist_uri)?;
+                let list = data.tracks.entry(playlist_uri).or_default();
+                if from < list.len() && to < list.len() {
+                    let track = list.remove(from);
+                    list.insert(to, track);
+                }
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Rename { playlist_uri, name } => {
+                check(&data, &playlist_uri)?;
+                for p in data.playlists.iter_mut().filter(|p| p.uri == playlist_uri) {
+                    p.name = name.clone();
+                }
+                Ok(EditOutcome::Done)
+            }
+            PlaylistEdit::Delete { playlist_uri } => {
+                data.playlists.retain(|p| p.uri != playlist_uri);
+                Ok(EditOutcome::Done)
+            }
+        }
     }
 }
 
@@ -124,11 +239,11 @@ impl LibrarySource for FakeSource {
     async fn section(&self, section: Section) -> Result<Vec<Collection>, FetchError> {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(match section {
-            Section::Playlists => self.catalog.playlists.clone(),
-            Section::Albums => self.catalog.albums.clone(),
+            Section::Playlists => self.catalog.playlists(),
+            Section::Albums => self.catalog.albums(),
             Section::Recent => {
-                let mut recent = self.catalog.playlists[..2].to_vec();
-                recent.push(self.catalog.albums[0].clone());
+                let mut recent = self.catalog.playlists()[..2].to_vec();
+                recent.push(self.catalog.albums()[0].clone());
                 recent.push(liked_collection());
                 recent
             }
@@ -146,7 +261,8 @@ impl LibrarySource for FakeSource {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let q = query.to_lowercase();
         let hit = |name: &str| name.to_lowercase().contains(&q);
-        let collections = self.catalog.playlists.iter().chain(&self.catalog.albums);
+        let (playlists, albums) = (self.catalog.playlists(), self.catalog.albums());
+        let collections = playlists.iter().chain(&albums);
         let tracks = collections
             .clone()
             .flat_map(|c| self.catalog.tracks_for(&c.uri))
@@ -161,31 +277,24 @@ impl LibrarySource for FakeSource {
             } else {
                 vec![]
             },
-            albums: self
-                .catalog
-                .albums
-                .iter()
-                .filter(|c| hit(&c.name))
-                .cloned()
-                .collect(),
-            playlists: self
-                .catalog
-                .playlists
-                .iter()
-                .filter(|c| hit(&c.name))
-                .cloned()
-                .collect(),
+            albums: albums.iter().filter(|c| hit(&c.name)).cloned().collect(),
+            playlists: playlists.iter().filter(|c| hit(&c.name)).cloned().collect(),
         })
     }
 
     async fn artist_albums(&self, _artist_uri: &str) -> Result<Vec<Collection>, FetchError> {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        Ok(self.catalog.albums.clone())
+        Ok(self.catalog.albums())
+    }
+
+    async fn apply(&self, edit: PlaylistEdit) -> Result<EditOutcome, FetchError> {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        self.catalog.apply(edit)
     }
 
     async fn account(&self) -> Result<Account, FetchError> {
         Ok(Account {
-            id: "fake".into(),
+            id: FAKE_ACCOUNT_ID.into(),
             name: "Fake Account".into(),
         })
     }
@@ -201,10 +310,10 @@ mod tests {
     fn track_uris_are_unique_across_the_catalog() {
         let catalog = FakeCatalog::sample();
         let mut seen = HashSet::new();
-        let uris = catalog
-            .playlists
+        let (playlists, albums) = (catalog.playlists(), catalog.albums());
+        let uris = playlists
             .iter()
-            .chain(catalog.albums.iter())
+            .chain(albums.iter())
             .map(|c| c.uri.as_str())
             .chain([LIKED_URI]);
         for uri in uris {
@@ -213,5 +322,82 @@ mod tests {
             }
         }
         assert!(seen.len() > 100);
+    }
+
+    fn first_track(catalog: &FakeCatalog, uri: &str) -> String {
+        catalog.tracks_for(uri)[0].uri.clone()
+    }
+
+    #[test]
+    fn edits_change_what_the_catalog_serves() {
+        let catalog = FakeCatalog::sample();
+        let mine = catalog.playlists()[0].uri.clone();
+        let song = first_track(&catalog, &catalog.albums()[0].uri);
+
+        catalog
+            .apply(PlaylistEdit::Add {
+                playlist_uri: mine.clone(),
+                track_uri: song.clone(),
+            })
+            .unwrap();
+        assert_eq!(catalog.tracks_for(&mine).last().unwrap().uri, song);
+
+        let last = catalog.tracks_for(&mine).len() - 1;
+        catalog
+            .apply(PlaylistEdit::Move {
+                playlist_uri: mine.clone(),
+                from: last,
+                to: 0,
+                snapshot_id: None,
+            })
+            .unwrap();
+        assert_eq!(catalog.tracks_for(&mine)[0].uri, song);
+
+        catalog
+            .apply(PlaylistEdit::Remove {
+                playlist_uri: mine.clone(),
+                track_uri: song.clone(),
+                snapshot_id: None,
+            })
+            .unwrap();
+        assert!(catalog.tracks_for(&mine).iter().all(|t| t.uri != song));
+
+        catalog
+            .apply(PlaylistEdit::Rename {
+                playlist_uri: mine.clone(),
+                name: "Renamed".into(),
+            })
+            .unwrap();
+        assert_eq!(catalog.playlists()[0].name, "Renamed");
+
+        let EditOutcome::Created(made) = catalog
+            .apply(PlaylistEdit::Create {
+                name: "New".into(),
+                track_uri: song.clone(),
+            })
+            .unwrap()
+        else {
+            panic!("expected Created")
+        };
+        assert_eq!(catalog.playlists()[0].uri, made.uri);
+        assert_eq!(catalog.tracks_for(&made.uri)[0].uri, song);
+
+        catalog
+            .apply(PlaylistEdit::Delete {
+                playlist_uri: made.uri.clone(),
+            })
+            .unwrap();
+        assert!(catalog.playlists().iter().all(|p| p.uri != made.uri));
+    }
+
+    #[test]
+    fn someone_elses_playlist_is_forbidden() {
+        let catalog = FakeCatalog::sample();
+        let theirs = catalog.playlists().last().unwrap().uri.clone();
+        let result = catalog.apply(PlaylistEdit::Rename {
+            playlist_uri: theirs,
+            name: "x".into(),
+        });
+        assert_eq!(result, Err(FetchError::Forbidden));
     }
 }

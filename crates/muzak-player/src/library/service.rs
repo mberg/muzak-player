@@ -21,7 +21,9 @@ pub fn spawn_library<S: LibrarySource>(
     let in_flight = Arc::new(Mutex::new(HashSet::<LibraryRequest>::new()));
     tokio::spawn(async move {
         while let Some(request) = rx.recv().await {
-            if !in_flight.lock().unwrap().insert(request.clone()) {
+            // Two identical adds are two adds, so edits are never de-duplicated.
+            let is_edit = matches!(request, LibraryRequest::Edit { .. });
+            if !is_edit && !in_flight.lock().unwrap().insert(request.clone()) {
                 continue;
             }
             let (source, cache, inputs, in_flight) = (
@@ -127,6 +129,19 @@ async fn serve<S: LibrarySource>(
                     tracing::warn!("loading albums for {artist_uri} failed: {e}");
                     send(LibraryUpdate::ArtistAlbumsFailed {
                         artist_uri,
+                        reason: e.reason(),
+                    });
+                }
+            }
+        }
+        LibraryRequest::Edit { id, edit } => {
+            let label = format!("{edit:?}");
+            match source.apply(edit).await {
+                Ok(outcome) => send(LibraryUpdate::EditDone { id, outcome }),
+                Err(e) => {
+                    tracing::warn!("playlist edit {label} failed: {e}");
+                    send(LibraryUpdate::EditFailed {
+                        id,
                         reason: e.reason(),
                     });
                 }

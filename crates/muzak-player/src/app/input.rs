@@ -1,5 +1,7 @@
 use crate::app::state::DisplayMode;
-use crate::model::{Account, Collection, Repeat, SearchResults, Section, Track};
+use crate::model::{
+    Account, Collection, EditOutcome, PlaylistEdit, Repeat, SearchResults, Section, Track,
+};
 
 /// Everything the core reacts to.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +59,26 @@ pub enum UiAction {
     PlayArtist(String),
     /// Play one song picked from search results, by track URI.
     PlaySong(String),
+    /// Open the add-to-playlist picker for this track URI.
+    OpenPicker(String),
+    ClosePicker,
+    PickPlaylist(String),
+    /// From the picker: name a new playlist for the song.
+    NewPlaylist,
+    /// The keyboard's Done key: saves a name, or hides the search keyboard.
+    KeyboardDone,
+    CancelText,
+    EditPlaylist(String),
+    FinishEditing,
+    RemoveTrack(usize),
+    MoveTrack {
+        from: usize,
+        to: usize,
+    },
+    RenamePlaylist,
+    AskDelete,
+    ConfirmDelete,
+    CancelDelete,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,6 +141,14 @@ pub enum LibraryUpdate {
         artist_uri: String,
         reason: FailReason,
     },
+    EditDone {
+        id: u64,
+        outcome: EditOutcome,
+    },
+    EditFailed {
+        id: u64,
+        reason: FailReason,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,8 +194,17 @@ pub enum PlayerCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LibraryRequest {
     Section(Section),
-    Tracks { collection_uri: String },
+    Tracks {
+        collection_uri: String,
+    },
     Account,
     Search(String),
-    ArtistAlbums { artist_uri: String },
+    ArtistAlbums {
+        artist_uri: String,
+    },
+    /// A playlist change; `id` matches the reply to the core's undo record.
+    Edit {
+        id: u64,
+        edit: PlaylistEdit,
+    },
 }

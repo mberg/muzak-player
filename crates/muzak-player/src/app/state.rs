@@ -99,10 +99,34 @@ pub struct Playback {
     pub repeat: Repeat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
     NoInternet,
     TrackUnavailable,
+    /// Spotify refused a playlist change; the screen has been put back.
+    CouldntSave,
+    /// A song was added to the named playlist.
+    AddedTo(String),
+    /// The song is already in the named playlist, so nothing was added.
+    AlreadyIn(String),
+}
+
+/// What the on-screen text field is for, apart from search.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextPurpose {
+    /// Name a new playlist that will start with this song.
+    NewPlaylist {
+        track_uri: String,
+    },
+    Rename {
+        playlist_uri: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextEntry {
+    pub purpose: TextPurpose,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,4 +157,12 @@ pub struct AppState {
     pub keyboard_open: bool,
     /// Album lists keyed by artist URI.
     pub artist_albums: HashMap<String, Slot<Vec<Collection>>>,
+    /// Track URI being added while the add-to-playlist picker is open.
+    pub picker: Option<String>,
+    /// The name dialog for a new or renamed playlist.
+    pub text_entry: Option<TextEntry>,
+    /// Playlist URI whose track list is in edit mode.
+    pub editing: Option<String>,
+    /// Playlist URI waiting for the user to confirm deletion.
+    pub confirm_delete: Option<String>,
 }

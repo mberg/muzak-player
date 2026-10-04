@@ -3,12 +3,13 @@ pub mod state;
 #[cfg(test)]
 pub(crate) mod tests;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub use input::*;
 pub use state::*;
 
-use crate::model::{LIKED_URI, Section, Track};
+use crate::model::{Collection, EditOutcome, LIKED_URI, PlaylistEdit, Section, Track};
 
 /// How long a notice stays on screen.
 const NOTICE_MS: u64 = 4_000;
@@ -17,6 +18,16 @@ const DOUBLE_TAP_MS: u64 = 1_000;
 /// A search goes out once typing has paused this long.
 const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
+const MAX_NAME_CHARS: usize = 100;
+
+/// What to put back if Spotify refuses an edit, and what to reload either way.
+#[derive(Debug, Default)]
+struct Undo {
+    tracks: Vec<(String, Option<Slot<Vec<Track>>>)>,
+    sections: Vec<(Section, Option<Slot<Vec<Collection>>>)>,
+    /// URI of the placeholder shown while a new playlist is being created.
+    placeholder: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct CoreConfig {
@@ -44,6 +55,8 @@ pub struct Core {
     last_load: Option<((String, Start, bool), u64)>,
     /// Where closing search returns to.
     before_search: Section,
+    next_edit: u64,
+    undo: HashMap<u64, Undo>,
 }
 
 impl Core {
@@ -72,6 +85,10 @@ impl Core {
             search: Default::default(),
             keyboard_open: false,
             artist_albums: Default::default(),
+            picker: None,
+            text_entry: None,
+            editing: None,
+            confirm_delete: None,
         };
         let mut core = Core {
             state,
@@ -80,6 +97,8 @@ impl Core {
             notice_until_ms: 0,
             last_load: None,
             before_search: Section::Playlists,
+            next_edit: 0,
+            undo: HashMap::new(),
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -102,7 +121,7 @@ impl Core {
                 self.on_ui(action, now_ms, &mut fx);
             }
             Input::Player(update) => self.on_player(update, now_ms, &mut fx),
-            Input::Library(update) => self.on_library(update),
+            Input::Library(update) => self.on_library(update, now_ms, &mut fx),
             Input::Speaker { connected } => self.state.speaker_connected = connected,
             Input::AuthInvalid => self.state.auth_needed = true,
             Input::Tick => {
@@ -113,6 +132,13 @@ impl Core {
         }
         if self.state.screen != Screen::Search {
             self.state.keyboard_open = false;
+        }
+        // Edit mode belongs to the playlist on screen; leaving it ends editing.
+        if let Some(uri) = &self.state.editing {
+            if self.state.screen != Screen::Detail(uri.clone()) {
+                self.state.editing = None;
+                self.state.confirm_delete = None;
+            }
         }
         fx
     }
@@ -150,6 +176,308 @@ impl Core {
         search.edited_ms = now_ms;
     }
 
+    // ---- Playlist editing ----
+
+    fn playlists_mut(&mut self) -> &mut Vec<Collection> {
+        let slot = self.state.sections.entry(Section::Playlists).or_default();
+        Arc::make_mut(slot.data.get_or_insert_with(Default::default))
+    }
+
+    fn playlist(&self, uri: &str) -> Option<Collection> {
+        self.state
+            .sections
+            .get(&Section::Playlists)?
+            .data
+            .as_ref()?
+            .iter()
+            .find(|p| p.uri == uri)
+            .cloned()
+    }
+
+    /// Only playlists the signed-in account owns can be changed.
+    fn editable(&self, uri: &str) -> bool {
+        let me = self.state.account.as_ref().map(|a| a.id.as_str());
+        self.playlist(uri)
+            .is_some_and(|p| me.is_some() && p.owner_id.as_deref() == me)
+    }
+
+    fn loaded_tracks(&self, uri: &str) -> Option<&Vec<Track>> {
+        self.state.tracks.get(uri)?.data.as_deref()
+    }
+
+    fn tracks_mut(&mut self, uri: &str) -> Option<&mut Vec<Track>> {
+        self.state
+            .tracks
+            .get_mut(uri)?
+            .data
+            .as_mut()
+            .map(Arc::make_mut)
+    }
+
+    /// Records what an edit may change, then sends it. Returns the edit's id, or None when
+    /// offline (the user is told and nothing changes).
+    fn begin_edit(
+        &mut self,
+        edit: PlaylistEdit,
+        tracks: &[&str],
+        sections: &[Section],
+        now_ms: u64,
+        fx: &mut Vec<Effect>,
+    ) -> Option<u64> {
+        if !self.state.online {
+            self.notify(Notice::NoInternet, now_ms);
+            return None;
+        }
+        self.next_edit += 1;
+        let id = self.next_edit;
+        let undo = Undo {
+            tracks: tracks
+                .iter()
+                .map(|uri| (uri.to_string(), self.state.tracks.get(*uri).cloned()))
+                .collect(),
+            sections: sections
+                .iter()
+                .map(|s| (*s, self.state.sections.get(s).cloned()))
+                .collect(),
+            placeholder: None,
+        };
+        self.undo.insert(id, undo);
+        fx.push(Effect::Library(LibraryRequest::Edit { id, edit }));
+        Some(id)
+    }
+
+    /// After an edit settles, reload what it touched so the cache matches Spotify.
+    fn reload(&mut self, undo: &Undo, fx: &mut Vec<Effect>) {
+        for (uri, _) in &undo.tracks {
+            if !uri.starts_with("muzak:") {
+                self.request_tracks(uri, fx);
+            }
+        }
+        if !undo.sections.is_empty() {
+            self.request_section(Section::Playlists, fx);
+        }
+    }
+
+    fn edit_done(&mut self, id: u64, outcome: EditOutcome, fx: &mut Vec<Effect>) {
+        let Some(mut undo) = self.undo.remove(&id) else {
+            return;
+        };
+        if let (EditOutcome::Created(created), Some(placeholder)) = (outcome, &undo.placeholder) {
+            for p in self
+                .playlists_mut()
+                .iter_mut()
+                .filter(|p| p.uri == *placeholder)
+            {
+                *p = created.clone();
+            }
+            if let Some(slot) = self.state.tracks.remove(placeholder) {
+                self.state.tracks.insert(created.uri.clone(), slot);
+            }
+            undo.tracks.push((created.uri.clone(), None));
+        }
+        self.reload(&undo, fx);
+    }
+
+    fn edit_failed(&mut self, id: u64, reason: FailReason, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(undo) = self.undo.remove(&id) else {
+            return;
+        };
+        for (uri, slot) in &undo.tracks {
+            match slot {
+                Some(slot) => self.state.tracks.insert(uri.clone(), slot.clone()),
+                None => self.state.tracks.remove(uri),
+            };
+        }
+        for (section, slot) in &undo.sections {
+            match slot {
+                Some(slot) => self.state.sections.insert(*section, slot.clone()),
+                None => self.state.sections.remove(section),
+            };
+        }
+        if reason == FailReason::Offline {
+            self.state.online = false;
+            self.notify(Notice::NoInternet, now_ms);
+        } else {
+            self.notify(Notice::CouldntSave, now_ms);
+        }
+        self.reload(&undo, fx);
+    }
+
+    fn add_to_playlist(&mut self, playlist_uri: String, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(track_uri) = self.state.picker.take() else {
+            return;
+        };
+        let Some(playlist) = self.playlist(&playlist_uri) else {
+            return;
+        };
+        if self
+            .loaded_tracks(&playlist_uri)
+            .is_some_and(|tracks| tracks.iter().any(|t| t.uri == track_uri))
+        {
+            self.notify(Notice::AlreadyIn(playlist.name), now_ms);
+            return;
+        }
+        let track = self.find_track(&track_uri);
+        let edit = PlaylistEdit::Add {
+            playlist_uri: playlist_uri.clone(),
+            track_uri,
+        };
+        if self
+            .begin_edit(edit, &[&playlist_uri], &[], now_ms, fx)
+            .is_none()
+        {
+            return;
+        }
+        if let (Some(list), Some(track)) = (self.tracks_mut(&playlist_uri), track) {
+            list.push(track);
+        }
+        self.notify(Notice::AddedTo(playlist.name), now_ms);
+    }
+
+    fn submit_text(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(entry) = self.state.text_entry.as_ref() else {
+            return;
+        };
+        let name = entry.text.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let Some(entry) = self.state.text_entry.take() else {
+            return;
+        };
+        match entry.purpose {
+            TextPurpose::NewPlaylist { track_uri } => {
+                let track = self.find_track(&track_uri);
+                let edit = PlaylistEdit::Create {
+                    name: name.clone(),
+                    track_uri,
+                };
+                let Some(id) = self.begin_edit(edit, &[], &[Section::Playlists], now_ms, fx) else {
+                    return;
+                };
+                let placeholder = format!("muzak:new:{id}");
+                let account = self.state.account.clone();
+                self.playlists_mut().insert(
+                    0,
+                    Collection {
+                        uri: placeholder.clone(),
+                        name: name.clone(),
+                        subtitle: account.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
+                        owner_id: account.map(|a| a.id),
+                        ..Default::default()
+                    },
+                );
+                self.state.tracks.insert(
+                    placeholder.clone(),
+                    Slot {
+                        data: Some(Arc::new(track.into_iter().collect())),
+                        ..Default::default()
+                    },
+                );
+                if let Some(undo) = self.undo.get_mut(&id) {
+                    undo.placeholder = Some(placeholder.clone());
+                    undo.tracks.push((placeholder, None));
+                }
+                self.notify(Notice::AddedTo(name), now_ms);
+            }
+            TextPurpose::Rename { playlist_uri } => {
+                let edit = PlaylistEdit::Rename {
+                    playlist_uri: playlist_uri.clone(),
+                    name: name.clone(),
+                };
+                let sections = [Section::Playlists, Section::Recent];
+                if self.begin_edit(edit, &[], &sections, now_ms, fx).is_none() {
+                    return;
+                }
+                for section in sections {
+                    if let Some(data) = self
+                        .state
+                        .sections
+                        .get_mut(&section)
+                        .and_then(|slot| slot.data.as_mut())
+                    {
+                        for p in Arc::make_mut(data)
+                            .iter_mut()
+                            .filter(|p| p.uri == playlist_uri)
+                        {
+                            p.name = name.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn remove_track(&mut self, index: usize, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(uri) = self.state.editing.clone() else {
+            return;
+        };
+        let Some(track) = self.loaded_tracks(&uri).and_then(|t| t.get(index)).cloned() else {
+            return;
+        };
+        let edit = PlaylistEdit::Remove {
+            playlist_uri: uri.clone(),
+            track_uri: track.uri.clone(),
+            snapshot_id: self.playlist(&uri).and_then(|p| p.snapshot_id),
+        };
+        if self.begin_edit(edit, &[&uri], &[], now_ms, fx).is_none() {
+            return;
+        }
+        if let Some(list) = self.tracks_mut(&uri) {
+            list.retain(|t| t.uri != track.uri);
+        }
+    }
+
+    fn move_track(&mut self, from: usize, to: usize, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(uri) = self.state.editing.clone() else {
+            return;
+        };
+        let len = self.loaded_tracks(&uri).map_or(0, Vec::len);
+        if from == to || from >= len || to >= len {
+            return;
+        }
+        let edit = PlaylistEdit::Move {
+            playlist_uri: uri.clone(),
+            from,
+            to,
+            snapshot_id: self.playlist(&uri).and_then(|p| p.snapshot_id),
+        };
+        if self.begin_edit(edit, &[&uri], &[], now_ms, fx).is_none() {
+            return;
+        }
+        if let Some(list) = self.tracks_mut(&uri) {
+            let track = list.remove(from);
+            list.insert(to, track);
+        }
+    }
+
+    fn delete_playlist(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
+        let Some(uri) = self.state.confirm_delete.take() else {
+            return;
+        };
+        let edit = PlaylistEdit::Delete {
+            playlist_uri: uri.clone(),
+        };
+        let sections = [Section::Playlists, Section::Recent];
+        if self.begin_edit(edit, &[], &sections, now_ms, fx).is_none() {
+            return;
+        }
+        for section in sections {
+            if let Some(data) = self
+                .state
+                .sections
+                .get_mut(&section)
+                .and_then(|slot| slot.data.as_mut())
+            {
+                Arc::make_mut(data).retain(|p| p.uri != uri);
+            }
+        }
+        self.state.editing = None;
+        self.state.section = Section::Playlists;
+        self.state.back_stack.clear();
+        self.state.screen = Screen::Grid(Section::Playlists);
+    }
+
     /// Finds a song by URI in search results or any loaded track list.
     fn find_track(&self, uri: &str) -> Option<Track> {
         let from_search = self
@@ -165,8 +493,10 @@ impl Core {
             .values()
             .filter_map(|slot| slot.data.as_ref())
             .flat_map(|tracks| tracks.iter());
+        let playing = self.state.playback.track.iter();
         from_search
             .chain(from_lists)
+            .chain(playing)
             .find(|t| t.uri == uri)
             .cloned()
     }
@@ -280,10 +610,65 @@ impl Core {
                 fx.push(Effect::Player(PlayerCommand::SetRepeat(repeat)));
             }
             UiAction::Touch => {}
-            UiAction::KeyPressed(text) => self.edit_query(now_ms, |q| q.push_str(&text)),
-            UiAction::Backspace => self.edit_query(now_ms, |q| {
-                q.pop();
-            }),
+            UiAction::KeyPressed(text) => match &mut self.state.text_entry {
+                Some(entry) => {
+                    entry.text.push_str(&text);
+                    if let Some((cut, _)) = entry.text.char_indices().nth(MAX_NAME_CHARS) {
+                        entry.text.truncate(cut);
+                    }
+                }
+                None => self.edit_query(now_ms, |q| q.push_str(&text)),
+            },
+            UiAction::Backspace => match &mut self.state.text_entry {
+                Some(entry) => {
+                    entry.text.pop();
+                }
+                None => self.edit_query(now_ms, |q| {
+                    q.pop();
+                }),
+            },
+            UiAction::KeyboardDone => {
+                if self.state.text_entry.is_some() {
+                    self.submit_text(now_ms, fx);
+                } else {
+                    self.state.keyboard_open = false;
+                }
+            }
+            UiAction::CancelText => self.state.text_entry = None,
+            UiAction::OpenPicker(track_uri) => self.state.picker = Some(track_uri),
+            UiAction::ClosePicker => self.state.picker = None,
+            UiAction::PickPlaylist(playlist_uri) => self.add_to_playlist(playlist_uri, now_ms, fx),
+            UiAction::NewPlaylist => {
+                if let Some(track_uri) = self.state.picker.take() {
+                    self.state.text_entry = Some(TextEntry {
+                        purpose: TextPurpose::NewPlaylist { track_uri },
+                        text: String::new(),
+                    });
+                }
+            }
+            UiAction::EditPlaylist(uri) => {
+                if self.editable(&uri) {
+                    self.state.editing = Some(uri);
+                }
+            }
+            UiAction::FinishEditing => {
+                self.state.editing = None;
+                self.state.confirm_delete = None;
+            }
+            UiAction::RemoveTrack(index) => self.remove_track(index, now_ms, fx),
+            UiAction::MoveTrack { from, to } => self.move_track(from, to, now_ms, fx),
+            UiAction::RenamePlaylist => {
+                if let Some(uri) = self.state.editing.clone() {
+                    let name = self.playlist(&uri).map(|p| p.name).unwrap_or_default();
+                    self.state.text_entry = Some(TextEntry {
+                        purpose: TextPurpose::Rename { playlist_uri: uri },
+                        text: name,
+                    });
+                }
+            }
+            UiAction::AskDelete => self.state.confirm_delete = self.state.editing.clone(),
+            UiAction::CancelDelete => self.state.confirm_delete = None,
+            UiAction::ConfirmDelete => self.delete_playlist(now_ms, fx),
             UiAction::ClearSearch => {
                 self.edit_query(now_ms, String::clear);
                 // Clearing is deliberate, so there is no reason to wait.
@@ -360,7 +745,7 @@ impl Core {
         }
     }
 
-    fn on_library(&mut self, update: LibraryUpdate) {
+    fn on_library(&mut self, update: LibraryUpdate, now_ms: u64, fx: &mut Vec<Effect>) {
         match update {
             LibraryUpdate::Section { section, items } => {
                 let slot = self.state.sections.entry(section).or_default();
@@ -423,6 +808,8 @@ impl Core {
                 slot.failed = false;
                 self.state.online = true;
             }
+            LibraryUpdate::EditDone { id, outcome } => self.edit_done(id, outcome, fx),
+            LibraryUpdate::EditFailed { id, reason } => self.edit_failed(id, reason, now_ms, fx),
             LibraryUpdate::ArtistAlbumsFailed { artist_uri, reason } => {
                 let slot = self.state.artist_albums.entry(artist_uri).or_default();
                 slot.loading = false;

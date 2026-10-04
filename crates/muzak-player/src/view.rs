@@ -456,9 +456,12 @@ fn now(state: &AppState) -> NowView {
 }
 
 fn banner(state: &AppState) -> Option<String> {
-    match state.notice {
+    match &state.notice {
         Some(Notice::NoInternet) => Some("No internet right now".into()),
         Some(Notice::TrackUnavailable) => Some("That song can't play, skipping".into()),
+        Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
+        Some(Notice::AddedTo(name)) => Some(format!("Added to {name}")),
+        Some(Notice::AlreadyIn(name)) => Some(format!("Already in {name}")),
         None if !state.speaker_connected => Some("Speaker not connected".into()),
         None => None,
     }

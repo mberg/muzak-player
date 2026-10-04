@@ -1,5 +1,8 @@
 use super::*;
-use crate::model::{Account, Collection, CollectionKind, LIKED_URI, SearchResults, Section, Track};
+use crate::model::{
+    Account, Collection, CollectionKind, EditOutcome, LIKED_URI, PlaylistEdit, SearchResults,
+    Section, Track,
+};
 
 pub(crate) fn config() -> CoreConfig {
     CoreConfig {
@@ -733,4 +736,316 @@ fn closing_search_returns_to_the_previous_section() {
     assert_eq!(c.state().screen, Screen::Grid(Section::Albums));
     assert_eq!(c.state().section, Section::Albums);
     assert!(!c.state().keyboard_open);
+}
+
+// ---- Playlist editing ----
+
+fn me() -> Account {
+    Account {
+        id: "me".into(),
+        name: "Sam".into(),
+    }
+}
+
+fn mine(n: u32) -> Collection {
+    Collection {
+        owner_id: Some("me".into()),
+        snapshot_id: Some(format!("s{n}")),
+        ..playlist(n)
+    }
+}
+
+/// A core signed in as `me` with playlist 1 (owned, 3 songs) and playlist 2 (someone else's).
+fn editor() -> Core {
+    let mut c = core();
+    c.handle(Input::Library(LibraryUpdate::Account(me())), 0);
+    c.handle(
+        Input::Library(LibraryUpdate::Section {
+            section: Section::Playlists,
+            items: vec![mine(1), playlist(2)],
+        }),
+        0,
+    );
+    with_tracks(&mut c, "spotify:playlist:p1", 3);
+    c
+}
+
+fn edit_of(fx: &[Effect]) -> (u64, PlaylistEdit) {
+    fx.iter()
+        .find_map(|e| match e {
+            Effect::Library(LibraryRequest::Edit { id, edit }) => Some((*id, edit.clone())),
+            _ => None,
+        })
+        .expect("an edit")
+}
+
+fn track_names(c: &Core, uri: &str) -> Vec<String> {
+    c.state().tracks[uri]
+        .data
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|t| t.name.clone())
+        .collect()
+}
+
+#[test]
+fn adding_a_song_shows_at_once_and_reloads_after_success() {
+    let mut c = editor();
+    c.state.search.results.data = Some(Arc::new(SearchResults {
+        tracks: vec![track(9)],
+        ..Default::default()
+    }));
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t9".into())), 0);
+    assert_eq!(c.state().picker.as_deref(), Some("spotify:track:t9"));
+    let fx = c.handle(ui(UiAction::PickPlaylist("spotify:playlist:p1".into())), 0);
+    let (id, edit) = edit_of(&fx);
+    assert_eq!(
+        edit,
+        PlaylistEdit::Add {
+            playlist_uri: "spotify:playlist:p1".into(),
+            track_uri: "spotify:track:t9".into()
+        }
+    );
+    assert_eq!(c.state().picker, None);
+    assert_eq!(
+        track_names(&c, "spotify:playlist:p1").last().unwrap(),
+        "Song 9"
+    );
+    assert_eq!(c.state().notice, Some(Notice::AddedTo("Playlist 1".into())));
+    let fx = c.handle(
+        Input::Library(LibraryUpdate::EditDone {
+            id,
+            outcome: EditOutcome::Done,
+        }),
+        0,
+    );
+    assert!(fx.contains(&Effect::Library(LibraryRequest::Tracks {
+        collection_uri: "spotify:playlist:p1".into()
+    })));
+}
+
+#[test]
+fn a_refused_edit_is_undone_with_a_notice() {
+    let mut c = editor();
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p1".into())), 0);
+    let fx = c.handle(ui(UiAction::RemoveTrack(0)), 0);
+    let (id, edit) = edit_of(&fx);
+    assert_eq!(
+        edit,
+        PlaylistEdit::Remove {
+            playlist_uri: "spotify:playlist:p1".into(),
+            track_uri: "spotify:track:t0".into(),
+            snapshot_id: Some("s1".into()),
+        }
+    );
+    assert_eq!(track_names(&c, "spotify:playlist:p1"), ["Song 1", "Song 2"]);
+    c.handle(
+        Input::Library(LibraryUpdate::EditFailed {
+            id,
+            reason: FailReason::Forbidden,
+        }),
+        0,
+    );
+    assert_eq!(
+        track_names(&c, "spotify:playlist:p1"),
+        ["Song 0", "Song 1", "Song 2"]
+    );
+    assert_eq!(c.state().notice, Some(Notice::CouldntSave));
+}
+
+#[test]
+fn duplicate_add_is_refused_with_a_notice() {
+    let mut c = editor();
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t1".into())), 0);
+    let fx = c.handle(ui(UiAction::PickPlaylist("spotify:playlist:p1".into())), 0);
+    assert!(fx.is_empty());
+    assert_eq!(
+        c.state().notice,
+        Some(Notice::AlreadyIn("Playlist 1".into()))
+    );
+}
+
+#[test]
+fn edits_are_refused_offline() {
+    let mut c = editor();
+    c.handle(Input::Player(PlayerUpdate::Disconnected), 0);
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t9".into())), 0);
+    let fx = c.handle(ui(UiAction::PickPlaylist("spotify:playlist:p1".into())), 0);
+    assert!(fx.is_empty());
+    assert_eq!(c.state().notice, Some(Notice::NoInternet));
+}
+
+#[test]
+fn only_owned_playlists_can_enter_edit_mode() {
+    let mut c = editor();
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p2".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p2".into())), 0);
+    assert_eq!(c.state().editing, None);
+    c.handle(ui(UiAction::Back), 0);
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p1".into())), 0);
+    assert_eq!(c.state().editing.as_deref(), Some("spotify:playlist:p1"));
+    c.handle(ui(UiAction::Back), 0);
+    assert_eq!(c.state().editing, None);
+}
+
+#[test]
+fn creating_a_playlist_shows_a_placeholder_then_the_real_one() {
+    let mut c = editor();
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t1".into())), 0);
+    c.handle(ui(UiAction::NewPlaylist), 0);
+    assert_eq!(c.state().picker, None);
+    for key in ["R", "o", "a", "d"] {
+        c.handle(ui(UiAction::KeyPressed(key.into())), 0);
+    }
+    c.handle(ui(UiAction::Backspace), 0);
+    c.handle(ui(UiAction::KeyPressed("d".into())), 0);
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    let (id, edit) = edit_of(&fx);
+    assert_eq!(
+        edit,
+        PlaylistEdit::Create {
+            name: "Road".into(),
+            track_uri: "spotify:track:t1".into()
+        }
+    );
+    assert_eq!(c.state().text_entry, None);
+    let placeholder = c.state().sections[&Section::Playlists]
+        .data
+        .as_ref()
+        .unwrap()[0]
+        .clone();
+    assert_eq!(placeholder.name, "Road");
+    assert_eq!(track_names(&c, &placeholder.uri), ["Song 1"]);
+
+    let real = mine(7);
+    c.handle(
+        Input::Library(LibraryUpdate::EditDone {
+            id,
+            outcome: EditOutcome::Created(real.clone()),
+        }),
+        0,
+    );
+    let lists = c.state().sections[&Section::Playlists]
+        .data
+        .clone()
+        .unwrap();
+    assert_eq!(lists[0], real);
+    assert!(!c.state().tracks.contains_key(&placeholder.uri));
+    assert_eq!(track_names(&c, &real.uri), ["Song 1"]);
+}
+
+#[test]
+fn empty_names_are_not_saved() {
+    let mut c = editor();
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t1".into())), 0);
+    c.handle(ui(UiAction::NewPlaylist), 0);
+    c.handle(ui(UiAction::KeyPressed("  ".into())), 0);
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    assert!(fx.is_empty());
+    assert!(c.state().text_entry.is_some());
+    c.handle(ui(UiAction::CancelText), 0);
+    assert_eq!(c.state().text_entry, None);
+}
+
+#[test]
+fn rename_starts_with_the_current_name() {
+    let mut c = editor();
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p1".into())), 0);
+    c.handle(ui(UiAction::RenamePlaylist), 0);
+    assert_eq!(c.state().text_entry.as_ref().unwrap().text, "Playlist 1");
+    c.handle(ui(UiAction::KeyPressed("!".into())), 0);
+    let fx = c.handle(ui(UiAction::KeyboardDone), 0);
+    assert!(
+        matches!(edit_of(&fx).1, PlaylistEdit::Rename { ref name, .. } if name == "Playlist 1!")
+    );
+    assert_eq!(
+        c.state().sections[&Section::Playlists]
+            .data
+            .as_ref()
+            .unwrap()[0]
+            .name,
+        "Playlist 1!"
+    );
+}
+
+#[test]
+fn move_reorders_and_sends_the_snapshot() {
+    let mut c = editor();
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p1".into())), 0);
+    let fx = c.handle(ui(UiAction::MoveTrack { from: 0, to: 2 }), 0);
+    assert_eq!(
+        edit_of(&fx).1,
+        PlaylistEdit::Move {
+            playlist_uri: "spotify:playlist:p1".into(),
+            from: 0,
+            to: 2,
+            snapshot_id: Some("s1".into()),
+        }
+    );
+    assert_eq!(
+        track_names(&c, "spotify:playlist:p1"),
+        ["Song 1", "Song 2", "Song 0"]
+    );
+    assert!(
+        c.handle(ui(UiAction::MoveTrack { from: 0, to: 9 }), 0)
+            .is_empty()
+    );
+}
+
+#[test]
+fn delete_asks_first_then_removes_and_returns_to_playlists() {
+    let mut c = editor();
+    c.handle(
+        ui(UiAction::OpenCollection("spotify:playlist:p1".into())),
+        0,
+    );
+    c.handle(ui(UiAction::EditPlaylist("spotify:playlist:p1".into())), 0);
+    c.handle(ui(UiAction::AskDelete), 0);
+    assert_eq!(
+        c.state().confirm_delete.as_deref(),
+        Some("spotify:playlist:p1")
+    );
+    c.handle(ui(UiAction::CancelDelete), 0);
+    assert_eq!(c.state().confirm_delete, None);
+    c.handle(ui(UiAction::AskDelete), 0);
+    let fx = c.handle(ui(UiAction::ConfirmDelete), 0);
+    assert!(matches!(edit_of(&fx).1, PlaylistEdit::Delete { .. }));
+    assert_eq!(c.state().screen, Screen::Grid(Section::Playlists));
+    assert_eq!(c.state().editing, None);
+    let lists = c.state().sections[&Section::Playlists]
+        .data
+        .clone()
+        .unwrap();
+    assert!(lists.iter().all(|p| p.uri != "spotify:playlist:p1"));
+}
+
+#[test]
+fn keys_go_to_the_name_field_not_search_while_it_is_open() {
+    let mut c = editor();
+    c.handle(ui(UiAction::ShowSection(Section::Search)), 0);
+    c.handle(ui(UiAction::OpenPicker("spotify:track:t1".into())), 0);
+    c.handle(ui(UiAction::NewPlaylist), 0);
+    c.handle(ui(UiAction::KeyPressed("x".into())), 0);
+    assert_eq!(c.state().search.query, "");
+    assert_eq!(c.state().text_entry.as_ref().unwrap().text, "x");
 }
