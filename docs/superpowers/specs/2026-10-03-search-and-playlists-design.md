@@ -172,7 +172,7 @@ All sizes fit 800×480 with 48px touch targets or larger.
 Agreed on 2026-10-03, to be designed in its own spec after playlist editing:
 
 - The account label at the bottom of the rail becomes a gear and opens Settings.
-- Settings shows the account and the speaker: headphone jack or a Bluetooth speaker, with scan, pair, connect and forget.
+- Settings shows the account, the device name (editable with the on-screen keyboard; it is the name shown in Spotify Connect), and the speaker: headphone jack or a Bluetooth speaker, with scan, pair, connect and forget.
 - Bluetooth talks to BlueZ directly over D-Bus (the `bluer` crate), not through `bluetoothctl`.
 - The chosen speaker is stored in the state directory and overrides the config file. Changing speakers restarts the player.
 - No Spotify Connect device picking: the player only plays on its own speaker.

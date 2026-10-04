@@ -91,6 +91,7 @@ cargo run -p muzak-setup -- probe --state-dir secrets/dev
    - Redirect URI: `http://127.0.0.1:8898/login`
    - Tick the "Web API" box.
    - Under "User Management", add the email of each Spotify account that will use the player or the probe below returns 403.
+   One developer app serves every device and every person: you do not need one per device. Its users are capped in development mode, so check the limit on the dashboard.
 2. Copy the app's Client ID, sign in again through the app, then probe again:
    ```bash
    cargo run -p muzak-setup -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
