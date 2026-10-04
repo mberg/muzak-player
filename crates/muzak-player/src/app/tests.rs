@@ -69,6 +69,9 @@ fn new_requests_initial_sections_and_shows_albums() {
             Effect::Library(LibraryRequest::Section(Section::Playlists)),
             Effect::Library(LibraryRequest::Section(Section::Albums)),
             Effect::Library(LibraryRequest::Section(Section::Recent)),
+            Effect::Library(LibraryRequest::Tracks {
+                collection_uri: LIKED_URI.into()
+            }),
             Effect::Library(LibraryRequest::Account),
             Effect::Display(DisplayMode::Active),
         ]
@@ -1060,10 +1063,12 @@ fn keys_go_to_the_name_field_not_search_while_it_is_open() {
 fn heart_likes_the_playing_song_and_undoes_on_failure() {
     let mut c = editor();
     with_tracks(&mut c, LIKED_URI, 2);
+    // Liked Songs is loaded, so whether song 5 is liked is known without asking.
     let fx = c.handle(Input::Player(PlayerUpdate::TrackChanged(track(5))), 0);
-    assert!(fx.contains(&Effect::Library(LibraryRequest::IsLiked {
-        track_uri: "spotify:track:t5".into()
-    })));
+    assert!(
+        !fx.iter()
+            .any(|e| matches!(e, Effect::Library(LibraryRequest::IsLiked { .. })))
+    );
     c.handle(
         Input::Library(LibraryUpdate::Liked {
             track_uri: "spotify:track:t5".into(),
@@ -1500,22 +1505,24 @@ fn tapping_the_moon_while_running_turns_it_off_and_restores_volume() {
 }
 
 #[test]
-fn the_screen_goes_dark_seconds_after_setting_a_sleep_timer() {
+fn during_a_sleep_timer_the_screen_dims_in_seconds_then_goes_dark_after_a_minute() {
     let mut c = playing_at(60);
     c.handle(ui(UiAction::SetSleepTimer(Some(60))), 10_000);
     c.handle(Input::Tick, 12_000);
     assert_eq!(c.state().display, DisplayMode::Active);
     c.handle(Input::Tick, 13_000);
-    assert_eq!(c.state().display, DisplayMode::Off);
+    assert_eq!(c.state().display, DisplayMode::Dim);
     // A new song doesn't light it up again.
     c.handle(
         Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
         14_000,
     );
+    assert_eq!(c.state().display, DisplayMode::Dim);
+    c.handle(Input::Tick, 70_000);
     assert_eq!(c.state().display, DisplayMode::Off);
-    // A touch wakes it, and it goes dark again a few seconds later.
-    c.handle(ui(UiAction::Touch), 20_000);
+    // A touch wakes it, and the cycle starts again.
+    c.handle(ui(UiAction::Touch), 80_000);
     assert_eq!(c.state().display, DisplayMode::Active);
-    c.handle(Input::Tick, 23_000);
-    assert_eq!(c.state().display, DisplayMode::Off);
+    c.handle(Input::Tick, 83_000);
+    assert_eq!(c.state().display, DisplayMode::Dim);
 }

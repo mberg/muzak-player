@@ -23,8 +23,10 @@ const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
 /// The sleep timer fades the volume out over its last this-many milliseconds.
 const SLEEP_FADE_MS: u64 = 5_000;
-/// While a sleep timer runs, the screen turns off this soon after the last touch.
-const SLEEP_SCREEN_OFF_MS: u64 = 3_000;
+/// While a sleep timer runs, the screen dims this soon after the last touch...
+const SLEEP_SCREEN_DIM_MS: u64 = 3_000;
+/// ...and turns off this long after it.
+const SLEEP_SCREEN_OFF_MS: u64 = 60_000;
 
 /// What to put back if Spotify refuses an edit, and what to reload either way.
 #[derive(Debug, Default)]
@@ -137,6 +139,8 @@ impl Core {
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
             core.request_section(section, &mut fx);
         }
+        // Liked Songs answers "is this liked?" for every song without asking Spotify.
+        core.request_tracks(LIKED_URI, &mut fx);
         fx.push(Effect::Library(LibraryRequest::Account));
         fx.push(Effect::Display(DisplayMode::Active));
         (core, fx)
@@ -614,6 +618,28 @@ impl Core {
         }
     }
 
+    /// Whether liked, saved or followed can be answered without asking Spotify: from an
+    /// earlier answer, or from the cached list it would appear in.
+    fn knows_saved(&self, uri: &str) -> bool {
+        if self.state.liked.contains_key(uri) {
+            return true;
+        }
+        if uri.starts_with("spotify:track:") {
+            return self.loaded_tracks(LIKED_URI).is_some();
+        }
+        let section = if uri.starts_with("spotify:album:") {
+            Section::Albums
+        } else if uri.starts_with("spotify:artist:") {
+            Section::Artists
+        } else {
+            return false;
+        };
+        self.state
+            .sections
+            .get(&section)
+            .is_some_and(|slot| slot.data.is_some())
+    }
+
     /// Whether a song is in Liked Songs, from what Spotify said or the loaded list.
     fn is_liked(&self, uri: &str) -> bool {
         self.state.liked.get(uri).copied().unwrap_or_else(|| {
@@ -841,7 +867,7 @@ impl Core {
             }
             UiAction::OpenCollection(uri) => {
                 // Albums show whether they're saved, which Spotify has to be asked.
-                if uri.starts_with("spotify:album:") && !self.state.liked.contains_key(&uri) {
+                if uri.starts_with("spotify:album:") && !self.knows_saved(&uri) {
                     fx.push(Effect::Library(LibraryRequest::IsLiked {
                         track_uri: uri.clone(),
                     }));
@@ -1047,7 +1073,7 @@ impl Core {
                 self.on_ui(UiAction::ShowSection(previous), now_ms, fx);
             }
             UiAction::OpenArtist(uri) => {
-                if !self.state.liked.contains_key(&uri) {
+                if !self.knows_saved(&uri) {
                     fx.push(Effect::Library(LibraryRequest::IsLiked {
                         track_uri: uri.clone(),
                     }));
@@ -1150,7 +1176,7 @@ impl Core {
                 }
             }
             PlayerUpdate::TrackChanged(track) => {
-                if !self.state.liked.contains_key(&track.uri) {
+                if !self.knows_saved(&track.uri) {
                     fx.push(Effect::Library(LibraryRequest::IsLiked {
                         track_uri: track.uri.clone(),
                     }));
@@ -1332,9 +1358,11 @@ impl Core {
         }
         let idle = now_ms.saturating_sub(self.last_activity_ms);
         let target = if self.state.sleep_ends_ms.is_some() {
-            // Falling asleep: straight to dark a moment after the last touch.
+            // Falling asleep: dim a moment after the last touch, dark after a minute.
             if idle >= SLEEP_SCREEN_OFF_MS {
                 DisplayMode::Off
+            } else if idle >= SLEEP_SCREEN_DIM_MS {
+                DisplayMode::Dim
             } else {
                 DisplayMode::Active
             }

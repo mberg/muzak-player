@@ -8,12 +8,48 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use super::LibrarySource;
 use super::cache::{DiskCache, tracks_key};
 use crate::app::{Input, LibraryRequest, LibraryUpdate};
-use crate::model::{Account, Collection, Track};
+use crate::model::{Account, Collection, LIKED_URI, Section, Track};
 
 const ACCOUNT_KEY: &str = "account";
 /// A cached section or track list younger than this is not fetched again, except after
 /// an edit. Spotify rate-limits developer apps hard, and library data rarely changes.
 const CACHE_FRESH: std::time::Duration = std::time::Duration::from_secs(600);
+/// Liked Songs is reused this long; likes made here update it locally anyway.
+const LIKED_FRESH: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+/// An artist's album list is reused this long.
+const ARTIST_FRESH: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+fn version_key(uri: &str) -> String {
+    format!("version-{uri}")
+}
+
+/// The playlist's current version, from the cached playlist list.
+fn listed_snapshot(cache: &DiskCache, uri: &str) -> Option<String> {
+    cache
+        .read::<Vec<Collection>>(Section::Playlists.cache_key())?
+        .into_iter()
+        .find(|p| p.uri == uri)?
+        .snapshot_id
+}
+
+/// Whether a cached track list can be shown without asking Spotify:
+/// albums never change, playlists change only when their version does, and Liked Songs
+/// and anything else are reused for a while.
+fn tracks_current(cache: &DiskCache, key: &str, uri: &str) -> bool {
+    let age = cache.age(key);
+    if uri.starts_with("spotify:album:") {
+        return age.is_some();
+    }
+    if uri == LIKED_URI {
+        return age.is_some_and(|a| a < LIKED_FRESH);
+    }
+    if uri.starts_with("spotify:playlist:")
+        && let Some(listed) = listed_snapshot(cache, uri)
+    {
+        return cache.read::<String>(&version_key(uri)).as_deref() == Some(listed.as_str());
+    }
+    age.is_some_and(|a| a < CACHE_FRESH)
+}
 
 pub fn spawn_library<S: LibrarySource>(
     source: Arc<S>,
@@ -92,7 +128,7 @@ async fn serve<S: LibrarySource>(
                     collection_uri: collection_uri.clone(),
                     tracks,
                 });
-                if !force && cache.age(&key).is_some_and(|age| age < CACHE_FRESH) {
+                if !force && tracks_current(cache, &key, &collection_uri) {
                     return;
                 }
             }
@@ -100,6 +136,10 @@ async fn serve<S: LibrarySource>(
                 Ok(tracks) => {
                     if let Err(e) = cache.write(&key, &tracks) {
                         tracing::warn!("cache write failed for {key}: {e}");
+                    }
+                    // Remember which version of the playlist this is.
+                    if let Some(snapshot) = listed_snapshot(cache, &collection_uri) {
+                        let _ = cache.write(&version_key(&collection_uri), &snapshot);
                     }
                     send(LibraryUpdate::Tracks {
                         collection_uri,
@@ -133,6 +173,9 @@ async fn serve<S: LibrarySource>(
                     artist_uri: artist_uri.clone(),
                     albums,
                 });
+                if cache.age(&key).is_some_and(|age| age < ARTIST_FRESH) {
+                    return;
+                }
             }
             match source.artist_albums(&artist_uri).await {
                 Ok(albums) => {
@@ -379,5 +422,38 @@ mod tests {
         next_update(&mut rx).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn albums_are_current_forever_and_playlists_until_their_version_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCache::new(dir.path()).unwrap();
+        let album = "spotify:album:a1";
+        assert!(!tracks_current(&cache, &tracks_key(album), album));
+        cache
+            .write(&tracks_key(album), &Vec::<Track>::new())
+            .unwrap();
+        assert!(tracks_current(&cache, &tracks_key(album), album));
+
+        let list = "spotify:playlist:p1";
+        let listed = |snapshot: &str| {
+            vec![Collection {
+                uri: list.into(),
+                snapshot_id: Some(snapshot.into()),
+                ..collection("p1")
+            }]
+        };
+        cache
+            .write(Section::Playlists.cache_key(), &listed("s1"))
+            .unwrap();
+        cache
+            .write(&tracks_key(list), &Vec::<Track>::new())
+            .unwrap();
+        cache.write(&version_key(list), &"s1".to_string()).unwrap();
+        assert!(tracks_current(&cache, &tracks_key(list), list));
+        cache
+            .write(Section::Playlists.cache_key(), &listed("s2"))
+            .unwrap();
+        assert!(!tracks_current(&cache, &tracks_key(list), list));
     }
 }
