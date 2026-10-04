@@ -19,7 +19,9 @@ struct Images {
     ready: HashMap<String, Image>,
     order: VecDeque<String>,
     requested: HashSet<String>,
-    /// URLs the current view shows. These are never evicted.
+    /// URLs the current render asked for, so the screen shows them. These are never
+    /// evicted: evicting a cover on screen makes the next render request it again, which
+    /// loops forever once a screen shows more covers than the cache holds.
     live: HashSet<String>,
     requests: UnboundedSender<String>,
 }
@@ -41,8 +43,14 @@ fn evict(order: &mut VecDeque<String>, live: &HashSet<String>, limit: usize) -> 
 }
 
 impl Images {
+    /// Starts a render: covers are live again only if this render asks for them.
+    fn begin_render(&mut self) {
+        self.live.clear();
+    }
+
     fn get(&mut self, url: &Option<String>) -> Option<Image> {
         let url = url.as_ref()?;
+        self.live.insert(url.clone());
         if let Some(image) = self.ready.get(url) {
             return Some(image.clone());
         }
@@ -281,7 +289,7 @@ impl Bridge {
             return;
         };
         let v = view::build(state);
-        self.images.live = live_images(&v);
+        self.images.begin_render();
 
         w.set_screen(match v.screen {
             ScreenView::Grid => ScreenKind::Grid,
@@ -421,30 +429,6 @@ impl Bridge {
 }
 
 /// Every image URL the view shows: grid tiles, the detail header and the now-playing art.
-fn live_images(v: &view::View) -> HashSet<String> {
-    v.grid
-        .iter()
-        .map(|t| &t.image_url)
-        .chain(v.detail.iter().map(|d| &d.header.image_url))
-        .chain(std::iter::once(&v.now.image_url))
-        .chain(
-            v.search
-                .rows
-                .iter()
-                .filter(|_| v.screen == ScreenView::Search)
-                .map(|r| &r.image_url),
-        )
-        .chain(
-            v.artist
-                .iter()
-                .filter(|_| v.screen == ScreenView::Artist)
-                .flat_map(|a| a.albums.iter().map(|t| &t.image_url)),
-        )
-        .flatten()
-        .cloned()
-        .collect()
-}
-
 fn search_row_data(images: &mut Images, r: &SearchRowView) -> SearchRowData {
     let image = images.get(&r.image_url);
     SearchRowData {
@@ -545,14 +529,17 @@ mod tests {
             live: HashSet::new(),
             requests: tx,
         };
+        // Any screen, the add-to-playlist sheet included, that shows more covers than
+        // the cache holds: whatever a render asks for is live, with no list to forget.
         let all = urls(0..IMAGE_CACHE_LIMIT + 1);
-        images.live = all.iter().cloned().collect();
+        images.begin_render();
         for url in &all {
             assert!(images.get(&Some(url.clone())).is_none());
         }
         for url in &all {
             images.insert(url.clone(), Image::default());
             // Each delivery re-renders the view.
+            images.begin_render();
             for u in &all {
                 images.get(&Some(u.clone()));
             }

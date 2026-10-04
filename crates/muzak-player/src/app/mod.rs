@@ -702,19 +702,13 @@ impl Core {
             .chain(self.state.artist_albums.values())
             .filter_map(|slot| slot.data.as_ref())
             .flat_map(|items| items.iter());
-        let from_search = self
-            .state
-            .search
-            .results
-            .data
-            .iter()
-            .flat_map(|found| {
-                found
-                    .albums
-                    .iter()
-                    .chain(&found.playlists)
-                    .chain(&found.artists)
-            });
+        let from_search = self.state.search.results.data.iter().flat_map(|found| {
+            found
+                .albums
+                .iter()
+                .chain(&found.playlists)
+                .chain(&found.artists)
+        });
         from_sections
             .chain(from_search)
             .find(|c| c.uri == uri)
