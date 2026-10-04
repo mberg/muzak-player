@@ -582,7 +582,15 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
     }
 
     async fn recent(&self) -> Result<Vec<Collection>, FetchError> {
-        let known = self.playlists().await?;
+        // Without the playlist list (Spotify rate-limits it hard) recent playlists are
+        // skipped, but albums and Liked Songs still show.
+        let known = match self.playlists().await {
+            Ok(known) => known,
+            Err(e) => {
+                tracing::warn!("recent without playlists: {e}");
+                Vec::new()
+            }
+        };
         // Recently played pages use cursors; the first page (50 plays) is plenty.
         let page: Page<RecentItem> =
             decode(self.get("/me/player/recently-played?limit=50").await?)?;

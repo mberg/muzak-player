@@ -279,7 +279,8 @@ impl Core {
         }
         for (section, _) in &undo.sections {
             if matches!(section, Section::Playlists | Section::Albums) {
-                self.request_section(*section, fx);
+                self.state.sections.entry(*section).or_default().loading = true;
+                fx.push(Effect::Library(LibraryRequest::Reload(*section)));
             }
         }
     }

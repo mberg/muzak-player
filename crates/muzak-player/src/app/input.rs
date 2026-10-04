@@ -248,6 +248,8 @@ pub enum LibraryRequest {
     },
     Account,
     Search(String),
+    /// A section fetched even if the cache is fresh, after an edit changed it.
+    Reload(Section),
     ArtistAlbums {
         artist_uri: String,
     },

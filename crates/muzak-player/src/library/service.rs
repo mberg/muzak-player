@@ -11,6 +11,8 @@ use crate::app::{Input, LibraryRequest, LibraryUpdate};
 use crate::model::{Account, Collection, Track};
 
 const ACCOUNT_KEY: &str = "account";
+/// A cached section younger than this is not fetched again, except after an edit.
+const SECTION_FRESH: std::time::Duration = std::time::Duration::from_secs(120);
 
 pub fn spawn_library<S: LibrarySource>(
     source: Arc<S>,
@@ -50,11 +52,17 @@ async fn serve<S: LibrarySource>(
     let send = |update| {
         let _ = inputs.send(Input::Library(update));
     };
+    let force = matches!(request, LibraryRequest::Reload(_));
     match request {
-        LibraryRequest::Section(section) => {
+        LibraryRequest::Section(section) | LibraryRequest::Reload(section) => {
             let key = section.cache_key();
             if let Some(items) = cache.read::<Vec<Collection>>(key) {
                 send(LibraryUpdate::Section { section, items });
+                // A restart soon after a fetch (Settings restarts the player) reuses the
+                // cache rather than asking Spotify again, which rate-limits heavily.
+                if !force && cache.age(key).is_some_and(|age| age < SECTION_FRESH) {
+                    return;
+                }
             }
             match source.section(section).await {
                 Ok(items) => {
@@ -266,7 +274,7 @@ mod tests {
         });
         let requests = spawn_library(source, cache.clone(), tx);
         requests
-            .send(LibraryRequest::Section(Section::Playlists))
+            .send(LibraryRequest::Reload(Section::Playlists))
             .unwrap();
         assert_eq!(
             next_update(&mut rx).await,
@@ -286,6 +294,33 @@ mod tests {
             cache.read::<Vec<Collection>>(Section::Playlists.cache_key()),
             Some(vec![collection("fresh")])
         );
+    }
+
+    #[tokio::test]
+    async fn fresh_cache_is_not_fetched_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Arc::new(DiskCache::new(dir.path()).unwrap());
+        cache
+            .write(Section::Playlists.cache_key(), &vec![collection("cached")])
+            .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let source = Arc::new(StubSource {
+            calls: AtomicU32::new(0),
+            fail: false,
+        });
+        let requests = spawn_library(source.clone(), cache, tx);
+        requests
+            .send(LibraryRequest::Section(Section::Playlists))
+            .unwrap();
+        assert_eq!(
+            next_update(&mut rx).await,
+            LibraryUpdate::Section {
+                section: Section::Playlists,
+                items: vec![collection("cached")]
+            }
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(source.calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
