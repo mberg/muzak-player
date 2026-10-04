@@ -19,9 +19,10 @@ component BarButton inherits Rectangle {
     background: root.primary
         ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
         : (touch.pressed ? Theme.surface-hi : Theme.surface);
+    // Icon-only buttons are round.
     row := HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 16px;
+        padding-left: root.label == "" ? 10px : 14px;
+        padding-right: root.label == "" ? 10px : 16px;
         spacing: 6px;
         if root.icon.width > 0: VerticalLayout {
             alignment: center;
@@ -32,7 +33,7 @@ component BarButton inherits Rectangle {
                 colorize: root.primary ? Theme.accent-text : root.tint;
             }
         }
-        Text {
+        if root.label != "": Text {
             text: root.label;
             color: root.primary ? Theme.accent-text : root.tint;
             font-size: Theme.font-small;
@@ -155,7 +156,6 @@ export component DetailScreen inherits Rectangle {
                 if root.editable && !root.editing: VerticalLayout {
                     alignment: center;
                     BarButton {
-                        label: "Edit";
                         icon: @image-url("../icons/edit.svg");
                         clicked => { root.edit(); }
                     }
