@@ -2,6 +2,11 @@
 
 Open items from the per-task and final reviews of phase 1. None blocks a first run on the Pi; fix as they come up or before phase 2.
 
+## Found in Mac testing (2026-10-03)
+
+- Spotify's token service answers 403 "Invalid request" when the librespot session asks for Web API scopes, so the library uses Contingency A (the parent's developer app, `web-auth.json`). Playback still uses the librespot credentials.
+- With developer-app tokens, Spotify returns 403 for the tracks of playlists owned by other users (for example followed soundtrack playlists), and for the `/playlists/{id}/tracks` endpoint everywhere. The account's own playlists work through `/items`. The player shows the failed state for the forbidden ones; consider hiding playlists the account does not own, or showing a clearer message.
+
 ## Parked from the final review
 
 - After a Wi-Fi drop during a track change, the reconnect resend restarts the collection from track 1 (core resends any `Loading` state with `start_index: None`). Fix: keep a `pending_load` in `Core` set by PlayCollection/PlayTrack, cleared on `Playing`, and resend it with its `start_index`. This also makes an offline track-row tap resume at that track.

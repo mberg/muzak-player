@@ -7,7 +7,7 @@ A music-only Spotify player for kids. It runs on a Raspberry Pi 3 A+ with a 7" t
 - `scripts/`: build the Pi binary, provision a Pi, and deploy to it.
 - `docs/`: the [design spec](docs/superpowers/specs/2026-10-03-muzak-player-design.md), the [phase 1 plan](docs/superpowers/plans/2026-10-03-muzak-player-phase1.md), the [hardware checklist](docs/hardware-checklist.md) and [known follow-ups](docs/phase1-followups.md).
 
-Status: phase 1 is code-complete and the unit tests pass. It has not yet been tested with a real Spotify account or on a Pi. This README walks through that testing.
+Status: phase 1 works on the Mac with a real Spotify account (library and playback, using Contingency A for the library). It has not yet been tested on a Pi. This README walks through that testing.
 
 ## Testing on the Mac
 
