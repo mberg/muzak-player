@@ -59,17 +59,52 @@ pub fn spawn_voice(
                     }
                 };
                 // Ends when the microphone goes away.
+                let (mut peak, mut since) = (0.0f32, std::time::Instant::now());
+                // VOICE_RECORD_DIR saves what the microphone hears, 10 s per file, for tuning.
+                let record_dir = std::env::var("VOICE_RECORD_DIR").ok().map(PathBuf::from);
+                let mut recording: Vec<f32> = Vec::new();
+                let mut files = 0;
                 while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(5)) {
+                    // With RUST_LOG=muzak_player::voice=debug: is any sound arriving at all?
+                    peak = chunk.iter().fold(peak, |p, s| p.max(s.abs()));
+                    if let Some(dir) = &record_dir {
+                        recording.extend_from_slice(&chunk);
+                        if recording.len() >= super::listen::RATE * 10 {
+                            files += 1;
+                            let path = dir.join(format!("mic-{files:03}.wav"));
+                            let _ = std::fs::write(&path, super::gemini::wav(&recording));
+                            tracing::info!("voice: saved {}", path.display());
+                            recording.clear();
+                        }
+                    }
+                    if since.elapsed() >= Duration::from_secs(3) {
+                        tracing::debug!("voice: microphone peak {peak:.4} over 3 s");
+                        peak = 0.0;
+                        since = std::time::Instant::now();
+                    }
                     for heard in listener.push(&chunk) {
                         let send = |update| {
                             let _ = inputs.send(Input::Voice(update));
                         };
                         match heard {
-                            Heard::Woke => send(VoiceUpdate::Woke),
-                            Heard::Nothing => send(VoiceUpdate::NotUnderstood),
+                            Heard::Woke => {
+                                tracing::info!("voice: heard the wake word");
+                                send(VoiceUpdate::Woke);
+                            }
+                            Heard::Nothing => {
+                                tracing::info!("voice: nothing said after the wake word");
+                                send(VoiceUpdate::NotUnderstood);
+                            }
                             Heard::Request(audio) => {
+                                tracing::info!(
+                                    "voice: request of {:.1} s",
+                                    audio.len() as f32 / super::listen::RATE as f32
+                                );
                                 send(VoiceUpdate::Thinking);
                                 let Some(gemini) = gemini.clone() else {
+                                    tracing::warn!(
+                                        "voice: no Gemini key, so the request can't be answered"
+                                    );
                                     send(VoiceUpdate::Failed(
                                         "Voice needs a Gemini key in the config".into(),
                                     ));

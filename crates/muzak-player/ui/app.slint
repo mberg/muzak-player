@@ -389,7 +389,7 @@ export component AppWindow inherits Window {
     }
     if root.voice-status != "": VoicePill {
         x: (root.width - self.width) / 2;
-        y: 12px;
+        y: root.height - self.height - 16px;
         text: root.voice-status;
         listening: root.voice-listening;
     }

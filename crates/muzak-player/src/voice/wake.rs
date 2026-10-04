@@ -221,3 +221,65 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod recordings {
+    use super::*;
+    use crate::voice::listen::{Heard, Listener};
+
+    /// Runs WAVs saved with VOICE_RECORD_DIR through the wake word and listener:
+    /// `VOICE_MODEL_DIR=… VOICE_RECORDINGS=… cargo test -- --ignored live_recordings --nocapture`.
+    #[test]
+    #[ignore]
+    fn live_recordings() {
+        let (Ok(model), Ok(dir)) = (
+            std::env::var("VOICE_MODEL_DIR"),
+            std::env::var("VOICE_RECORDINGS"),
+        ) else {
+            return;
+        };
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|e| e == "wav"))
+            .collect();
+        files.sort();
+        // All files as one stream, as the microphone delivered them.
+        let audio: Vec<f32> = files
+            .iter()
+            .flat_map(|f| {
+                let bytes = std::fs::read(f).unwrap();
+                bytes[44..]
+                    .chunks_exact(2)
+                    .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        println!("{:.0} s of recordings", audio.len() as f32 / RATE as f32);
+        let thresholds: Vec<f32> = std::env::var("THRESHOLDS")
+            .unwrap_or_else(|_| "0.1,0.15,0.25".into())
+            .split(',')
+            .map(|t| t.parse().unwrap())
+            .collect();
+        for threshold in thresholds {
+            let wake = SherpaWake::load(Path::new(&model), DEFAULT_PHRASE, threshold).unwrap();
+            let mut listener = Listener::new(wake);
+            let mut at = 0usize;
+            let mut events = Vec::new();
+            for chunk in audio.chunks(1_600) {
+                at += chunk.len();
+                for heard in listener.push(chunk) {
+                    let secs = at as f32 / RATE as f32;
+                    events.push(match heard {
+                        Heard::Woke => format!("woke at {secs:.1}s"),
+                        Heard::Request(a) => {
+                            format!("request of {:.1}s", a.len() as f32 / RATE as f32)
+                        }
+                        Heard::Nothing => "nothing".into(),
+                    });
+                }
+            }
+            println!("threshold {threshold}: {}", events.join(", "));
+        }
+    }
+}
