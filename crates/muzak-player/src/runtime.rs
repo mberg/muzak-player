@@ -149,9 +149,12 @@ async fn run(
         saved,
         bluetooth: bluetooth.is_some(),
     };
+    let history =
+        crate::history::spawn_history(config.state_dir.join("history.db"), inputs.clone());
     let outputs = Outputs {
         player,
         library,
+        history,
         bluetooth,
         state_dir: config.state_dir.clone(),
     };
@@ -184,6 +187,7 @@ async fn run(
 struct Outputs {
     player: UnboundedSender<PlayerCommand>,
     library: UnboundedSender<LibraryRequest>,
+    history: UnboundedSender<crate::app::HistoryCommand>,
     bluetooth: Option<UnboundedSender<crate::app::BtCommand>>,
     state_dir: std::path::PathBuf,
 }
@@ -198,6 +202,9 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                 let _ = outputs.library.send(request);
             }
             Effect::Display(mode) => platform.set_display(mode),
+            Effect::History(command) => {
+                let _ = outputs.history.send(command);
+            }
             Effect::Bluetooth(command) => {
                 if let Some(bluetooth) = &outputs.bluetooth {
                     let _ = bluetooth.send(command);
@@ -277,6 +284,9 @@ mod tests {
             }))
             .unwrap();
         wait_for(&|s| s.playback.status == PlayStatus::Playing && s.playback.track.is_some());
+        // The play is logged in this device's history, which Recent then shows.
+        wait_for(&|s| s.history.as_ref().is_some_and(|h| !h.is_empty()));
+        assert!(dir.path().join("history.db").is_file());
 
         // Search: typing, a pause, then catalog results arrive without another input.
         inputs

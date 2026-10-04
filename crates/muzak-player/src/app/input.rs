@@ -18,6 +18,18 @@ pub enum Input {
     /// Sent every 150ms while the search screen is open, to send a search soon after typing stops.
     SearchTick,
     Bluetooth(BtUpdate),
+    /// Plays on this device for Recent, newest first.
+    HistoryRecent(Vec<crate::model::PlayRecord>),
+}
+
+/// Work for the play-history store.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HistoryCommand {
+    /// A song started.
+    Start(Box<crate::model::PlayRecord>),
+    /// How long the current song has actually played.
+    Listened(u64),
+    LoadRecent,
 }
 
 /// A Bluetooth audio device seen in a scan.
@@ -127,6 +139,10 @@ pub enum UiAction {
     SetSleepLength(u32),
     /// Settings: colour scheme by index.
     SetTheme(u32),
+    /// Recent: show songs (true) or albums and playlists (false).
+    SetRecentSongs(bool),
+    /// Recent: play the song at this index of the history.
+    PlayRecentSong(usize),
     /// Set the sleep timer to these minutes; None turns it off.
     SetSleepTimer(Option<u32>),
     /// Settings: name this device with the keyboard.
@@ -237,6 +253,7 @@ pub enum Effect {
     ApplySettings(crate::settings::Settings),
     /// Save the settings; nothing needs a restart.
     SaveSettings(crate::settings::Settings),
+    History(HistoryCommand),
 }
 
 #[derive(Debug, Clone, PartialEq)]

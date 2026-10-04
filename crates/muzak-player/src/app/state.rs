@@ -202,6 +202,10 @@ pub struct AppState {
     pub artists_seen: HashMap<String, Collection>,
     /// The core's clock at the last input, so the view can show times left.
     pub now_ms: u64,
+    /// Plays on this device, newest first, once loaded.
+    pub history: Option<Arc<Vec<crate::model::PlayRecord>>>,
+    /// Recent shows songs rather than albums and playlists.
+    pub recent_songs: bool,
     /// When the sleep timer pauses playback, if one is set.
     pub sleep_ends_ms: Option<u64>,
 }

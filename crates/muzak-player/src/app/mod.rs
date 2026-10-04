@@ -9,7 +9,10 @@ use std::sync::Arc;
 pub use input::*;
 pub use state::*;
 
-use crate::model::{Collection, EditOutcome, LIKED_URI, PlaylistEdit, Section, Track};
+use crate::model::{
+    Collection, CollectionKind, EditOutcome, LIKED_URI, PlayRecord, PlaylistEdit, Section, Track,
+    liked_collection,
+};
 use crate::settings::{Output, Settings, Speaker};
 
 /// How long a notice stays on screen.
@@ -21,6 +24,10 @@ const SEARCH_PAUSE_MS: u64 = 400;
 const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
+/// Listening time is saved to history at least this often while playing.
+const LISTEN_REPORT_MS: u64 = 10_000;
+/// How many albums and playlists Recent shows.
+const RECENT_COLLECTIONS: usize = 30;
 /// The last colour scheme index (Daylight).
 const MAX_THEME: u32 = 3;
 /// Sleep timer length unless Settings says otherwise.
@@ -81,6 +88,15 @@ pub struct Core {
     undo: HashMap<u64, Undo>,
     /// The volume before the sleep timer started fading, to put back afterwards.
     sleep_volume: Option<u8>,
+    /// The song being logged in play history, and how long it has actually played.
+    logged_uri: Option<String>,
+    listened_ms: u64,
+    /// `listened_ms` as last sent to the history store.
+    listened_reported: u64,
+    /// When listening time was last added up, while playing.
+    listen_mark: Option<u64>,
+    /// Spotify's recently-played list was asked for because the device has no history yet.
+    asked_spotify_recent: bool,
 }
 
 impl Core {
@@ -118,6 +134,8 @@ impl Core {
             list_view: false,
             artists_seen: HashMap::new(),
             now_ms,
+            history: None,
+            recent_songs: false,
             sleep_ends_ms: None,
             device: DeviceSettings {
                 saved: cfg.saved.clone(),
@@ -137,6 +155,11 @@ impl Core {
             next_edit: 0,
             undo: HashMap::new(),
             sleep_volume: None,
+            logged_uri: None,
+            listened_ms: 0,
+            listened_reported: 0,
+            listen_mark: None,
+            asked_spotify_recent: false,
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -174,6 +197,19 @@ impl Core {
                 self.on_sleep_tick(now_ms, &mut fx);
             }
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
+            Input::HistoryRecent(plays) => {
+                if plays.is_empty() && !self.asked_spotify_recent {
+                    // A new device has no history yet: borrow Spotify's list meanwhile.
+                    self.asked_spotify_recent = true;
+                    fx.push(Effect::Library(LibraryRequest::Section(Section::Recent)));
+                } else if !plays.is_empty() {
+                    let slot = self.state.sections.entry(Section::Recent).or_default();
+                    slot.data = Some(Arc::new(Self::recent_collections(&plays)));
+                    slot.loading = false;
+                    slot.failed = false;
+                }
+                self.state.history = Some(Arc::new(plays));
+            }
         }
         if self.state.screen != Screen::Search {
             self.state.keyboard_open = false;
@@ -1134,6 +1170,26 @@ impl Core {
                 };
                 self.on_ui(UiAction::SetSleepTimer(minutes), now_ms, fx);
             }
+            UiAction::SetRecentSongs(songs) => self.state.recent_songs = songs,
+            UiAction::PlayRecentSong(index) => {
+                let Some(play) = self
+                    .state
+                    .history
+                    .as_ref()
+                    .and_then(|h| h.get(index))
+                    .cloned()
+                else {
+                    return;
+                };
+                // Play it from where it was heard, starting at that song.
+                let context = play
+                    .context_uri
+                    .clone()
+                    .or(play.track.album_uri.clone())
+                    .unwrap_or_else(|| play.track.uri.clone());
+                let shuffle = self.state.playback.shuffle;
+                self.start_playback(context, Start::Track(play.track), shuffle, now_ms, fx);
+            }
             UiAction::SetTheme(index) => {
                 self.state.device.saved.theme = Some(index.min(MAX_THEME));
                 fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
@@ -1191,6 +1247,7 @@ impl Core {
                 }
             }
             PlayerUpdate::TrackChanged(track) => {
+                self.log_track(&track, now_ms, fx);
                 if !self.knows_saved(&track.uri) {
                     fx.push(Effect::Library(LibraryRequest::IsLiked {
                         track_uri: track.uri.clone(),
@@ -1201,18 +1258,28 @@ impl Core {
             }
             PlayerUpdate::Loading => self.state.playback.status = PlayStatus::Loading,
             PlayerUpdate::Playing { position_ms } => {
+                self.count_listening(now_ms);
                 self.state.playback.status = PlayStatus::Playing;
                 self.state.playback.position_ms = position_ms;
+                self.count_listening(now_ms);
                 // A new song shouldn't light the screen while falling asleep.
                 if self.state.sleep_ends_ms.is_none() {
                     self.wake(now_ms, fx);
                 }
             }
             PlayerUpdate::Paused { position_ms } => {
+                self.count_listening(now_ms);
                 self.state.playback.status = PlayStatus::Paused;
                 self.state.playback.position_ms = position_ms;
+                self.count_listening(now_ms);
+                self.report_listening(fx);
             }
-            PlayerUpdate::Stopped => self.state.playback.status = PlayStatus::Stopped,
+            PlayerUpdate::Stopped => {
+                self.count_listening(now_ms);
+                self.state.playback.status = PlayStatus::Stopped;
+                self.count_listening(now_ms);
+                self.report_listening(fx);
+            }
             PlayerUpdate::Position { position_ms } => self.state.playback.position_ms = position_ms,
             PlayerUpdate::Volume { percent } => self.state.playback.volume = percent.min(100),
             PlayerUpdate::Shuffle(shuffle) => self.state.playback.shuffle = shuffle,
@@ -1367,6 +1434,10 @@ impl Core {
             self.state.notice = None;
         }
         self.on_sleep_tick(now_ms, fx);
+        self.count_listening(now_ms);
+        if self.listened_ms >= self.listened_reported + LISTEN_REPORT_MS {
+            self.report_listening(fx);
+        }
         // Music keeps the screen awake, except while falling asleep to it.
         if self.state.playback.status == PlayStatus::Playing && self.state.sleep_ends_ms.is_none() {
             self.last_activity_ms = now_ms;
@@ -1411,7 +1482,119 @@ impl Core {
 
     fn request_section(&mut self, section: Section, fx: &mut Vec<Effect>) {
         self.state.sections.entry(section).or_default().loading = true;
-        fx.push(Effect::Library(LibraryRequest::Section(section)));
+        if section == Section::Recent {
+            // Recent comes from this device's own play history, not Spotify.
+            fx.push(Effect::History(HistoryCommand::LoadRecent));
+        } else {
+            fx.push(Effect::Library(LibraryRequest::Section(section)));
+        }
+    }
+
+    // ---- Play history ----
+
+    /// Adds up how long the current song has actually played.
+    fn count_listening(&mut self, now_ms: u64) {
+        if let Some(mark) = self.listen_mark {
+            self.listened_ms += now_ms.saturating_sub(mark);
+        }
+        self.listen_mark = (self.state.playback.status == PlayStatus::Playing).then_some(now_ms);
+    }
+
+    fn report_listening(&mut self, fx: &mut Vec<Effect>) {
+        if self.logged_uri.is_some() && self.listened_ms != self.listened_reported {
+            self.listened_reported = self.listened_ms;
+            fx.push(Effect::History(HistoryCommand::Listened(self.listened_ms)));
+        }
+    }
+
+    /// A new song started: finish the last one's listening time and log the new one.
+    fn log_track(&mut self, track: &Track, now_ms: u64, fx: &mut Vec<Effect>) {
+        self.count_listening(now_ms);
+        // librespot can announce the same song twice as it loads; that's one play.
+        if self.logged_uri.as_deref() == Some(track.uri.as_str()) && self.listened_ms < 5_000 {
+            return;
+        }
+        self.report_listening(fx);
+        let context_uri = self.state.playback.context_uri.clone();
+        let context = context_uri.as_deref().and_then(|uri| {
+            if uri == LIKED_URI {
+                Some(liked_collection())
+            } else {
+                self.find_collection(uri)
+            }
+        });
+        fx.push(Effect::History(HistoryCommand::Start(Box::new(
+            PlayRecord {
+                track: track.clone(),
+                context_uri,
+                context_name: context.as_ref().map(|c| c.name.clone()).unwrap_or_default(),
+                context_image: context.and_then(|c| c.image_url),
+                played_at: 0,
+                listened_ms: 0,
+            },
+        ))));
+        self.logged_uri = Some(track.uri.clone());
+        self.listened_ms = 0;
+        self.listened_reported = 0;
+    }
+
+    /// Albums and playlists recently played on this device, newest first.
+    fn recent_collections(plays: &[PlayRecord]) -> Vec<Collection> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for play in plays {
+            let collection = match play.context_uri.as_deref() {
+                Some(LIKED_URI) => liked_collection(),
+                Some(uri)
+                    if !uri.starts_with("spotify:track:") && !play.context_name.is_empty() =>
+                {
+                    let album = uri.starts_with("spotify:album:");
+                    Collection {
+                        uri: uri.to_string(),
+                        kind: if album {
+                            CollectionKind::Album
+                        } else if uri.starts_with("spotify:artist:") {
+                            CollectionKind::Artist
+                        } else {
+                            CollectionKind::Playlist
+                        },
+                        name: play.context_name.clone(),
+                        subtitle: if album {
+                            play.track.artists.clone()
+                        } else {
+                            String::new()
+                        },
+                        image_url: play.context_image.clone().or(play.track.image_url.clone()),
+                        artist_uri: if album {
+                            play.track.artist_uri.clone()
+                        } else {
+                            None
+                        },
+                        ..Default::default()
+                    }
+                }
+                // Played on its own, or from somewhere we don't know: its album.
+                _ => match &play.track.album_uri {
+                    Some(album_uri) => Collection {
+                        uri: album_uri.clone(),
+                        kind: CollectionKind::Album,
+                        name: play.track.album.clone(),
+                        subtitle: play.track.artists.clone(),
+                        image_url: play.track.image_url.clone(),
+                        artist_uri: play.track.artist_uri.clone(),
+                        ..Default::default()
+                    },
+                    None => continue,
+                },
+            };
+            if seen.insert(collection.uri.clone()) {
+                out.push(collection);
+                if out.len() >= RECENT_COLLECTIONS {
+                    break;
+                }
+            }
+        }
+        out
     }
 
     fn request_tracks(&mut self, uri: &str, fx: &mut Vec<Effect>) {

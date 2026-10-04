@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::{
-    Account, Collection, CollectionKind, EditOutcome, LIKED_URI, PlaylistEdit, SearchResults,
-    Section, Track,
+    Account, Collection, CollectionKind, EditOutcome, LIKED_URI, PlayRecord, PlaylistEdit,
+    SearchResults, Section, Track,
 };
 use crate::settings::{Output, Speaker};
 
@@ -68,7 +68,7 @@ fn new_requests_initial_sections_and_shows_albums() {
         vec![
             Effect::Library(LibraryRequest::Section(Section::Playlists)),
             Effect::Library(LibraryRequest::Section(Section::Albums)),
-            Effect::Library(LibraryRequest::Section(Section::Recent)),
+            Effect::History(HistoryCommand::LoadRecent),
             Effect::Library(LibraryRequest::Tracks {
                 collection_uri: LIKED_URI.into()
             }),
@@ -499,7 +499,7 @@ fn reconnect_rerequests_library_and_open_detail() {
         vec![
             Effect::Library(LibraryRequest::Section(Section::Playlists)),
             Effect::Library(LibraryRequest::Section(Section::Albums)),
-            Effect::Library(LibraryRequest::Section(Section::Recent)),
+            Effect::History(HistoryCommand::LoadRecent),
             Effect::Library(LibraryRequest::Tracks {
                 collection_uri: "spotify:album:a1".into()
             }),
@@ -1546,4 +1546,119 @@ fn picking_a_colour_scheme_saves_without_a_restart() {
     assert_eq!(crate::view::build(c.state()).theme, 1);
     c.handle(ui(UiAction::SetTheme(9)), 0);
     assert_eq!(crate::view::build(c.state()).theme, 3);
+}
+
+// ---- Play history ----
+
+fn history_effects(fx: &[Effect]) -> Vec<HistoryCommand> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::History(c) => Some(c.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn each_song_is_logged_with_where_it_played_from_and_how_long() {
+    let mut c = core();
+    with_tracks(&mut c, "spotify:album:a1", 3);
+    c.handle(
+        ui(UiAction::PlayCollection {
+            uri: "spotify:album:a1".into(),
+            shuffle: false,
+        }),
+        0,
+    );
+    let fx = c.handle(Input::Player(PlayerUpdate::TrackChanged(track(0))), 0);
+    let logged = history_effects(&fx);
+    assert!(matches!(&logged[..], [HistoryCommand::Start(r)]
+        if r.track.uri == "spotify:track:t0" && r.context_uri.as_deref() == Some("spotify:album:a1")));
+    // The same song announced again while loading is still one play.
+    let fx = c.handle(Input::Player(PlayerUpdate::TrackChanged(track(0))), 100);
+    assert!(history_effects(&fx).is_empty());
+
+    c.handle(
+        Input::Player(PlayerUpdate::Playing { position_ms: 0 }),
+        1_000,
+    );
+    // Listening time is saved every 10 seconds of actual play.
+    let fx = c.handle(Input::Tick, 11_000);
+    assert_eq!(history_effects(&fx), [HistoryCommand::Listened(10_000)]);
+    // Paused time doesn't count.
+    let fx = c.handle(
+        Input::Player(PlayerUpdate::Paused {
+            position_ms: 12_000,
+        }),
+        13_000,
+    );
+    assert_eq!(history_effects(&fx), [HistoryCommand::Listened(12_000)]);
+    c.handle(Input::Tick, 60_000);
+    c.handle(
+        Input::Player(PlayerUpdate::Playing {
+            position_ms: 12_000,
+        }),
+        60_000,
+    );
+    // The next song closes the first one's time and starts its own row.
+    let fx = c.handle(Input::Player(PlayerUpdate::TrackChanged(track(1))), 65_000);
+    let logged = history_effects(&fx);
+    assert_eq!(logged[0], HistoryCommand::Listened(17_000));
+    assert!(matches!(&logged[1], HistoryCommand::Start(r) if r.track.uri == "spotify:track:t1"));
+}
+
+fn play(n: u32, context: Option<&str>, name: &str) -> PlayRecord {
+    PlayRecord {
+        track: track(n),
+        context_uri: context.map(str::to_string),
+        context_name: name.into(),
+        context_image: None,
+        played_at: 1_000,
+        listened_ms: 60_000,
+    }
+}
+
+#[test]
+fn recent_comes_from_history_grouped_by_where_songs_played_from() {
+    let mut c = core();
+    c.handle(
+        Input::HistoryRecent(vec![
+            play(3, Some("spotify:playlist:p1"), "Road"),
+            play(2, Some("spotify:playlist:p1"), "Road"),
+            play(1, Some(LIKED_URI), ""),
+            play(0, None, ""),
+        ]),
+        0,
+    );
+    let recent = c.state().sections[&Section::Recent].data.clone().unwrap();
+    let names: Vec<&str> = recent.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, ["Road", "Liked Songs", "Album"]);
+    assert_eq!(recent[2].uri, "spotify:album:a1");
+}
+
+#[test]
+fn a_new_device_borrows_spotifys_recent_list_once() {
+    let mut c = core();
+    let fx = c.handle(Input::HistoryRecent(vec![]), 0);
+    assert!(fx.contains(&Effect::Library(LibraryRequest::Section(Section::Recent))));
+    let fx = c.handle(Input::HistoryRecent(vec![]), 0);
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn a_recent_song_plays_from_where_it_was_heard() {
+    let mut c = core();
+    c.handle(
+        Input::HistoryRecent(vec![play(4, Some("spotify:playlist:p1"), "Road")]),
+        0,
+    );
+    c.handle(ui(UiAction::SetRecentSongs(true)), 0);
+    assert!(c.state().recent_songs);
+    let fx = c.handle(ui(UiAction::PlayRecentSong(0)), 0);
+    assert!(fx.contains(&Effect::Player(PlayerCommand::Load {
+        context_uri: "spotify:playlist:p1".into(),
+        start_index: None,
+        start_uri: Some("spotify:track:t4".into()),
+        shuffle: false,
+    })));
 }

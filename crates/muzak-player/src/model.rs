@@ -177,6 +177,20 @@ pub enum EditOutcome {
     Created(Collection),
 }
 
+/// One song played on this device, with what it was played from. Enough to play it
+/// again without asking Spotify anything.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlayRecord {
+    pub track: Track,
+    /// The album, playlist or Liked Songs it was played from.
+    pub context_uri: Option<String>,
+    pub context_name: String,
+    pub context_image: Option<String>,
+    /// Unix seconds; 0 lets the history store use the current time.
+    pub played_at: i64,
+    pub listened_ms: u64,
+}
+
 /// Catalog search results. Library matches are computed from state by the view.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SearchResults {

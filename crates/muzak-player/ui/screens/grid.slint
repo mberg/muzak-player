@@ -12,6 +12,12 @@ export component GridScreen inherits Rectangle {
     callback open(string);
     in property <bool> list-view;
     callback toggle-layout();
+    // Recent: chips for albums and playlists or songs, and the songs themselves.
+    in property <bool> recent-chips;
+    in property <bool> recent-songs;
+    in property <[TileData]> songs;
+    callback set-recent-songs(bool);
+    callback play-recent(int);
     property <int> columns: 4;
     property <length> pad: 16px;
     property <length> header: 56px;
@@ -19,7 +25,7 @@ export component GridScreen inherits Rectangle {
     property <length> art: root.tile-w - 12px;
     property <length> tile-h: root.art + 72px;
     background: Theme.bg;
-    Text {
+    title-text := Text {
         x: root.pad;
         y: 12px;
         text: root.title;
@@ -27,13 +33,54 @@ export component GridScreen inherits Rectangle {
         font-size: Theme.font-title;
         font-weight: 800;
     }
-    IconButton {
+    if root.recent-chips: HorizontalLayout {
+        x: root.pad + title-text.preferred-width + 20px;
+        y: 10px;
+        height: 36px;
+        spacing: 8px;
+        for label[i] in ["Albums & playlists", "Songs"]: Rectangle {
+            property <bool> on: (i == 1) == root.recent-songs;
+            width: chip-text.preferred-width + 28px;
+            border-radius: 18px;
+            background: self.on ? Theme.accent : (chip-touch.pressed ? Theme.surface-hi : Theme.surface);
+            accessible-role: button;
+            accessible-label: label;
+            accessible-action-default => { root.set-recent-songs(i == 1); }
+            chip-text := Text {
+                text: label;
+                color: parent.on ? Theme.accent-text : Theme.text;
+                font-size: Theme.font-small;
+                font-weight: 800;
+            }
+            chip-touch := TouchArea {
+                clicked => { root.set-recent-songs(i == 1); }
+            }
+        }
+    }
+    // Songs don't have a tile view, so the layout toggle hides for them.
+    if !(root.recent-chips && root.recent-songs): IconButton {
         x: root.width - self.width - 8px;
         y: 0px;
         icon: root.list-view ? @image-url("../icons/grid.svg") : @image-url("../icons/list.svg");
         clicked => { root.toggle-layout(); }
     }
-    if root.list-view: CollectionList {
+    if root.recent-chips && root.recent-songs: CollectionList {
+        x: 8px;
+        y: root.header;
+        width: root.width - 16px;
+        height: root.height - root.header;
+        items: root.songs;
+        open(index) => { root.play-recent(index.to-float()); }
+    }
+    if root.recent-chips && root.recent-songs && root.songs.length == 0: StateMessage {
+        x: 0;
+        y: root.header;
+        width: root.width;
+        height: root.height - root.header;
+        state: LoadState.empty;
+        empty-text: "Nothing played on this player yet";
+    }
+    if root.list-view && !(root.recent-chips && root.recent-songs): CollectionList {
         x: 8px;
         y: root.header;
         width: root.width - 16px;
@@ -41,7 +88,7 @@ export component GridScreen inherits Rectangle {
         items: root.tiles;
         open(uri) => { root.open(uri); }
     }
-    if !root.list-view: Flickable {
+    if !root.list-view && !(root.recent-chips && root.recent-songs): Flickable {
         x: 0;
         y: root.header;
         width: root.width;
@@ -57,7 +104,7 @@ export component GridScreen inherits Rectangle {
             clicked => { root.open(tile.uri); }
         }
     }
-    if root.state != LoadState.ready: StateMessage {
+    if root.state != LoadState.ready && !(root.recent-chips && root.recent-songs): StateMessage {
         x: 0;
         y: root.header;
         width: root.width;

@@ -107,6 +107,16 @@ pub struct DetailView {
     pub artist_link: bool,
 }
 
+/// One song in Recent's Songs view.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecentSongView {
+    pub title: String,
+    pub artists: String,
+    pub image_url: Option<String>,
+    /// Unix seconds; the UI turns it into "12 min ago".
+    pub played_at: i64,
+}
+
 /// A Bluetooth speaker found by a scan.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeakerRowView {
@@ -200,6 +210,11 @@ pub struct View {
     pub list_view: bool,
     /// Colour scheme index.
     pub theme: u32,
+    /// Recent's chips (albums and playlists, or songs) show on its screen.
+    pub recent_chips: bool,
+    pub recent_songs: bool,
+    /// Recent songs from this device's history, newest first, while Songs is picked.
+    pub recent_song_rows: Vec<RecentSongView>,
     pub settings: SettingsView,
 }
 
@@ -271,6 +286,23 @@ pub fn build(state: &AppState) -> View {
         keyboard,
         list_view: state.list_view,
         theme: state.device.saved.theme.unwrap_or(0),
+        recent_chips: state.screen == Screen::Grid(Section::Recent),
+        recent_songs: state.recent_songs,
+        recent_song_rows: if state.recent_songs && state.screen == Screen::Grid(Section::Recent) {
+            state
+                .history
+                .iter()
+                .flat_map(|h| h.iter())
+                .map(|p| RecentSongView {
+                    title: p.track.name.clone(),
+                    artists: p.track.artists.clone(),
+                    image_url: p.track.image_url.clone(),
+                    played_at: p.played_at,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
         settings: settings(state),
     }
 }
