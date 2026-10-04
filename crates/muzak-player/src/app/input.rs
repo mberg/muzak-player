@@ -94,6 +94,8 @@ pub enum LibraryUpdate {
 pub enum FailReason {
     Offline,
     Auth,
+    /// Spotify refuses this to the app; playing it may still work.
+    Forbidden,
     Other,
 }
 

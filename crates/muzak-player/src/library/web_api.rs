@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::{FetchError, LibrarySource};
 use crate::model::{
-    Account, Collection, CollectionKind, LIKED_URI, Section, Track, liked_collection,
+    Account, Collection, CollectionKind, LIKED_URI, SearchResults, Section, Track, liked_collection,
 };
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
@@ -19,6 +19,7 @@ pub const SCOPES: &str =
     "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played";
 const MAX_ITEMS: usize = 500;
 const RECENT_LIMIT: usize = 20;
+const SEARCH_LIMIT: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum HttpError {
@@ -111,6 +112,23 @@ struct PlaylistObj {
     #[serde(default)]
     images: Option<Vec<ImageObj>>,
     owner: Option<OwnerObj>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtistFull {
+    uri: String,
+    name: String,
+    #[serde(default)]
+    images: Option<Vec<ImageObj>>,
+}
+
+/// Every group is optional: Spotify omits groups it has nothing for.
+#[derive(Debug, Deserialize)]
+struct SearchObj {
+    tracks: Option<Page<TrackObj>>,
+    artists: Option<Page<ArtistFull>>,
+    albums: Option<Page<AlbumObj>>,
+    playlists: Option<Page<PlaylistObj>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,6 +232,46 @@ fn playlist_collection(p: PlaylistObj) -> Collection {
         kind: CollectionKind::Playlist,
         name: p.name,
         subtitle: p.owner.and_then(|o| o.display_name).unwrap_or_default(),
+    }
+}
+
+fn artist_collection(a: ArtistFull) -> Collection {
+    Collection {
+        image_url: pick_image(images(&a.images)),
+        uri: a.uri,
+        kind: CollectionKind::Artist,
+        name: a.name,
+        subtitle: "Artist".into(),
+    }
+}
+
+/// Percent-encodes a query parameter value (RFC 3986 unreserved characters pass through).
+fn encode_query(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+fn search_results(found: SearchObj) -> SearchResults {
+    fn items<T>(page: Option<Page<T>>) -> impl Iterator<Item = T> {
+        page.into_iter()
+            .flat_map(|p| p.items.into_iter().flatten())
+            .take(SEARCH_LIMIT)
+    }
+    SearchResults {
+        tracks: items(found.tracks)
+            .filter_map(|t| to_track(t, None))
+            .collect(),
+        artists: items(found.artists).map(artist_collection).collect(),
+        albums: items(found.albums).map(|a| album_collection(&a)).collect(),
+        playlists: items(found.playlists).map(playlist_collection).collect(),
     }
 }
 
@@ -334,6 +392,7 @@ impl<H: Http, T: TokenSource> WebApi<H, T> {
                     self.tokens.invalidate();
                 }
                 Err(HttpError::Status(401)) => return Err(FetchError::Auth),
+                Err(HttpError::Status(403)) => return Err(FetchError::Forbidden),
                 Err(HttpError::Status(404)) => return Err(FetchError::NotFound),
                 Err(HttpError::Status(code)) => {
                     return Err(FetchError::Other(format!("HTTP {code} for {url}")));
@@ -436,6 +495,36 @@ impl<H: Http, T: TokenSource> LibrarySource for WebApi<H, T> {
             Section::Liked => Ok(vec![liked_collection()]),
             Section::Search => Ok(Vec::new()),
         }
+    }
+
+    async fn search(&self, query: &str) -> Result<SearchResults, FetchError> {
+        let path = format!(
+            "/search?type=track,artist,album,playlist&limit={SEARCH_LIMIT}&q={}",
+            encode_query(query)
+        );
+        Ok(search_results(decode(self.get(&path).await?)?))
+    }
+
+    async fn artist_albums(&self, artist_uri: &str) -> Result<Vec<Collection>, FetchError> {
+        let Some(id) = artist_uri.strip_prefix("spotify:artist:") else {
+            return Err(FetchError::Other(format!("not an artist: {artist_uri}")));
+        };
+        // One page is plenty for a touchscreen grid.
+        let page: Page<AlbumObj> = decode(
+            self.get(&format!(
+                "/artists/{id}/albums?include_groups=album,single,compilation&limit=50"
+            ))
+            .await?,
+        )?;
+        // Spotify lists regional editions of the same album separately.
+        let mut names = HashSet::new();
+        Ok(page
+            .items
+            .into_iter()
+            .flatten()
+            .filter(|a| names.insert(a.name.to_lowercase()))
+            .map(|a| album_collection(&a))
+            .collect())
     }
 
     async fn account(&self) -> Result<Account, FetchError> {
@@ -645,6 +734,57 @@ mod tests {
             Ok(json!({"items": [{"track": {"uri": "spotify:track:t1", "name": "S", "duration_ms": 1, "artists": []}}], "next": null})),
         );
         assert_eq!(api(http).tracks(LIKED_URI).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn search_maps_every_group_and_skips_null_entries() {
+        let http = FakeHttp::default().on(
+            "/search?type=track,artist,album,playlist&limit=20&q=a%20b%26c",
+            Ok(json!({
+                "tracks": {"items": [{"uri": "spotify:track:t1", "name": "Song", "duration_ms": 1,
+                    "artists": [{"name": "Band"}],
+                    "album": {"uri": "spotify:album:a1", "name": "Album", "images": []}}], "next": null},
+                "artists": {"items": [{"uri": "spotify:artist:r1", "name": "Band", "images": []}], "next": null},
+                "albums": {"items": [{"uri": "spotify:album:a1", "name": "Album", "artists": [{"name": "Band"}]}], "next": null},
+                "playlists": {"items": [null, {"uri": "spotify:playlist:p1", "name": "Mix",
+                    "owner": {"display_name": "Sam"}}, null], "next": null}
+            })),
+        );
+        let found = api(http).search("a b&c").await.unwrap();
+        assert_eq!(found.tracks.len(), 1);
+        assert_eq!(
+            found.tracks[0].album_uri.as_deref(),
+            Some("spotify:album:a1")
+        );
+        assert_eq!(found.artists[0].kind, CollectionKind::Artist);
+        assert_eq!(found.albums[0].subtitle, "Band");
+        assert_eq!(found.playlists.len(), 1);
+        assert_eq!(found.playlists[0].subtitle, "Sam");
+    }
+
+    #[tokio::test]
+    async fn forbidden_playlist_items_are_reported_as_forbidden() {
+        let http =
+            FakeHttp::default().on("/playlists/p1/items?limit=100", Err(HttpError::Status(403)));
+        assert_eq!(
+            api(http).tracks("spotify:playlist:p1").await,
+            Err(FetchError::Forbidden)
+        );
+    }
+
+    #[tokio::test]
+    async fn artist_albums_drop_duplicate_names() {
+        let http = FakeHttp::default().on(
+            "/artists/r1/albums?include_groups=album,single,compilation&limit=50",
+            Ok(json!({"items": [
+                {"uri": "spotify:album:a1", "name": "Abbey Road", "artists": []},
+                {"uri": "spotify:album:a2", "name": "Abbey Road", "artists": []},
+                {"uri": "spotify:album:a3", "name": "Help!", "artists": []}
+            ], "next": null})),
+        );
+        let albums = api(http).artist_albums("spotify:artist:r1").await.unwrap();
+        let names: Vec<_> = albums.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Abbey Road", "Help!"]);
     }
 
     #[tokio::test]

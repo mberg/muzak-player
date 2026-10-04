@@ -283,7 +283,7 @@ impl Core {
         // player reports that with `Input::AuthInvalid`. The slot shows "Can't load this right now".
         match reason {
             FailReason::Offline => self.state.online = false,
-            FailReason::Auth | FailReason::Other => {}
+            FailReason::Auth | FailReason::Forbidden | FailReason::Other => {}
         }
     }
 
