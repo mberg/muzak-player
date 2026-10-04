@@ -25,10 +25,7 @@ component Choice inherits Rectangle {
 
 // Sleep timer: stop the music after 30 or 60 minutes.
 export component SleepSheet inherits Rectangle {
-    // Minutes left, as "28 min", when a timer is running.
-    in property <string> running;
     callback pick(int);
-    callback turn-off();
     callback close();
     background: #000000b0;
     TouchArea {
@@ -50,7 +47,7 @@ export component SleepSheet inherits Rectangle {
                 font-weight: 800;
             }
             Text {
-                text: root.running != "" ? "Music stops in " + root.running + "." : "Music fades out and stops.";
+                text: "Music fades out and stops. Tap the moon again to cancel.";
                 color: Theme.text-dim;
                 font-size: Theme.font-small;
             }
@@ -62,10 +59,6 @@ export component SleepSheet inherits Rectangle {
             Choice {
                 label: "60 minutes";
                 clicked => { root.pick(60); }
-            }
-            if root.running != "": Choice {
-                label: "Turn off";
-                clicked => { root.turn-off(); }
             }
         }
     }

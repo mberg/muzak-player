@@ -244,7 +244,7 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_toggle_list_view(move || s(UiAction::ToggleListView));
     let s = send.clone();
-    window.on_open_sleep_timer(move || s(UiAction::OpenSleepTimer));
+    window.on_open_sleep_timer(move || s(UiAction::TapSleepTimer));
     let s = send.clone();
     window.on_close_sleep_timer(move || s(UiAction::CloseSleepTimer));
     let s = send.clone();

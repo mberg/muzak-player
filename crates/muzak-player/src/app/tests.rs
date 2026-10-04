@@ -1453,7 +1453,7 @@ fn playing_at(volume: u8) -> Core {
 #[test]
 fn sleep_timer_fades_then_pauses_and_restores_volume() {
     let mut c = playing_at(60);
-    c.handle(ui(UiAction::OpenSleepTimer), 0);
+    c.handle(ui(UiAction::TapSleepTimer), 0);
     assert!(c.state().sleep_picker);
     c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
     assert!(!c.state().sleep_picker);
@@ -1466,7 +1466,10 @@ fn sleep_timer_fades_then_pauses_and_restores_volume() {
             .collect()
     };
     // Halfway through the fade the volume is about half.
-    let fx = player(c.handle(Input::Tick, ends - 15_000));
+    assert!(!c.wants_search_tick());
+    c.handle(Input::Tick, ends - 5_500);
+    assert!(c.wants_search_tick(), "fast ticks for a smooth fade");
+    let fx = player(c.handle(Input::SearchTick, ends - 2_500));
     assert_eq!(
         fx,
         vec![Effect::Player(PlayerCommand::SetVolume { percent: 30 })]
@@ -1486,11 +1489,12 @@ fn sleep_timer_fades_then_pauses_and_restores_volume() {
 }
 
 #[test]
-fn turning_the_timer_off_mid_fade_restores_volume() {
+fn tapping_the_moon_while_running_turns_it_off_and_restores_volume() {
     let mut c = playing_at(60);
     c.handle(ui(UiAction::SetSleepTimer(Some(30))), 0);
-    c.handle(Input::Tick, 30 * 60_000 - 10_000);
-    let fx = c.handle(ui(UiAction::SetSleepTimer(None)), 30 * 60_000 - 9_000);
+    c.handle(Input::Tick, 30 * 60_000 - 3_000);
+    let fx = c.handle(ui(UiAction::TapSleepTimer), 30 * 60_000 - 2_000);
+    assert!(!c.state().sleep_picker, "no sheet when turning it off");
     assert!(fx.contains(&Effect::Player(PlayerCommand::SetVolume { percent: 60 })));
     assert_eq!(c.state().sleep_ends_ms, None);
 }

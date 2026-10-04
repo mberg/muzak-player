@@ -320,9 +320,7 @@ export component AppWindow inherits Window {
         y: 0;
         width: root.width;
         height: root.height;
-        running: root.sleep-left;
         pick(minutes) => { root.set-sleep-timer(minutes); }
-        turn-off => { root.set-sleep-timer(0); }
         close => { root.close-sleep-timer(); }
     }
     if root.picker-open: PlaylistPicker {

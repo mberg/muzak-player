@@ -22,7 +22,7 @@ const MAX_QUERY_CHARS: usize = 100;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_DEVICE_NAME_CHARS: usize = 40;
 /// The sleep timer fades the volume out over its last this-many milliseconds.
-const SLEEP_FADE_MS: u64 = 30_000;
+const SLEEP_FADE_MS: u64 = 5_000;
 /// While a sleep timer runs, the screen turns off this soon after the last touch.
 const SLEEP_SCREEN_OFF_MS: u64 = 3_000;
 
@@ -162,7 +162,10 @@ impl Core {
                 self.on_tick(now_ms, &mut fx);
                 self.maybe_search(now_ms, &mut fx);
             }
-            Input::SearchTick => self.maybe_search(now_ms, &mut fx),
+            Input::SearchTick => {
+                self.maybe_search(now_ms, &mut fx);
+                self.on_sleep_tick(now_ms, &mut fx);
+            }
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
         }
         if self.state.screen != Screen::Search {
@@ -178,9 +181,14 @@ impl Core {
         fx
     }
 
-    /// The runtime sends `Input::SearchTick` only while this is true.
+    /// The runtime sends the fast `Input::SearchTick` only while this is true: on the search
+    /// screen, and during the sleep timer's fade so the volume steps down smoothly.
     pub fn wants_search_tick(&self) -> bool {
-        self.state.screen == Screen::Search
+        let fading = self
+            .state
+            .sleep_ends_ms
+            .is_some_and(|ends| ends.saturating_sub(self.state.now_ms) <= SLEEP_FADE_MS + 1_000);
+        self.state.screen == Screen::Search || fading
     }
 
     fn maybe_search(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
@@ -1083,7 +1091,14 @@ impl Core {
                 self.remember_artist(&artist_uri, name);
                 self.on_ui(UiAction::OpenArtist(artist_uri), now_ms, fx);
             }
-            UiAction::OpenSleepTimer => self.state.sleep_picker = true,
+            UiAction::TapSleepTimer => {
+                if self.state.sleep_ends_ms.is_some() {
+                    self.restore_sleep_volume(fx);
+                    self.state.sleep_ends_ms = None;
+                } else {
+                    self.state.sleep_picker = true;
+                }
+            }
             UiAction::CloseSleepTimer => self.state.sleep_picker = false,
             UiAction::SetSleepTimer(minutes) => {
                 self.state.sleep_picker = false;
@@ -1282,7 +1297,7 @@ impl Core {
         }
     }
 
-    /// Fades the volume over the timer's last 30 seconds, then pauses and restores it.
+    /// Fades the volume over the timer's last 5 seconds, then pauses and restores it.
     fn on_sleep_tick(&mut self, now_ms: u64, fx: &mut Vec<Effect>) {
         let Some(ends) = self.state.sleep_ends_ms else {
             return;
