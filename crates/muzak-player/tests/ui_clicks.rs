@@ -79,6 +79,22 @@ fn ui_clicks() {
             .await;
         assert_eq!(length.get(), 60);
 
+        // Keyboard: Shift makes the next letter uppercase, then turns itself off.
+        window.set_keyboard_open(true);
+        let typed = Rc::new(std::cell::RefCell::new(String::new()));
+        let t = typed.clone();
+        window.on_key_pressed(move |k| t.borrow_mut().push_str(&k));
+        visible_by_label(&window, "Shift")
+            .single_click(PointerEventButton::Left)
+            .await;
+        visible_by_label(&window, "K")
+            .single_click(PointerEventButton::Left)
+            .await;
+        visible_by_label(&window, "i")
+            .single_click(PointerEventButton::Left)
+            .await;
+        assert_eq!(typed.borrow().as_str(), "Ki");
+
         slint::quit_event_loop().unwrap();
     })
     .unwrap();
