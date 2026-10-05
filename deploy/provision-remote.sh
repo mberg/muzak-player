@@ -48,8 +48,11 @@ cat > /etc/udev/rules.d/90-ziggy-backlight.rules <<'EOR'
 SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"
 EOR
 
-mkdir -p /etc/systemd/journald.conf.d
-printf '[Journal]\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/ziggy.conf
+# Keep the logs across reboots (capped), so a crash can still be read afterwards.
+mkdir -p /etc/systemd/journald.conf.d /var/log/journal
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/ziggy.conf
+systemctl restart systemd-journald 2>/dev/null || true
+journalctl --flush 2>/dev/null || true
 
 install -m 644 "$HERE/ziggy-player.service" /etc/systemd/system/ziggy-player.service
 systemctl daemon-reload
