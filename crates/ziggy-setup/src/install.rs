@@ -224,7 +224,7 @@ impl Health {
             out.push("The Pi has had too little power (under-voltage). Check the cable and charger.");
         }
         if bits & 0xE000E != 0 {
-            out.push("The Pi has run hot enough to slow itself down. Give it some air.");
+            out.push("The Pi touched its 60°C heat limit and eased off for a moment. That's normal under load; look at airflow only if it keeps happening.");
         }
         out
     }
@@ -315,7 +315,7 @@ mod tests {
         // Bit 19 is "the soft temperature limit has been reached": heat, not power.
         let heat = Health::parse("power=0x80000\n").power_and_heat();
         assert_eq!(heat.len(), 1);
-        assert!(heat[0].contains("hot"));
+        assert!(heat[0].contains("heat limit"));
         assert!(Health::parse("power=\n").power_and_heat().is_empty());
     }
 
