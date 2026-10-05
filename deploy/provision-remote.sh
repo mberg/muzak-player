@@ -10,9 +10,26 @@ apt-get install -y --no-install-recommends \
     bluez bluez-alsa-utils libasound2-plugin-bluez \
     curl bzip2 ca-certificates
 
-id muzak >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin --groups video,input,audio,render,bluetooth muzak
-install -d -m 700 -o muzak -g muzak /var/lib/muzak /var/lib/muzak/librespot /var/lib/muzak/models
-install -d /etc/muzak
+# A player set up before the rename to Ziggy: stop its old service, then rename the service
+# user, its home, the data and the config. Nothing is lost.
+if [ -d /var/lib/muzak ] && [ ! -d /var/lib/ziggy ]; then
+    systemctl disable --now muzak-player.service 2>/dev/null || true
+    rm -f /etc/systemd/system/muzak-player.service /usr/local/bin/muzak-player \
+        /etc/udev/rules.d/90-muzak-backlight.rules /etc/systemd/journald.conf.d/muzak.conf
+    if id muzak >/dev/null 2>&1 && ! id ziggy-player >/dev/null 2>&1; then
+        groupmod -n ziggy-player muzak
+        usermod -l ziggy-player -d /home/ziggy-player -m muzak
+    fi
+    mv /var/lib/muzak /var/lib/ziggy
+    if [ -d /etc/muzak ]; then
+        mv /etc/muzak /etc/ziggy
+        sed -i 's|/var/lib/muzak|/var/lib/ziggy|g; s|/etc/muzak|/etc/ziggy|g; s|Muzak device|Ziggy device|; s|`muzak |`ziggy |g' /etc/ziggy/config.toml
+    fi
+fi
+
+id ziggy-player >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin --groups video,input,audio,render,bluetooth ziggy-player
+install -d -m 700 -o ziggy-player -g ziggy-player /var/lib/ziggy /var/lib/ziggy/librespot /var/lib/ziggy/models
+install -d /etc/ziggy
 
 # Display and boot settings; they need a reboot, so say when anything changed.
 CONFIG=/boot/firmware/config.txt
@@ -25,16 +42,16 @@ grep -q '^disable_splash=1' "$CONFIG" || echo 'disable_splash=1' >> "$CONFIG"
 grep -q '^boot_delay=0' "$CONFIG" || echo 'boot_delay=0' >> "$CONFIG"
 grep -q 'vt.global_cursor_default=0' "$CMDLINE" || sed -i '1 s/$/ vt.global_cursor_default=0 consoleblank=0/' "$CMDLINE"
 grep -q 'loglevel=3' "$CMDLINE" || sed -i '1 s/$/ quiet loglevel=3/' "$CMDLINE"
-[ "$(cat "$CONFIG" "$CMDLINE" | md5sum)" = "$BEFORE" ] || echo MUZAK_REBOOT_NEEDED
+[ "$(cat "$CONFIG" "$CMDLINE" | md5sum)" = "$BEFORE" ] || echo ZIGGY_REBOOT_NEEDED
 
-cat > /etc/udev/rules.d/90-muzak-backlight.rules <<'EOR'
+cat > /etc/udev/rules.d/90-ziggy-backlight.rules <<'EOR'
 SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"
 EOR
 
 mkdir -p /etc/systemd/journald.conf.d
-printf '[Journal]\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/muzak.conf
+printf '[Journal]\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/ziggy.conf
 
-install -m 644 "$HERE/muzak-player.service" /etc/systemd/system/muzak-player.service
+install -m 644 "$HERE/ziggy-player.service" /etc/systemd/system/ziggy-player.service
 systemctl daemon-reload
 # Voice: make a USB microphone the default recording device. The Pi's own default device
 # (the headphone jack) can't record. Playback stays on the headphone jack by default; the
@@ -66,10 +83,10 @@ fi
 
 # Raspberry Pi OS Lite starts with the Bluetooth radio blocked; the player needs it on.
 rfkill unblock bluetooth 2>/dev/null || true
-systemctl enable bluealsa.service muzak-player.service
+systemctl enable bluealsa.service ziggy-player.service
 systemctl disable getty@tty1.service || true
 # Nothing waits for the network at boot, and package-list and manual-page jobs don't run
-# while the player starts. (Updates come through `muzak update`.)
+# while the player starts. (Updates come through `ziggy update`.)
 for unit in NetworkManager-wait-online.service systemd-networkd-wait-online.service \
     apt-daily.timer apt-daily-upgrade.timer man-db.timer; do
     systemctl disable "$unit" 2>/dev/null || true

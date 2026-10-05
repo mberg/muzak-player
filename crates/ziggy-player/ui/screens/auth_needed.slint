@@ -1,0 +1,23 @@
+import { Theme } from "../theme.slint";
+
+export component AuthNeededScreen inherits Rectangle {
+    background: Theme.backdrop;
+    TouchArea {}
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        Text {
+            text: "Spotify sign-in needed";
+            font-size: 34px;
+            font-weight: 800;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Sign this player in again from the Mac with ziggy-setup.";
+            font-size: Theme.font-body;
+            color: Theme.text-dim;
+            horizontal-alignment: center;
+        }
+    }
+}

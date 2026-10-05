@@ -2,7 +2,7 @@
 
 Date: 2026-10-03
 Status: Approved in conversation, ready for an implementation plan
-Replaces: phase 3 ("Playlist creation and editing") in [the main design](2026-10-03-muzak-player-design.md), and pulls typed search forward from phase 4.
+Replaces: phase 3 ("Playlist creation and editing") in [the main design](2026-10-03-ziggy-player-design.md), and pulls typed search forward from phase 4.
 
 ## Purpose
 

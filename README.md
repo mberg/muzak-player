@@ -1,4 +1,4 @@
-# Muzak Player
+# Ziggy Player
 
 A music player with a touchscreen, built on a Raspberry Pi. It plays your Spotify playlists, albums and liked songs, searches Spotify, and does nothing else: no apps, no feeds, no ads.
 
@@ -23,17 +23,17 @@ A music player with a touchscreen, built on a Raspberry Pi. It plays your Spotif
 On your computer, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mberg/muzak-player/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mberg/ziggy/main/install.sh | sh
 ```
 
-This installs `muzak` into `~/.local/bin`. If the installer says that folder isn't on your PATH, follow the line it prints.
+This installs `ziggy` into `~/.local/bin`. If the installer says that folder isn't on your PATH, follow the line it prints.
 
 ### 2. Prepare the SD card
 
 1. Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 2. Choose your Pi model, then **Raspberry Pi OS Lite (64-bit)**.
 3. Open the settings (the gear, or "Edit settings") and set:
-   - a hostname, such as `muzak-kitchen`;
+   - a hostname, such as `ziggy-kitchen`;
    - a username and password;
    - your Wi-Fi network;
    - **SSH**, using your public key. Without a key, setup can't reach the Pi.
@@ -42,12 +42,12 @@ This installs `muzak` into `~/.local/bin`. If the installer says that folder isn
 ### 3. Run setup
 
 ```bash
-muzak setup
+ziggy setup
 ```
 
 Setup asks one thing at a time:
 
-1. **The Pi's address**, such as `muzak-kitchen.local`. It checks it can connect.
+1. **The Pi's address**, such as `ziggy-kitchen.local`. It checks it can connect.
 2. **The player's name and sound quality.** Spotify shows the name when you pick where to play. Quality is 320 kbps unless you choose a lower setting to save data.
 3. **Spotify.**
    - The first time, it walks you through creating a free Spotify developer app. One app serves every player and every person.
@@ -69,13 +69,13 @@ Run these from your computer:
 
 | Command | What it does |
 |---|---|
-| `muzak config muzak-kitchen.local` | Change settings from a menu: the name, sound quality, volume, screen timeouts, Audiobookshelf and voice. Saving restarts the player. |
-| `muzak update muzak-kitchen.local` | Install the newest player and restart it. |
-| `muzak status muzak-kitchen.local` | Check the player is running, and which version it is. |
-| `muzak logs muzak-kitchen.local` | Watch what the player is doing, for when something's wrong. |
-| `muzak signin muzak-kitchen.local` | Sign a different Spotify account in on that player. |
+| `ziggy config ziggy-kitchen.local` | Change settings from a menu: the name, sound quality, volume, screen timeouts, Audiobookshelf and voice. Saving restarts the player. |
+| `ziggy update ziggy-kitchen.local` | Install the newest player and restart it. |
+| `ziggy status ziggy-kitchen.local` | Check the player is running, and which version it is. |
+| `ziggy logs ziggy-kitchen.local` | Watch what the player is doing, for when something's wrong. |
+| `ziggy signin ziggy-kitchen.local` | Sign a different Spotify account in on that player. |
 
-`muzak setup` can be run again on the same Pi at any time. It keeps the Spotify sign-in unless you choose to sign in again.
+`ziggy setup` can be run again on the same Pi at any time. It keeps the Spotify sign-in unless you choose to sign in again.
 
 Choices made on the touchscreen take priority over the config. For example, a name changed in Settings stays until you change it there again.
 
@@ -90,7 +90,7 @@ Setup trims the boot:
 
 ## Voice control
 
-Voice needs a USB microphone and access to Google's Gemini. Plug the microphone into the Pi before running setup, so setup can make it the Pi's recording device. If you add one later, run `muzak setup` again. Setup offers two ways to reach Gemini:
+Voice needs a USB microphone and access to Google's Gemini. Plug the microphone into the Pi before running setup, so setup can make it the Pi's recording device. If you add one later, run `ziggy setup` again. Setup offers two ways to reach Gemini:
 
 - **A Google Cloud service account key file (Vertex AI).** Use this if you have Google Cloud credits. In a Google Cloud project, turn on Vertex AI and create a service account with the "Vertex AI User" role. Then create a JSON key for it and give setup the file.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/).
@@ -104,21 +104,21 @@ The microphone button in Search does the same without the wake word.
 
 You can ask to play anything in your library or on Spotify, pause, skip, change the volume, set the sleep timer, heart the song, save its album, or add it to one of your playlists.
 
-To change the wake word or its sensitivity, run `muzak config`.
+To change the wake word or its sensitivity, run `ziggy config`.
 
 ## Troubleshooting
 
-- **Setup can't connect to the Pi.** Check that `ssh muzak-kitchen.local` works. The hostname and SSH key must match what you set in Imager. If your username on the Pi differs from your computer's, use `pi@muzak-kitchen.local`.
+- **Setup can't connect to the Pi.** Check that `ssh ziggy-kitchen.local` works. The hostname and SSH key must match what you set in Imager. If your username on the Pi differs from your computer's, use `pi@ziggy-kitchen.local`.
 - **Setup says sudo asks for a password.** Newer Raspberry Pi OS images do this for the Imager user. Run the one-line command setup prints, which asks for the Pi's password once, then continue.
 - **Spotify says it's limiting requests.** Spotify sometimes rate-limits a developer app for up to a day. Setup saves the sign-in and carries on. The library loads once the limit ends, and playing music isn't affected.
-- **Spotify says some requests were refused.** Add the account's email under "User Management" in the Spotify developer app, then run `muzak signin`.
-- **The screen is blank.** Run `muzak status`, then `muzak logs` to see why.
+- **Spotify says some requests were refused.** Add the account's email under "User Management" in the Spotify developer app, then run `ziggy signin`.
+- **The screen is blank.** Run `ziggy status`, then `ziggy logs` to see why.
 
 ## For developers
 
 The code:
-- `crates/muzak-player` is the touchscreen app, in Rust with [Slint](https://slint.dev). It uses librespot for playback and the Spotify Web API for the library.
-- `crates/muzak-setup` builds the `muzak` tool.
+- `crates/ziggy-player` is the touchscreen app, in Rust with [Slint](https://slint.dev). It uses librespot for playback and the Spotify Web API for the library.
+- `crates/ziggy-setup` builds the `ziggy` tool.
 - `deploy/` holds what's installed on the Pi.
 - `docs/` holds the design specs and the [manual test checklists](docs/testing.md).
 
@@ -126,15 +126,15 @@ To build and test, you need Rust 1.97.1 (`asdf install` reads `.tool-versions`) 
 
 ```bash
 cargo test --workspace
-cargo run -p muzak-player -- --fake      # the UI with a made-up library, no Spotify needed
+cargo run -p ziggy-player -- --fake      # the UI with a made-up library, no Spotify needed
 ```
 
 Docker Desktop is needed only to build the Pi player:
 
 ```bash
-scripts/build-pi.sh                                                   # builds target/pi/release/muzak-player
-cargo run -p muzak-setup --bin muzak -- update muzak-kitchen.local \
-    --player-binary target/pi/release/muzak-player                    # tries it on a Pi
+scripts/build-pi.sh                                                   # builds target/pi/release/ziggy-player
+cargo run -p ziggy-setup --bin ziggy -- update ziggy-kitchen.local \
+    --player-binary target/pi/release/ziggy-player                    # tries it on a Pi
 ```
 
 **Releasing.** Raise `version` in `Cargo.toml`, then push a tag:
@@ -143,4 +143,4 @@ cargo run -p muzak-setup --bin muzak -- update muzak-kitchen.local \
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-The release workflow builds the Pi player and `muzak` for Macs and Linux, then publishes them as a GitHub release. `install.sh`, `muzak setup` and `muzak update` all use the newest release.
+The release workflow builds the Pi player and `ziggy` for Macs and Linux, then publishes them as a GitHub release. `install.sh`, `ziggy setup` and `ziggy update` all use the newest release.

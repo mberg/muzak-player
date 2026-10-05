@@ -1,8 +1,8 @@
-# Testing Muzak
+# Testing Ziggy
 
 Manual checks for developers, on the Mac and then on a Pi. To set a player up the normal way, see the [README](../README.md).
 
-The Spotify sign-in commands below (`auth`, `auth-web`, `probe`) are hidden commands of the `muzak` tool; `muzak setup` runs them for you.
+The Spotify sign-in commands below (`auth`, `auth-web`, `probe`) are hidden commands of the `ziggy` tool; `ziggy setup` runs them for you.
 
 ## On the Mac
 
@@ -17,8 +17,8 @@ The Spotify sign-in commands below (`auth`, `auth-web`, `probe`) are hidden comm
 Get the code:
 
 ```bash
-git clone https://github.com/mberg/muzak-player.git
-cd muzak-player
+git clone https://github.com/mberg/ziggy.git
+cd ziggy
 cargo test --workspace       # expect 82 passed
 ```
 
@@ -27,7 +27,7 @@ The first build takes a few minutes. Later builds are quick.
 ### 1. UI with fake music (no Spotify needed)
 
 ```bash
-cargo run -p muzak-player -- --fake
+cargo run -p ziggy-player -- --fake
 ```
 
 An 800×480 window opens with a made-up library. A mouse click is a tap, and dragging scrolls.
@@ -59,13 +59,13 @@ Check:
 To take a screenshot of the window:
 
 ```bash
-screencapture -l$(osascript -e 'tell app "System Events" to id of window 1 of process "muzak-player"') /tmp/muzak.png
+screencapture -l$(osascript -e 'tell app "System Events" to id of window 1 of process "ziggy-player"') /tmp/ziggy.png
 ```
 
 ### 2. Sign in to Spotify
 
 ```bash
-cargo run -p muzak-setup --bin muzak -- auth --state-dir secrets/dev
+cargo run -p ziggy-setup --bin ziggy -- auth --state-dir secrets/dev
 ```
 
 A browser opens. Sign in with the Spotify account you want to test with. This saves `secrets/dev/librespot/credentials.json`. The `secrets/` folder is git-ignored.
@@ -73,7 +73,7 @@ A browser opens. Sign in with the Spotify account you want to test with. This sa
 Then check that the Web API accepts the session's tokens:
 
 ```bash
-cargo run -p muzak-setup --bin muzak -- probe --state-dir secrets/dev
+cargo run -p ziggy-setup --bin ziggy -- probe --state-dir secrets/dev
 ```
 
 - [ ] Each line shows `HTTP 200`. At least one of the two "playlist items" lines must be 200.
@@ -89,8 +89,8 @@ cargo run -p muzak-setup --bin muzak -- probe --state-dir secrets/dev
    One developer app serves every device and every person: you do not need one per device. Its users are capped in development mode, so check the limit on the dashboard.
 2. Copy the app's Client ID, sign in again through the app, then probe again:
    ```bash
-   cargo run -p muzak-setup --bin muzak -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
-   cargo run -p muzak-setup --bin muzak -- probe --state-dir secrets/dev
+   cargo run -p ziggy-setup --bin ziggy -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
+   cargo run -p ziggy-setup --bin ziggy -- probe --state-dir secrets/dev
    ```
    This saves `secrets/dev/web-auth.json`. The probe uses it automatically and should end with `All endpoints work with developer-app tokens.`
 3. In step 3 below, also copy `web-auth.json` into `dev/state/`. The player uses it when it is there.
@@ -103,19 +103,19 @@ For the Pi, run `auth-web` with `--state-dir secrets/<name>` as well. `scripts/d
 mkdir -p dev/state/librespot
 cp secrets/dev/librespot/credentials.json dev/state/librespot/
 cp secrets/dev/web-auth.json dev/state/ 2>/dev/null   # only after Contingency A
-cargo run -p muzak-player
+cargo run -p ziggy-player
 ```
 
-For more detailed logs, run `RUST_LOG=debug cargo run -p muzak-player`.
+For more detailed logs, run `RUST_LOG=debug cargo run -p ziggy-player`.
 
 Check:
 
 - [ ] Your real playlists and albums show, with cover art. Recent and Liked fill in.
 - [ ] Playing a playlist starts audio on the Mac within about 1 second. The title and artist are correct.
 - [ ] Pause, next, previous, seek, volume, shuffle and repeat respond within about half a second.
-- [ ] The Spotify app on your phone lists "Muzak Dev" as the playing device.
+- [ ] The Spotify app on your phone lists "Ziggy Dev" as the playing device.
 - [ ] Liked: open it from the rail and press Play. Audio starts.
-- [ ] In the Spotify app on your phone, move playback to the phone. Muzak shows Paused. Press Play in Muzak and it resumes the same song.
+- [ ] In the Spotify app on your phone, move playback to the phone. Ziggy shows Paused. Press Play in Ziggy and it resumes the same song.
 - [ ] Turn Wi-Fi off:
   - the grids stay visible;
   - Play shows "No internet right now".
@@ -145,7 +145,7 @@ Check, with the real account:
 Editing, liking and following artists need five more Spotify permissions. Sign in through the developer app once more, then copy the new file over:
 
 ```bash
-cargo run -p muzak-setup --bin muzak -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
+cargo run -p ziggy-setup --bin ziggy -- auth-web --state-dir secrets/dev --client-id <CLIENT_ID>
 cp secrets/dev/web-auth.json dev/state/
 ```
 
@@ -198,18 +198,18 @@ The gear at the bottom of the left rail opens Settings.
 
 Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/hardware-checklist.md). In short:
 
-1. **Flash the SD card.** Use Raspberry Pi Imager with Raspberry Pi OS Lite (64-bit). Set the hostname to `muzak-<name>`, and set a user, Wi-Fi and your SSH key. Attach the display ribbon cable while the Pi is unplugged.
-2. **Provision:** `scripts/provision.sh muzak-<name>.local`, then reboot the Pi.
+1. **Flash the SD card.** Use Raspberry Pi Imager with Raspberry Pi OS Lite (64-bit). Set the hostname to `ziggy-<name>`, and set a user, Wi-Fi and your SSH key. Attach the display ribbon cable while the Pi is unplugged.
+2. **Provision:** `scripts/provision.sh ziggy-<name>.local`, then reboot the Pi.
 3. **Sign the account in** on the Mac:
    ```bash
-   cargo run -p muzak-setup --bin muzak -- auth --state-dir secrets/<name>
-   cargo run -p muzak-setup --bin muzak -- probe --state-dir secrets/<name>
+   cargo run -p ziggy-setup --bin ziggy -- auth --state-dir secrets/<name>
+   cargo run -p ziggy-setup --bin ziggy -- probe --state-dir secrets/<name>
    ```
 4. **Configure:** `cp devices/example.toml devices/<name>.toml`, then set `device_name` in that file.
 5. **Build and deploy:**
    ```bash
    scripts/build-pi.sh
-   scripts/deploy.sh muzak-<name>.local devices/<name>.toml secrets/<name>
+   scripts/deploy.sh ziggy-<name>.local devices/<name>.toml secrets/<name>
    ```
 6. **Pick the speaker** in Settings on the touchscreen if you use Bluetooth: Find speakers, then tap it. Put the speaker in pairing mode first.
 7. **Run the release checks** in the checklist: cold boot, touch, audio, memory, idle, Wi-Fi drop, crash recovery and Bluetooth.
@@ -217,6 +217,6 @@ Once the Mac checks pass, follow section 2 of [docs/hardware-checklist.md](docs/
 To read logs on the Pi:
 
 ```bash
-ssh muzak-<name>.local journalctl -u muzak-player -n 50
+ssh ziggy-<name>.local journalctl -u ziggy-player -n 50
 ```
 

@@ -1,0 +1,402 @@
+import { Theme } from "../theme.slint";
+import { SpeakerRowData } from "../types.slint";
+import { IconButton } from "../components/icon_button.slint";
+
+component Card inherits Rectangle {
+    in property <string> title;
+    border-radius: Theme.radius;
+    background: Theme.surface;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Text {
+            text: root.title;
+            color: Theme.accent;
+            font-size: Theme.font-small;
+            font-weight: 800;
+        }
+        @children
+    }
+}
+
+component SmallPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <color> tint: Theme.text;
+    in property <bool> enabled: true;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    height: 44px;
+    width: label-text.preferred-width + 36px;
+    border-radius: 22px;
+    opacity: root.enabled ? 1 : 0.4;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : (touch.pressed ? Theme.bg.brighter(0.2) : Theme.bg);
+    label-text := Text {
+        text: root.label;
+        color: root.primary ? Theme.accent-text : root.tint;
+        font-size: Theme.font-small;
+        font-weight: 800;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A colour scheme preview: its background with its accent, and its name.
+component Swatch inherits Rectangle {
+    in property <int> index;
+    callback clicked();
+    width: 112px;
+    height: 84px;
+    border-radius: 12px;
+    background: Theme.backdrop-for(root.index);
+    border-width: Theme.scheme == root.index ? 3px : 1px;
+    border-color: Theme.scheme == root.index ? Theme.accent : Theme.surface-hi;
+    accessible-role: button;
+    accessible-label: Theme.scheme-names[root.index];
+    accessible-action-default => { root.clicked(); }
+    Rectangle {
+        x: 14px;
+        y: 14px;
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        background: Theme.accents[root.index];
+    }
+    Text {
+        x: 14px;
+        y: parent.height - self.height - 10px;
+        width: parent.width - 20px;
+        wrap: word-wrap;
+        text: Theme.scheme-names[root.index];
+        color: Theme.texts[root.index];
+        font-size: Theme.font-small;
+        font-weight: 800;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component SpeakerRow inherits Rectangle {
+    in property <SpeakerRowData> data;
+    callback clicked();
+    height: 56px;
+    border-radius: 10px;
+    background: touch.pressed ? Theme.surface-hi : Theme.bg;
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("../icons/speaker.svg");
+                width: 24px;
+                height: 24px;
+                colorize: Theme.text-dim;
+            }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.data.name;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 800;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.data.status;
+            color: root.data.status == "In use" ? Theme.accent : Theme.text-dim;
+            font-size: Theme.font-small;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component SettingsScreen inherits Rectangle {
+    in property <string> account-name;
+    in property <string> account-id;
+    in property <string> device-name;
+    in property <string> output;
+    in property <bool> on-speaker;
+    // A Sonos room plays instead of this device.
+    in property <bool> on-sonos;
+    in property <[SpeakerRowData]> sonos-rooms;
+    callback choose-sonos(string);
+    in property <bool> speaker-connected;
+    in property <bool> bluetooth;
+    in property <bool> scanning;
+    in property <[SpeakerRowData]> speakers;
+    in property <string> message;
+    in property <string> bluetooth-note;
+    in property <bool> restarting;
+    callback rename-device();
+    callback find-speakers();
+    callback connect-speaker(string);
+    callback use-jack();
+    callback forget-speaker();
+    in property <int> sleep-minutes;
+    callback set-sleep-length(int);
+    callback set-theme(int);
+    in property <bool> books-enabled;
+    in property <string> books-url;
+    // Signed in as; empty when signed out.
+    in property <string> books-user;
+    in property <string> books-message;
+    callback set-books-enabled(bool);
+    callback edit-books-server();
+    callback books-sign-in();
+    callback books-sign-out();
+    background: Theme.backdrop;
+    Flickable {
+        content-height: column.preferred-height;
+        column := VerticalLayout {
+            width: root.width;
+            padding: 16px;
+            spacing: 14px;
+            alignment: start;
+            Text {
+                text: "Settings";
+                color: Theme.text;
+                font-size: Theme.font-title;
+                font-weight: 800;
+            }
+            Card {
+                title: "Speaker";
+                // Sonos rooms are found on any device; Bluetooth only on the Pi.
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: root.scanning ? "Looking…" : "Find speakers";
+                        primary: true;
+                        enabled: !root.scanning && !root.restarting;
+                        clicked => { root.find-speakers(); }
+                    }
+                    if root.on-sonos: SmallPill {
+                        label: "Play on this player";
+                        enabled: !root.restarting;
+                        clicked => { root.use-jack(); }
+                    }
+                    if root.on-speaker: SmallPill {
+                        label: "Use headphone jack";
+                        enabled: !root.restarting;
+                        clicked => { root.use-jack(); }
+                    }
+                    if root.on-speaker: SmallPill {
+                        label: "Forget";
+                        tint: Theme.danger;
+                        enabled: !root.restarting;
+                        clicked => { root.forget-speaker(); }
+                    }
+                }
+                if !root.bluetooth: Text {
+                    text: root.bluetooth-note;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+                for speaker in root.speakers: SpeakerRow {
+                    data: speaker;
+                    clicked => { root.connect-speaker(speaker.address); }
+                }
+                if root.sonos-rooms.length > 0: Text {
+                    text: "Sonos rooms";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    font-weight: 800;
+                }
+                for room in root.sonos-rooms: SpeakerRow {
+                    data: room;
+                    clicked => { root.choose-sonos(room.address); }
+                }
+                if root.message != "": Text {
+                    text: root.message;
+                    color: root.restarting ? Theme.accent : Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../icons/speaker.svg");
+                            width: 26px;
+                            height: 26px;
+                            colorize: Theme.text;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        Text {
+                            text: root.output;
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            font-weight: 800;
+                            overflow: elide;
+                        }
+                        if root.on-speaker: Text {
+                            text: root.speaker-connected ? "Connected" : "Not connected";
+                            color: root.speaker-connected ? Theme.accent : Theme.text-dim;
+                            font-size: Theme.font-small;
+                        }
+                    }
+                }
+            }
+            Card {
+                title: "Sleep timer";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "30 minutes";
+                        primary: root.sleep-minutes == 30;
+                        clicked => { root.set-sleep-length(30); }
+                    }
+                    SmallPill {
+                        label: "60 minutes";
+                        primary: root.sleep-minutes == 60;
+                        clicked => { root.set-sleep-length(60); }
+                    }
+                }
+                Text {
+                    text: "The moon on the playing-song screen starts it. Music fades out and stops.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Colours";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    for i in [0, 1, 2, 3, 4]: Swatch {
+                        index: i;
+                        clicked => { root.set-theme(i); }
+                    }
+                }
+            }
+            Card {
+                title: "Audiobooks";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "On";
+                        primary: root.books-enabled;
+                        clicked => { root.set-books-enabled(true); }
+                    }
+                    SmallPill {
+                        label: "Off";
+                        primary: !root.books-enabled;
+                        clicked => { root.set-books-enabled(false); }
+                    }
+                }
+                if root.books-enabled: HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.books-url == "" ? "Audiobookshelf server not set" : root.books-url;
+                        color: root.books-url == "" ? Theme.text-dim : Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    IconButton {
+                        size: 48px;
+                        icon: @image-url("../icons/edit.svg");
+                        accessible-role: button;
+                        accessible-label: "Edit server";
+                        clicked => { root.edit-books-server(); }
+                    }
+                }
+                if root.books-enabled && root.books-url != "": HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: root.books-user == "" ? "Not signed in" : "Signed in as " + root.books-user;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                    }
+                    if root.books-user == "": SmallPill {
+                        label: "Sign in";
+                        primary: true;
+                        clicked => { root.books-sign-in(); }
+                    }
+                    if root.books-user != "": SmallPill {
+                        label: "Sign out";
+                        clicked => { root.books-sign-out(); }
+                    }
+                }
+                if root.books-message != "": Text {
+                    text: root.books-message;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Device name";
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.device-name;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    IconButton {
+                        size: 48px;
+                        icon: @image-url("../icons/edit.svg");
+                        clicked => { root.rename-device(); }
+                    }
+                }
+                Text {
+                    text: "The name Spotify shows when you pick where to play.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Spotify account";
+                Text {
+                    text: root.account-name == "" ? "Not loaded yet" : root.account-name;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 800;
+                    overflow: elide;
+                }
+                if root.account-id != "" && root.account-id != root.account-name: Text {
+                    text: "Spotify ID " + root.account-id;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                }
+                Text {
+                    text: "Sign-in is done from the Mac with ziggy-setup.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

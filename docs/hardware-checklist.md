@@ -1,6 +1,6 @@
-# Muzak hardware checklist
+# Ziggy hardware checklist
 
-This checklist is the per-release record of bringing up and testing each Muzak device. Fill in pass/fail and notes for each section as you work through setup and verification on real hardware.
+This checklist is the per-release record of bringing up and testing each Ziggy device. Fill in pass/fail and notes for each section as you work through setup and verification on real hardware.
 
 ## 1. Mac checks (before touching a Pi)
 
@@ -14,7 +14,7 @@ dim_after_secs = 10
 off_after_secs = 20
 ```
 
-Run: `cargo run -p muzak-player -- --fake`
+Run: `cargo run -p ziggy-player -- --fake`
 
 Visual and interaction checks:
 - [ ] "Loading…" appears briefly, then six playlist tiles. Long names are cut off with "…".
@@ -26,7 +26,7 @@ Visual and interaction checks:
 - [ ] After 10s without touch (with playback paused), clock overlay appears. After 20s, screen goes black. A tap wakes it.
 - [ ] StateMessage, Banner, and clock text are centered.
 - [ ] Detail screen track list fills its area.
-- [ ] 4-column grid and Now Playing screen fit 800×480 without clipping. (Screenshot: `screencapture -l$(osascript -e 'tell app "System Events" to id of window 1 of process "muzak-player"') /tmp/muzak.png`)
+- [ ] 4-column grid and Now Playing screen fit 800×480 without clipping. (Screenshot: `screencapture -l$(osascript -e 'tell app "System Events" to id of window 1 of process "ziggy-player"') /tmp/ziggy.png`)
 
 **Result: PASS / FAIL**  
 **Notes:**
@@ -37,8 +37,8 @@ Sign in with the kid's Spotify account on the Mac. This creates credentials for 
 
 Run:
 ```bash
-cargo run -p muzak-setup -- auth --state-dir secrets/dev
-cargo run -p muzak-setup -- probe --state-dir secrets/dev
+cargo run -p ziggy-setup -- auth --state-dir secrets/dev
+cargo run -p ziggy-setup -- probe --state-dir secrets/dev
 ```
 
 Expected:
@@ -47,7 +47,7 @@ Expected:
 - [ ] Probe command prints HTTP 200 lines for each endpoint group.
 - [ ] Final output: "All endpoints work with librespot tokens."
 
-If probe fails with 401/403, apply **Contingency A** in `docs/superpowers/plans/2026-10-03-muzak-player-phase1.md` before proceeding.
+If probe fails with 401/403, apply **Contingency A** in `docs/superpowers/plans/2026-10-03-ziggy-player-phase1.md` before proceeding.
 
 **Result: PASS / FAIL**  
 **Notes:**
@@ -60,16 +60,16 @@ Setup:
 ```bash
 mkdir -p dev/state/librespot
 cp secrets/dev/librespot/credentials.json dev/state/librespot/
-cargo run -p muzak-player
+cargo run -p ziggy-player
 ```
 
 Playback and data checks:
 - [ ] Kid's real playlists and albums appear with cover art. Recent and Liked sections populate.
 - [ ] Playing a playlist produces audio through Mac speakers within ~1s. Title and artist match the track.
 - [ ] Pause, next, previous, seek, volume, shuffle, and repeat all respond within 0.5s.
-- [ ] Spotify app on a phone shows "Muzak Dev" device as the playing device.
+- [ ] Spotify app on a phone shows "Ziggy Dev" device as the playing device.
 - [ ] Liked Songs plays: open Liked in the rail, press Play, audio starts.
-- [ ] Transfer playback to your phone's Spotify app, then transfer back or press Play on Muzak Dev: playback resumes on the same song.
+- [ ] Transfer playback to your phone's Spotify app, then transfer back or press Play on Ziggy Dev: playback resumes on the same song.
 - [ ] Wi-Fi off: cached grids remain visible; Play shows "No internet right now". Turning Wi-Fi back on: library refreshes and playback resumes within ~1 minute.
 - [ ] Moving `credentials.json` away and restarting shows "Ask a grown-up for help" screen.
 
@@ -83,13 +83,13 @@ These steps prepare the Raspberry Pi hardware and deploy the player. Complete th
 ### Step 1: Flash and boot
 
 - [ ] In Raspberry Pi Imager, choose Raspberry Pi OS Lite (64-bit).
-  - Set hostname: `muzak-<kid>`
+  - Set hostname: `ziggy-<kid>`
   - Set a user
   - Configure Wi-Fi
   - Add SSH with your public key
 - [ ] With the board unpowered, attach the DSI ribbon cable to the Pi and the display.
 - [ ] Power on the Pi.
-- [ ] Run: `ssh muzak-<kid>.local uname -m`
+- [ ] Run: `ssh ziggy-<kid>.local uname -m`
   - Expected output: `aarch64`
 
 **Result: PASS / FAIL**  
@@ -99,13 +99,13 @@ These steps prepare the Raspberry Pi hardware and deploy the player. Complete th
 
 Run:
 ```bash
-scripts/provision.sh muzak-<kid>.local
-ssh muzak-<kid>.local sudo reboot
+scripts/provision.sh ziggy-<kid>.local
+ssh ziggy-<kid>.local sudo reboot
 ```
 
 After reboot, run:
 ```bash
-ssh muzak-<kid>.local 'ls /dev/dri; cat /sys/class/drm/*DSI*/status; ls /sys/class/backlight'
+ssh ziggy-<kid>.local 'ls /dev/dri; cat /sys/class/drm/*DSI*/status; ls /sys/class/backlight'
 ```
 
 Expected:
@@ -113,7 +113,7 @@ Expected:
 - [ ] DSI status line reads `connected`.
 - [ ] `/sys/class/backlight` has an entry (backlight control available). If missing, dimming falls back to black overlay, which is acceptable.
 
-If the UI doesn't appear after provisioning, check `journalctl -u muzak-player -n 50` for EGL/DRM errors. Verify Mesa runtime packages `libegl-mesa0` and `libgl1-mesa-dri` are installed.
+If the UI doesn't appear after provisioning, check `journalctl -u ziggy-player -n 50` for EGL/DRM errors. Verify Mesa runtime packages `libegl-mesa0` and `libgl1-mesa-dri` are installed.
 
 **Result: PASS / FAIL**  
 **Notes:**
@@ -124,25 +124,25 @@ Create a device secrets directory and sign in to Spotify using the kid's account
 
 Run on the Mac:
 ```bash
-cargo run -p muzak-setup -- auth --state-dir secrets/<kid>
-cargo run -p muzak-setup -- probe --state-dir secrets/<kid>
+cargo run -p ziggy-setup -- auth --state-dir secrets/<kid>
+cargo run -p ziggy-setup -- probe --state-dir secrets/<kid>
 ```
 
 Create the device config:
 ```bash
 cp devices/example.toml devices/<kid>.toml
-# Edit devices/<kid>.toml: set device_name, e.g. "Leo's Muzak"
+# Edit devices/<kid>.toml: set device_name, e.g. "Leo's Ziggy"
 ```
 
 Build and deploy:
 ```bash
 scripts/build-pi.sh
-scripts/deploy.sh muzak-<kid>.local devices/<kid>.toml secrets/<kid>
+scripts/deploy.sh ziggy-<kid>.local devices/<kid>.toml secrets/<kid>
 ```
 
 Expected:
 - [ ] Deployment completes without errors.
-- [ ] SSH to the Pi: `systemctl status muzak-player` shows `active (running)`.
+- [ ] SSH to the Pi: `systemctl status ziggy-player` shows `active (running)`.
 - [ ] Touchscreen displays the playlists grid.
 
 **Result: PASS / FAIL**  
@@ -155,11 +155,11 @@ Test the device with real usage patterns. Record pass/fail and notes for each it
 - [ ] **Cold boot:** Unplug the Pi for 5 seconds, plug it back in. Device reaches the playlists grid with no console text visible. Note the boot time: _____ seconds.
 - [ ] **Touch responsiveness:** Taps land where touched. Swipe-scrolling the grid and track lists is smooth.
 - [ ] **Audio playback:** Play a playlist on the headphone jack. Audio starts within 1s. Pause, skip (next/previous), and volume changes respond within 0.5s.
-- [ ] **Memory usage:** After 10 minutes of browsing and playing, run `systemctl status muzak-player | grep Memory`. Should be under 250MB. Also run `free -m` and record free RAM: _____ MB.
+- [ ] **Memory usage:** After 10 minutes of browsing and playing, run `systemctl status ziggy-player | grep Memory`. Should be under 250MB. Also run `free -m` and record free RAM: _____ MB.
 - [ ] **Idle behavior:** Pause playback. After 3 minutes without touch, clock overlay appears. After 10 minutes, screen goes black. A tap wakes the screen.
-- [ ] **Wi-Fi drop recovery:** Run `ssh muzak-<kid>.local sudo ip link set wlan0 down` for 30 seconds, then `up`. Cached playlists/albums remain visible. Playback resumes after pressing Play within ~1 minute.
-- [ ] **Crash recovery:** Run `ssh muzak-<kid>.local sudo pkill -9 muzak-player`. UI reappears within ~3 seconds. Systemd auto-restart works.
-- [ ] **Logs:** Run `ssh muzak-<kid>.local journalctl -u muzak-player -n 50`. No repeating error messages.
+- [ ] **Wi-Fi drop recovery:** Run `ssh ziggy-<kid>.local sudo ip link set wlan0 down` for 30 seconds, then `up`. Cached playlists/albums remain visible. Playback resumes after pressing Play within ~1 minute.
+- [ ] **Crash recovery:** Run `ssh ziggy-<kid>.local sudo pkill -9 ziggy-player`. UI reappears within ~3 seconds. Systemd auto-restart works.
+- [ ] **Logs:** Run `ssh ziggy-<kid>.local journalctl -u ziggy-player -n 50`. No repeating error messages.
 
 **Result: PASS / FAIL**  
 **Notes:**
@@ -170,7 +170,7 @@ If the device uses a Bluetooth speaker instead of the headphone jack, configure 
 
 Pair the speaker:
 ```bash
-ssh -t muzak-<kid>.local bluetoothctl
+ssh -t ziggy-<kid>.local bluetoothctl
 # Inside bluetoothctl:
 # power on
 # agent on
@@ -188,7 +188,7 @@ Configure the player:
 # audio_device = "bluealsa:DEV=<MAC>,PROFILE=a2dp"
 # bluetooth_speaker = "<MAC>"
 
-scripts/deploy.sh muzak-<kid>.local devices/<kid>.toml secrets/<kid>
+scripts/deploy.sh ziggy-<kid>.local devices/<kid>.toml secrets/<kid>
 ```
 
 Bluetooth tests:
@@ -218,4 +218,4 @@ git add docs/hardware-checklist.md devices/<kid>.toml
 git commit -m "docs: record hardware checklist for <kid>'s device"
 ```
 
-Reference: [Phase 1 design spec](superpowers/specs/2026-10-03-muzak-player-design.md) | [Phase 1 plan](superpowers/plans/2026-10-03-muzak-player-phase1.md)
+Reference: [Phase 1 design spec](superpowers/specs/2026-10-03-ziggy-player-design.md) | [Phase 1 plan](superpowers/plans/2026-10-03-ziggy-player-phase1.md)

@@ -1,4 +1,4 @@
-# Builds the Pi player and the `muzak` setup tool, and publishes them as a GitHub release.
+# Builds the Pi player and the `ziggy` setup tool, and publishes them as a GitHub release.
 # Run it by pushing a version tag: git tag v0.2.0 && git push origin v0.2.0
 name: Release
 
@@ -25,21 +25,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build in Debian Trixie, like Raspberry Pi OS
         run: |
-          docker build -t muzak-build -f deploy/Dockerfile.build deploy
+          docker build -t ziggy-build -f deploy/Dockerfile.build deploy
           docker run --rm -v "$PWD":/src -e CARGO_TARGET_DIR=/src/target/pi \
-            muzak-build cargo build --release -p muzak-player
+            ziggy-build cargo build --release -p ziggy-player
           sudo chown -R "$(id -u):$(id -g)" target
       - name: Package
         run: |
           mkdir -p dist
-          tar czf dist/muzak-player-linux-arm64.tar.gz -C target/pi/release muzak-player
+          tar czf dist/ziggy-player-linux-arm64.tar.gz -C target/pi/release ziggy-player
       - uses: actions/upload-artifact@v4
         with:
           name: player
           path: dist/*
 
   setup-tool:
-    name: muzak (${{ matrix.name }})
+    name: ziggy (${{ matrix.name }})
     strategy:
       matrix:
         include:
@@ -55,14 +55,14 @@ jobs:
           toolchain: "1.97.1"
           targets: ${{ matrix.target }}
       - name: Build
-        run: cargo build --release -p muzak-setup --bin muzak --target ${{ matrix.target }}
+        run: cargo build --release -p ziggy-setup --bin ziggy --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist
-          tar czf dist/muzak-${{ matrix.name }}.tar.gz -C target/${{ matrix.target }}/release muzak
+          tar czf dist/ziggy-${{ matrix.name }}.tar.gz -C target/${{ matrix.target }}/release ziggy
       - uses: actions/upload-artifact@v4
         with:
-          name: muzak-${{ matrix.name }}
+          name: ziggy-${{ matrix.name }}
           path: dist/*
 
   release:
@@ -80,4 +80,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --title "Muzak $TAG" --generate-notes
+            --target "$GITHUB_SHA" --title "Ziggy $TAG" --generate-notes
