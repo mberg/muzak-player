@@ -1548,6 +1548,20 @@ fn the_sleep_length_comes_from_settings_and_saves_without_a_restart() {
 }
 
 #[test]
+fn settings_show_the_temperature_when_there_is_one() {
+    let mut c = core();
+    assert_eq!(crate::view::build(c.state()).settings.temperature, "");
+    c.handle(Input::Temperature(Some(52)), 0);
+    let v = crate::view::build(c.state()).settings;
+    assert_eq!(v.temperature, "52°C");
+    assert!(!v.temperature_hot);
+    c.handle(Input::Temperature(Some(71)), 0);
+    assert!(crate::view::build(c.state()).settings.temperature_hot);
+    c.handle(Input::Temperature(None), 0);
+    assert_eq!(crate::view::build(c.state()).settings.temperature, "");
+}
+
+#[test]
 fn picking_a_colour_scheme_saves_without_a_restart() {
     let mut c = core();
     let fx = c.handle(ui(UiAction::SetTheme(1)), 0);

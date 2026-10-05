@@ -139,6 +139,8 @@ export component SettingsScreen inherits Rectangle {
     in property <[SpeakerRowData]> speakers;
     in property <string> message;
     in property <string> bluetooth-note;
+    in property <string> temperature;
+    in property <bool> temperature-hot;
     in property <bool> restarting;
     callback rename-device();
     callback find-speakers();
@@ -165,11 +167,23 @@ export component SettingsScreen inherits Rectangle {
             padding: 16px;
             spacing: 14px;
             alignment: start;
-            Text {
-                text: "Settings";
-                color: Theme.text;
-                font-size: Theme.font-title;
-                font-weight: 800;
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    text: "Settings";
+                    color: Theme.text;
+                    font-size: Theme.font-title;
+                    font-weight: 800;
+                }
+                // The Pi's temperature, small and out of the way; empty on a computer.
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.temperature == "" ? "" : "Temperature " + root.temperature;
+                    color: root.temperature-hot ? Theme.danger : Theme.text-dim;
+                    font-size: Theme.font-small;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
             }
             Card {
                 title: "Speaker";

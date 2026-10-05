@@ -24,6 +24,8 @@ pub enum Input {
     SonosRooms(Vec<crate::settings::SonosRoom>),
     Books(BooksUpdate),
     Voice(VoiceUpdate),
+    /// The CPU temperature in whole °C; None when this computer doesn't report one.
+    Temperature(Option<i32>),
 }
 
 /// Work for the audiobooks service.

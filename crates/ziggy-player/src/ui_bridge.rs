@@ -527,6 +527,8 @@ impl Bridge {
         w.set_sleep_minutes(s.sleep_minutes as i32);
         w.set_bluetooth_note(s.bluetooth_note.as_str().into());
         w.set_restarting(s.restarting);
+        w.set_temperature(s.temperature.as_str().into());
+        w.set_temperature_hot(s.temperature_hot);
         let speakers: Vec<SpeakerRowData> = s
             .speakers
             .iter()

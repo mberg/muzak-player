@@ -236,6 +236,7 @@ impl Core {
             Input::Bluetooth(update) => self.on_bluetooth(update, &mut fx),
             Input::Books(update) => self.on_books(update, &mut fx),
             Input::Voice(update) => self.on_voice(update, now_ms, &mut fx),
+            Input::Temperature(c) => self.state.device.temperature_c = c,
             Input::SonosRooms(rooms) => {
                 self.state.device.sonos_rooms = rooms;
                 self.state.device.sonos_scanning = false;
