@@ -170,87 +170,6 @@ export component SettingsScreen inherits Rectangle {
                 font-weight: 800;
             }
             Card {
-                title: "Spotify account";
-                Text {
-                    text: root.account-name == "" ? "Not loaded yet" : root.account-name;
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    font-weight: 800;
-                    overflow: elide;
-                }
-                if root.account-id != "" && root.account-id != root.account-name: Text {
-                    text: "Spotify ID " + root.account-id;
-                    color: Theme.text-dim;
-                    font-size: Theme.font-small;
-                }
-                Text {
-                    text: "Sign-in is done from the Mac with muzak-setup.";
-                    color: Theme.text-dim;
-                    font-size: Theme.font-small;
-                    wrap: word-wrap;
-                }
-            }
-            Card {
-                title: "Device name";
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text {
-                        horizontal-stretch: 1;
-                        text: root.device-name;
-                        color: Theme.text;
-                        font-size: Theme.font-body;
-                        font-weight: 800;
-                        vertical-alignment: center;
-                        overflow: elide;
-                    }
-                    IconButton {
-                        size: 48px;
-                        icon: @image-url("../icons/edit.svg");
-                        clicked => { root.rename-device(); }
-                    }
-                }
-                Text {
-                    text: "The name Spotify shows when you pick where to play.";
-                    color: Theme.text-dim;
-                    font-size: Theme.font-small;
-                    wrap: word-wrap;
-                }
-            }
-            Card {
-                title: "Colours";
-                HorizontalLayout {
-                    spacing: 10px;
-                    alignment: start;
-                    for i in [0, 1, 2, 3]: Swatch {
-                        index: i;
-                        clicked => { root.set-theme(i); }
-                    }
-                }
-            }
-            Card {
-                title: "Sleep timer";
-                HorizontalLayout {
-                    spacing: 10px;
-                    alignment: start;
-                    SmallPill {
-                        label: "30 minutes";
-                        primary: root.sleep-minutes == 30;
-                        clicked => { root.set-sleep-length(30); }
-                    }
-                    SmallPill {
-                        label: "60 minutes";
-                        primary: root.sleep-minutes == 60;
-                        clicked => { root.set-sleep-length(60); }
-                    }
-                }
-                Text {
-                    text: "The moon on the playing-song screen starts it. Music fades out and stops.";
-                    color: Theme.text-dim;
-                    font-size: Theme.font-small;
-                    wrap: word-wrap;
-                }
-            }
-            Card {
                 title: "Speaker";
                 HorizontalLayout {
                     spacing: 12px;
@@ -335,6 +254,40 @@ export component SettingsScreen inherits Rectangle {
                 }
             }
             Card {
+                title: "Colours";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    for i in [0, 1, 2, 3]: Swatch {
+                        index: i;
+                        clicked => { root.set-theme(i); }
+                    }
+                }
+            }
+            Card {
+                title: "Sleep timer";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "30 minutes";
+                        primary: root.sleep-minutes == 30;
+                        clicked => { root.set-sleep-length(30); }
+                    }
+                    SmallPill {
+                        label: "60 minutes";
+                        primary: root.sleep-minutes == 60;
+                        clicked => { root.set-sleep-length(60); }
+                    }
+                }
+                Text {
+                    text: "The moon on the playing-song screen starts it. Music fades out and stops.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
                 title: "Audiobooks";
                 HorizontalLayout {
                     spacing: 10px;
@@ -390,6 +343,53 @@ export component SettingsScreen inherits Rectangle {
                 }
                 if root.books-message != "": Text {
                     text: root.books-message;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Device name";
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.device-name;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    IconButton {
+                        size: 48px;
+                        icon: @image-url("../icons/edit.svg");
+                        clicked => { root.rename-device(); }
+                    }
+                }
+                Text {
+                    text: "The name Spotify shows when you pick where to play.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Spotify account";
+                Text {
+                    text: root.account-name == "" ? "Not loaded yet" : root.account-name;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 800;
+                    overflow: elide;
+                }
+                if root.account-id != "" && root.account-id != root.account-name: Text {
+                    text: "Spotify ID " + root.account-id;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                }
+                Text {
+                    text: "Sign-in is done from the Mac with muzak-setup.";
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;
