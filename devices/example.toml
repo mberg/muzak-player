@@ -8,6 +8,8 @@ audio_device = "plughw:CARD=Headphones"
 # audio_device = "bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp"
 # bluetooth_speaker = "AA:BB:CC:DD:EE:FF"
 initial_volume = 60
+# Spotify stream quality in kbps: 96, 160 or 320 (the default).
+# bitrate = 320
 dim_after_secs = 180
 off_after_secs = 600
 # Audiobooks from an Audiobookshelf server turns Books on. Sign in from Settings on the player.

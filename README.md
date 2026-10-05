@@ -48,7 +48,7 @@ muzak setup
 Setup asks one thing at a time:
 
 1. **The Pi's address**, such as `muzak-kitchen.local`. It checks it can connect.
-2. **The player's name.** Spotify shows this name when you pick where to play.
+2. **The player's name and sound quality.** Spotify shows the name when you pick where to play. Quality is 320 kbps unless you choose a lower setting to save data.
 3. **Spotify.**
    - The first time, it walks you through creating a free Spotify developer app. One app serves every player and every person.
    - Then a browser opens twice to sign in, once for playback and once for the library, and setup checks it all works.
@@ -69,7 +69,7 @@ Run these from your computer:
 
 | Command | What it does |
 |---|---|
-| `muzak config muzak-kitchen.local` | Change settings from a menu: the name, volume, screen timeouts, Audiobookshelf and voice. Saving restarts the player. |
+| `muzak config muzak-kitchen.local` | Change settings from a menu: the name, sound quality, volume, screen timeouts, Audiobookshelf and voice. Saving restarts the player. |
 | `muzak update muzak-kitchen.local` | Install the newest player and restart it. |
 | `muzak status muzak-kitchen.local` | Check the player is running, and which version it is. |
 | `muzak logs muzak-kitchen.local` | Watch what the player is doing, for when something's wrong. |
