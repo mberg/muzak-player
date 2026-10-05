@@ -1939,6 +1939,10 @@ fn the_wake_word_lowers_the_music_and_passes_the_library_to_gemini() {
     assert_eq!(volumes(&fx), [60]);
     assert_eq!(c.state().voice.phase, VoicePhase::Idle);
     assert_eq!(banner(&c).as_deref(), Some("Didn't catch that"));
+    assert!(
+        crate::view::build(c.state()).banner_at_bottom,
+        "voice replies show at the bottom"
+    );
 }
 
 #[test]

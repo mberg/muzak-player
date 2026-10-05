@@ -52,6 +52,8 @@ export component AppWindow inherits Window {
     in property <bool> shuffle;
     in property <int> repeat;
     in property <string> banner;
+    // Voice replies show at the bottom, where "Listening…" was.
+    in property <bool> banner-at-bottom;
     // "Listening…" or "Working on it…" during a voice request; empty otherwise.
     in property <string> voice-status;
     in property <bool> voice-listening;
@@ -450,7 +452,7 @@ export component AppWindow inherits Window {
     }
     if root.banner != "" && root.voice-status == "": Banner {
         x: (root.width - self.width) / 2;
-        y: 12px;
+        y: root.banner-at-bottom ? root.height - self.height - 16px : 12px;
         text: root.banner;
     }
     if root.voice-status != "": VoicePill {
