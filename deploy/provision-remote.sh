@@ -55,6 +55,14 @@ ctl.!default {
 }
 EOA
 fi
+# Many USB microphones start with their gain at zero, so the wake word needs shouting. 75%
+# (12 of 16 on a common one) hears ordinary speech across a room. Saved for the next boot.
+if [ -n "$MIC" ]; then
+    for control in Mic Capture; do
+        amixer -q -c "$MIC" sset "$control" 75% cap 2>/dev/null && break
+    done
+    alsactl store 2>/dev/null || true
+fi
 
 # Raspberry Pi OS Lite starts with the Bluetooth radio blocked; the player needs it on.
 rfkill unblock bluetooth 2>/dev/null || true
