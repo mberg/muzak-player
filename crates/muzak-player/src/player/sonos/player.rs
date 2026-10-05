@@ -163,8 +163,9 @@ async fn run(
                 command = commands.recv() => match command {
                     None => return,
                     Some(command) => {
+                        let what = format!("{command:?}");
                         if let Err(e) = apply(&speaker, &uuid, &cache, command).await {
-                            tracing::warn!("Sonos command failed: {e}");
+                            tracing::warn!("Sonos command failed: {what}: {e}");
                             send(PlayerUpdate::Unavailable);
                         }
                     }
@@ -259,6 +260,14 @@ fn on_transport(
     }
 }
 
+/// Passes a result through, logging which step of a Sonos command failed.
+fn step<T>(name: &str, result: Result<T, sonor::Error>) -> Result<T, sonor::Error> {
+    if let Err(e) = &result {
+        tracing::warn!("Sonos step failed: {name}: {e}");
+    }
+    result
+}
+
 /// Queues a Spotify album, playlist or song, trying each Spotify service type.
 async fn enqueue(speaker: &Speaker, uri: &str, title: &str) -> Result<(), sonor::Error> {
     let mut last = None;
@@ -266,9 +275,15 @@ async fn enqueue(speaker: &Speaker, uri: &str, title: &str) -> Result<(), sonor:
         let Some((enqueued, didl)) = protocol::enqueue_item(uri, title, service) else {
             break;
         };
-        match speaker.queue_end(&enqueued, &didl).await {
+        // sonor puts argument values into the SOAP body as they are, so escape them here;
+        // unescaped DIDL arrives as stray XML and Sonos answers 500.
+        let (uri_arg, didl_arg) = (protocol::xml_escape(&enqueued), protocol::xml_escape(&didl));
+        match speaker.queue_end(&uri_arg, &didl_arg).await {
             Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
+            Err(e) => {
+                tracing::warn!("Sonos refused to queue {enqueued} as service {service}: {e}");
+                last = Some(e);
+            }
         }
     }
     match last {
@@ -287,7 +302,7 @@ async fn load(
     start_uri: Option<&str>,
     shuffle: bool,
 ) -> Result<(), sonor::Error> {
-    speaker.clear_queue().await?;
+    step("clear the queue", speaker.clear_queue().await)?;
     match protocol::kind_of(context_uri) {
         Some(Kind::Album | Kind::Playlist | Kind::Track) => {
             enqueue(speaker, context_uri, "").await?
@@ -307,10 +322,13 @@ async fn load(
             }
         }
     }
-    speaker
-        .set_transport_uri(&protocol::queue_uri(uuid), "")
-        .await?;
-    speaker.set_shuffle(shuffle).await?;
+    step(
+        "play from the queue",
+        speaker
+            .set_transport_uri(&protocol::queue_uri(uuid), "")
+            .await,
+    )?;
+    step("set shuffle", speaker.set_shuffle(shuffle).await)?;
     let track_no = match (start_uri, start_index) {
         (Some(uri), _) => speaker
             .queue()
@@ -322,9 +340,9 @@ async fn load(
         (None, None) => None,
     };
     if let Some(n) = track_no {
-        speaker.seek_track(n).await?;
+        step("jump to the song", speaker.seek_track(n).await)?;
     }
-    speaker.play().await
+    step("play", speaker.play().await)
 }
 
 async fn apply(
