@@ -94,6 +94,11 @@ pub async fn run(
 }
 
 async fn scan(adapter: &Adapter, send: &impl Fn(BtUpdate)) {
+    // The adapter may have been off or blocked when the player started; power it on again
+    // so a scan works without restarting the player.
+    if let Err(e) = adapter.set_powered(true).await {
+        tracing::warn!("turning Bluetooth on failed: {e}");
+    }
     if let Err(e) = adapter.set_pairable(true).await {
         tracing::warn!("making Bluetooth pairable failed: {e}");
     }

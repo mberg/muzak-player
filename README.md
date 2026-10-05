@@ -109,6 +109,8 @@ To change the wake word or its sensitivity, run `muzak config`.
 ## Troubleshooting
 
 - **Setup can't connect to the Pi.** Check that `ssh muzak-kitchen.local` works. The hostname and SSH key must match what you set in Imager. If your username on the Pi differs from your computer's, use `pi@muzak-kitchen.local`.
+- **Setup says sudo asks for a password.** Newer Raspberry Pi OS images do this for the Imager user. Run the one-line command setup prints, which asks for the Pi's password once, then continue.
+- **Spotify says it's limiting requests.** Spotify sometimes rate-limits a developer app for up to a day. Setup saves the sign-in and carries on. The library loads once the limit ends, and playing music isn't affected.
 - **Spotify says some requests were refused.** Add the account's email under "User Management" in the Spotify developer app, then run `muzak signin`.
 - **The screen is blank.** Run `muzak status`, then `muzak logs` to see why.
 

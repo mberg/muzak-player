@@ -36,6 +36,8 @@ printf '[Journal]\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/muzak.conf
 
 install -m 644 "$HERE/muzak-player.service" /etc/systemd/system/muzak-player.service
 systemctl daemon-reload
+# Raspberry Pi OS Lite starts with the Bluetooth radio blocked; the player needs it on.
+rfkill unblock bluetooth 2>/dev/null || true
 systemctl enable bluealsa.service muzak-player.service
 systemctl disable getty@tty1.service || true
 # Nothing waits for the network at boot, and package-list and manual-page jobs don't run

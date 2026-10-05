@@ -84,7 +84,14 @@ pub async fn auth_web(state_dir: &Path, client_id: &str) -> anyhow::Result<()> {
         .with_context(|| format!("restricting {}", path.display()))?;
     println!("Saved {}", path.display());
 
-    let (id, name) = account(&token.access_token).await?;
+    // Spotify sometimes rate-limits the developer app for hours; the sign-in is saved anyway.
+    let (id, name) = match account(&token.access_token).await {
+        Ok(account) => account,
+        Err(e) => {
+            println!("Signed in, but Spotify didn't say which account ({e}).");
+            return Ok(());
+        }
+    };
     println!("Library account: {name} ({id})");
     if let Some(playback) = playback_account(state_dir)
         && playback != id

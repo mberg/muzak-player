@@ -82,7 +82,24 @@ fn find_pi(host: Option<String>) -> anyhow::Result<Ssh> {
         let ssh = Ssh::new(&host);
         if ssh.reachable() {
             ok(&format!("Connected to {host}"));
-            return Ok(ssh);
+            if ssh.run("sudo -n true").is_ok() {
+                return Ok(ssh);
+            }
+            // Newer Raspberry Pi OS images ask the Imager user for a password with sudo.
+            let user = ssh
+                .run("whoami")
+                .map(|u| u.trim().to_string())
+                .unwrap_or_else(|_| "pi".into());
+            say(&format!(
+                "{} On this Pi, sudo asks for a password, and setup needs to install without\n\
+                 one. Run this once in another terminal and enter the Pi's password:\n\n  \
+                 ssh -t {host} 'echo \"{user} ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/010_{user}-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/010_{user}-nopasswd'\n",
+                style("!").yellow()
+            ));
+            if !yes("Done? Check again", true)? {
+                bail!("stopped");
+            }
+            continue;
         }
         say(&format!(
             "{} Couldn't connect to {host} over SSH without a password.\n\
@@ -157,6 +174,15 @@ async fn spotify_sign_in(dir: &Path, client_id: &str) -> anyhow::Result<()> {
         match spotify::probe(dir).await {
             Ok(()) => {
                 ok("Spotify works");
+                return Ok(());
+            }
+            Err(e) if e.to_string().contains("429") => {
+                say(&format!(
+                    "{} Spotify is limiting requests from the developer app right now, so the\n\
+                     check is skipped. The sign-ins are saved; the library loads once the limit\n\
+                     ends (usually within a day). Playing music isn't affected.",
+                    style("!").yellow()
+                ));
                 return Ok(());
             }
             Err(e) => {
