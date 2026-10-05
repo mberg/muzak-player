@@ -79,7 +79,7 @@ export component DetailScreen inherits Rectangle {
     property <int> drag-to: root.drag-from < 0 ? -1
         : Math.max(0, Math.min(root.tracks.length - 1, root.drag-from + Math.round(root.drag-dy / Theme.touch)));
     property <length> art: 196px;
-    background: Theme.bg;
+    background: Theme.backdrop;
     HorizontalLayout {
         padding: 16px;
         padding-right: 8px;

@@ -1555,7 +1555,7 @@ fn picking_a_colour_scheme_saves_without_a_restart() {
     assert!(!c.state().device.restarting);
     assert_eq!(crate::view::build(c.state()).theme, 1);
     c.handle(ui(UiAction::SetTheme(9)), 0);
-    assert_eq!(crate::view::build(c.state()).theme, 3);
+    assert_eq!(crate::view::build(c.state()).theme, 4);
 }
 
 // ---- Play history ----

@@ -51,10 +51,10 @@ component SmallPill inherits Rectangle {
 component Swatch inherits Rectangle {
     in property <int> index;
     callback clicked();
-    width: 120px;
+    width: 112px;
     height: 84px;
     border-radius: 12px;
-    background: Theme.backgrounds[root.index];
+    background: Theme.backdrop-for(root.index);
     border-width: Theme.scheme == root.index ? 3px : 1px;
     border-color: Theme.scheme == root.index ? Theme.accent : Theme.surface-hi;
     accessible-role: button;
@@ -71,6 +71,8 @@ component Swatch inherits Rectangle {
     Text {
         x: 14px;
         y: parent.height - self.height - 10px;
+        width: parent.width - 20px;
+        wrap: word-wrap;
         text: Theme.scheme-names[root.index];
         color: Theme.texts[root.index];
         font-size: Theme.font-small;
@@ -155,7 +157,7 @@ export component SettingsScreen inherits Rectangle {
     callback edit-books-server();
     callback books-sign-in();
     callback books-sign-out();
-    background: Theme.bg;
+    background: Theme.backdrop;
     Flickable {
         content-height: column.preferred-height;
         column := VerticalLayout {
@@ -171,34 +173,6 @@ export component SettingsScreen inherits Rectangle {
             }
             Card {
                 title: "Speaker";
-                HorizontalLayout {
-                    spacing: 12px;
-                    VerticalLayout {
-                        alignment: center;
-                        Image {
-                            source: @image-url("../icons/speaker.svg");
-                            width: 26px;
-                            height: 26px;
-                            colorize: Theme.text;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        Text {
-                            text: root.output;
-                            color: Theme.text;
-                            font-size: Theme.font-body;
-                            font-weight: 800;
-                            overflow: elide;
-                        }
-                        if root.on-speaker: Text {
-                            text: root.speaker-connected ? "Connected" : "Not connected";
-                            color: root.speaker-connected ? Theme.accent : Theme.text-dim;
-                            font-size: Theme.font-small;
-                        }
-                    }
-                }
                 // Sonos rooms are found on any device; Bluetooth only on the Pi.
                 HorizontalLayout {
                     spacing: 10px;
@@ -252,13 +226,41 @@ export component SettingsScreen inherits Rectangle {
                     font-size: Theme.font-small;
                     wrap: word-wrap;
                 }
+                HorizontalLayout {
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../icons/speaker.svg");
+                            width: 26px;
+                            height: 26px;
+                            colorize: Theme.text;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        Text {
+                            text: root.output;
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            font-weight: 800;
+                            overflow: elide;
+                        }
+                        if root.on-speaker: Text {
+                            text: root.speaker-connected ? "Connected" : "Not connected";
+                            color: root.speaker-connected ? Theme.accent : Theme.text-dim;
+                            font-size: Theme.font-small;
+                        }
+                    }
+                }
             }
             Card {
                 title: "Colours";
                 HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
-                    for i in [0, 1, 2, 3]: Swatch {
+                    for i in [0, 1, 2, 3, 4]: Swatch {
                         index: i;
                         clicked => { root.set-theme(i); }
                     }

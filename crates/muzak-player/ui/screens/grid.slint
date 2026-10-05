@@ -27,7 +27,7 @@ export component GridScreen inherits Rectangle {
     property <length> tile-w: (root.width - 2 * root.pad) / root.columns;
     property <length> art: root.tile-w - 12px;
     property <length> tile-h: root.art + 72px;
-    background: Theme.bg;
+    background: Theme.backdrop;
     title-text := Text {
         x: root.pad;
         y: 12px;
