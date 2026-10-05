@@ -147,6 +147,81 @@ pub fn restart(r: &dyn Remote) -> anyhow::Result<(bool, String)> {
     ))
 }
 
+/// Keeps the Pi's logs across reboots (capped), so a crash can be read afterwards. Safe to run
+/// again; the same settings are in the provisioning script.
+pub fn keep_logs(r: &dyn Remote) -> anyhow::Result<()> {
+    r.run(
+        "sudo mkdir -p /etc/systemd/journald.conf.d /var/log/journal\n\
+         printf '[Journal]\\nStorage=persistent\\nSystemMaxUse=50M\\n' \
+           | sudo tee /etc/systemd/journald.conf.d/ziggy.conf >/dev/null\n\
+         sudo systemctl restart systemd-journald || true\n\
+         sudo journalctl --flush || true",
+    )?;
+    Ok(())
+}
+
+/// How the player is doing, for `ziggy status`: uptime, restarts, power and memory, and the
+/// failures in the log. One `key=value` per line, then the failures after `--- problems`.
+pub fn health(r: &dyn Remote) -> anyhow::Result<Health> {
+    let out = r.run(
+        "echo \"uptime=$(uptime -p)\"\n\
+         echo \"started=$(systemctl show ziggy-player -p ActiveEnterTimestamp --value)\"\n\
+         echo \"restarts=$(systemctl show ziggy-player -p NRestarts --value)\"\n\
+         echo \"power=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)\"\n\
+         echo \"temperature=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)\"\n\
+         echo \"memory=$(free -m | awk '/Mem:/ {print $7\" MB free of \"$2\" MB\"}')\"\n\
+         if [ -d /var/log/journal ]; then echo logs=kept; else echo logs=memory; fi\n\
+         echo '--- problems'\n\
+         sudo journalctl -u ziggy-player --no-pager -o short-iso 2>/dev/null \\\n\
+           | grep -E 'Main process exited|Failed with result|panicked|Error:|FemtoVG:|ERROR ziggy_player|WARN ziggy_player' \\\n\
+           | tail -12 | cut -c1-220 || true",
+    )?;
+    Ok(Health::parse(&out))
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Health {
+    pub facts: Vec<(String, String)>,
+    pub problems: Vec<String>,
+}
+
+impl Health {
+    fn parse(out: &str) -> Self {
+        let mut health = Health::default();
+        let mut problems = false;
+        for line in out.lines().map(str::trim_end).filter(|l| !l.is_empty()) {
+            if line == "--- problems" {
+                problems = true;
+            } else if problems {
+                health.problems.push(line.to_string());
+            } else if let Some((k, v)) = line.split_once('=') {
+                health.facts.push((k.to_string(), v.to_string()));
+            }
+        }
+        health
+    }
+
+    pub fn fact(&self, key: &str) -> Option<&str> {
+        self.facts
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// `vcgencmd get_throttled` is a hex mask; zero means the power and heat have been fine.
+    pub fn power_ok(&self) -> bool {
+        self.fact("power")
+            .and_then(|p| u32::from_str_radix(p.trim_start_matches("0x"), 16).ok())
+            .is_none_or(|bits| bits & 0xF000F == 0)
+    }
+
+    pub fn restarts(&self) -> u32 {
+        self.fact("restarts")
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0)
+    }
+}
+
 /// True for a player set up before the rename to Ziggy, which still has the muzak names.
 pub fn needs_rename_migration(r: &dyn Remote) -> bool {
     r.run("test -d /var/lib/muzak && test ! -d /var/lib/ziggy && echo yes || true")
@@ -204,6 +279,22 @@ mod tests {
         let files = r.files.borrow();
         let (bytes, mode, _) = &files["/usr/local/bin/ziggy-player"];
         assert_eq!((bytes.as_slice(), mode.as_str()), (&b"\x7fELF"[..], "755"));
+    }
+
+    #[test]
+    fn health_reads_facts_and_problems() {
+        let h = Health::parse(
+            "uptime=up 18 hours\nrestarts=2\npower=0x0\nlogs=kept\n--- problems\n\
+             2026-10-05T14:52:57 ziggy-micah systemd[1]: Main process exited, code=exited\n",
+        );
+        assert_eq!(h.restarts(), 2);
+        assert!(h.power_ok());
+        assert_eq!(h.fact("logs"), Some("kept"));
+        assert_eq!(h.problems.len(), 1);
+        // Bit 0 is "under-voltage now"; bit 16 is "under-voltage has happened".
+        assert!(!Health::parse("power=0x50005\n").power_ok());
+        assert!(!Health::parse("power=0x50000\n").power_ok());
+        assert!(Health::parse("power=\n").power_ok(), "unknown isn't a fault");
     }
 
     #[test]

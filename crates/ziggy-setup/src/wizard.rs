@@ -613,6 +613,7 @@ pub fn update(host: &str, player: PlayerSource) -> anyhow::Result<()> {
         install::provision(&ssh)?;
         ok("Moved. Settings, sign-in and speaker are kept");
     }
+    install::keep_logs(&ssh)?;
     say("Installing the player…");
     install::install_player(&ssh, &player)?;
     let after = install::installed_version(&ssh);
@@ -634,6 +635,42 @@ pub fn status(host: &str) -> anyhow::Result<()> {
     ok(&format!("{host} is reachable"));
     say(&install::installed_version(&ssh).unwrap_or_else(|| "The player isn't installed".into()));
     report_running(&ssh)?;
+    let health = install::health(&ssh)?;
+    for (label, key) in [
+        ("Up", "uptime"),
+        ("Player started", "started"),
+        ("Memory free", "memory"),
+        ("Temperature", "temperature"),
+    ] {
+        if let Some(v) = health.fact(key).filter(|v| !v.is_empty()) {
+            say(&format!("  {label}: {v}"));
+        }
+    }
+    if !health.power_ok() {
+        say(&format!(
+            "{} The Pi has had power or heat trouble (throttled {}). Check the cable and charger.",
+            style("!").red(),
+            health.fact("power").unwrap_or("?")
+        ));
+    }
+    if health.fact("logs") == Some("memory") {
+        say("  Logs are only kept until the Pi restarts. `ziggy update` fixes that.");
+    }
+    if health.restarts() > 0 {
+        say(&format!(
+            "{} The player has restarted itself {} time(s) since it was last started by hand.",
+            style("!").red(),
+            health.restarts()
+        ));
+    }
+    if health.problems.is_empty() {
+        ok("No crashes or errors in the log");
+    } else {
+        say("Recent problems (oldest first):");
+        for line in &health.problems {
+            say(&format!("  {line}"));
+        }
+    }
     Ok(())
 }
 
