@@ -21,8 +21,8 @@ mkdir -p "$dir"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "Downloading $name…"
-curl -fsSL "https://github.com/$REPO/releases/latest/download/$name.tar.gz" | tar xz -C "$tmp"
+echo "Downloading ${name}…"
+curl -fsSL "https://github.com/${REPO}/releases/latest/download/${name}.tar.gz" | tar xz -C "${tmp}"
 install -m 755 "$tmp/muzak" "$dir/muzak"
 echo "Installed $("$dir/muzak" --version) to $dir/muzak"
 
