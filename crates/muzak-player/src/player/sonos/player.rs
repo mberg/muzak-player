@@ -24,7 +24,9 @@ const RENDERING_CONTROL: URN = URN::service("schemas-upnp-org", "RenderingContro
 const SUBSCRIPTION_SECS: u32 = 300;
 const RENEW_EVERY: Duration = Duration::from_secs(240);
 /// While playing, the position is read this often.
-const POSITION_EVERY: Duration = Duration::from_secs(2);
+/// How often the speaker is asked for its state and position. Sonos sends events a few
+/// seconds late, so the screen follows these answers rather than waiting for events.
+const POSITION_EVERY: Duration = Duration::from_secs(1);
 /// Liked Songs has no Sonos container, so its songs are queued one by one, up to this many.
 const MAX_QUEUED_SONGS: usize = 200;
 const DISCOVERY: Duration = Duration::from_secs(5);
@@ -120,6 +122,8 @@ async fn renew(speaker: &Speaker, service: &URN, sid: &str) {
 struct Seen {
     track_uri: Option<String>,
     playing: bool,
+    /// The transport state last told to the core ("PLAYING", "PAUSED_PLAYBACK", ...).
+    state: Option<String>,
     position_ms: u32,
     duration_ms: u32,
 }
@@ -163,10 +167,13 @@ async fn run(
                 command = commands.recv() => match command {
                     None => return,
                     Some(command) => {
+                        let what = format!("{command:?}");
                         if let Err(e) = apply(&speaker, &uuid, &cache, command).await {
-                            tracing::warn!("Sonos command failed: {e}");
+                            tracing::warn!("Sonos command failed: {what}: {e}");
                             send(PlayerUpdate::Unavailable);
                         }
+                        // Show the result straight away instead of waiting for events.
+                        position_tick.reset_immediately();
                     }
                 },
                 event = av_events.next() => match event {
@@ -189,15 +196,7 @@ async fn run(
                         send(PlayerUpdate::Volume { percent });
                     }
                 },
-                _ = position_tick.tick(), if seen.playing => {
-                    if let Ok(Some(info)) = speaker.track().await {
-                        let position_ms = info.elapsed() * 1000;
-                        if position_ms != seen.position_ms {
-                            seen.position_ms = position_ms;
-                            send(PlayerUpdate::Position { position_ms });
-                        }
-                    }
-                },
+                _ = position_tick.tick() => poll(&speaker, &mut seen, &send).await,
                 _ = renew_tick.tick() => {
                     renew(&speaker, &AV_TRANSPORT, &av_sid).await;
                     if let Some(sid) = &rc_sid {
@@ -211,6 +210,62 @@ async fn run(
             send(PlayerUpdate::Disconnected);
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
+    }
+}
+
+/// Asks the speaker for its play state and position, and tells the core what changed.
+async fn poll(speaker: &Speaker, seen: &mut Seen, send: &impl Fn(PlayerUpdate)) {
+    let device = speaker.device();
+    let Some(service) = device.find_service(&AV_TRANSPORT) else {
+        return;
+    };
+    let state = match service
+        .action(
+            device.url(),
+            "GetTransportInfo",
+            "<InstanceID>0</InstanceID>",
+        )
+        .await
+    {
+        Ok(mut vars) => vars.remove("CurrentTransportState"),
+        Err(_) => return,
+    };
+    if let Ok(Some(info)) = speaker.track().await {
+        let position_ms = info.elapsed() * 1000;
+        if position_ms != seen.position_ms {
+            seen.position_ms = position_ms;
+            if seen.playing && state.as_deref() == Some("PLAYING") {
+                send(PlayerUpdate::Position { position_ms });
+            }
+        }
+    }
+    if state.is_some() && state != seen.state {
+        set_state(state.as_deref(), seen, send);
+    }
+}
+
+/// Tells the core about a transport state it hasn't heard yet.
+fn set_state(state: Option<&str>, seen: &mut Seen, send: &impl Fn(PlayerUpdate)) {
+    seen.state = state.map(str::to_string);
+    match state {
+        Some("PLAYING") => {
+            seen.playing = true;
+            send(PlayerUpdate::Playing {
+                position_ms: seen.position_ms,
+            });
+        }
+        Some("PAUSED_PLAYBACK") => {
+            seen.playing = false;
+            send(PlayerUpdate::Paused {
+                position_ms: seen.position_ms,
+            });
+        }
+        Some("STOPPED") => {
+            seen.playing = false;
+            send(PlayerUpdate::Stopped);
+        }
+        Some("TRANSITIONING") => send(PlayerUpdate::Loading),
+        _ => {}
     }
 }
 
@@ -237,26 +292,17 @@ fn on_transport(
         send(PlayerUpdate::Shuffle(shuffle));
         send(PlayerUpdate::Repeat(repeat));
     }
-    match change.state.as_deref() {
-        Some("PLAYING") => {
-            seen.playing = true;
-            send(PlayerUpdate::Playing {
-                position_ms: seen.position_ms,
-            });
-        }
-        Some("PAUSED_PLAYBACK") => {
-            seen.playing = false;
-            send(PlayerUpdate::Paused {
-                position_ms: seen.position_ms,
-            });
-        }
-        Some("STOPPED") => {
-            seen.playing = false;
-            send(PlayerUpdate::Stopped);
-        }
-        Some("TRANSITIONING") => send(PlayerUpdate::Loading),
-        _ => {}
+    if change.state.is_some() && change.state != seen.state {
+        set_state(change.state.as_deref(), seen, send);
     }
+}
+
+/// Passes a result through, logging which step of a Sonos command failed.
+fn step<T>(name: &str, result: Result<T, sonor::Error>) -> Result<T, sonor::Error> {
+    if let Err(e) = &result {
+        tracing::warn!("Sonos step failed: {name}: {e}");
+    }
+    result
 }
 
 /// Queues a Spotify album, playlist or song, trying each Spotify service type.
@@ -266,9 +312,15 @@ async fn enqueue(speaker: &Speaker, uri: &str, title: &str) -> Result<(), sonor:
         let Some((enqueued, didl)) = protocol::enqueue_item(uri, title, service) else {
             break;
         };
-        match speaker.queue_end(&enqueued, &didl).await {
+        // sonor puts argument values into the SOAP body as they are, so escape them here;
+        // unescaped DIDL arrives as stray XML and Sonos answers 500.
+        let (uri_arg, didl_arg) = (protocol::xml_escape(&enqueued), protocol::xml_escape(&didl));
+        match speaker.queue_end(&uri_arg, &didl_arg).await {
             Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
+            Err(e) => {
+                tracing::warn!("Sonos refused to queue {enqueued} as service {service}: {e}");
+                last = Some(e);
+            }
         }
     }
     match last {
@@ -287,7 +339,7 @@ async fn load(
     start_uri: Option<&str>,
     shuffle: bool,
 ) -> Result<(), sonor::Error> {
-    speaker.clear_queue().await?;
+    step("clear the queue", speaker.clear_queue().await)?;
     match protocol::kind_of(context_uri) {
         Some(Kind::Album | Kind::Playlist | Kind::Track) => {
             enqueue(speaker, context_uri, "").await?
@@ -307,10 +359,13 @@ async fn load(
             }
         }
     }
-    speaker
-        .set_transport_uri(&protocol::queue_uri(uuid), "")
-        .await?;
-    speaker.set_shuffle(shuffle).await?;
+    step(
+        "play from the queue",
+        speaker
+            .set_transport_uri(&protocol::queue_uri(uuid), "")
+            .await,
+    )?;
+    step("set shuffle", speaker.set_shuffle(shuffle).await)?;
     let track_no = match (start_uri, start_index) {
         (Some(uri), _) => speaker
             .queue()
@@ -322,9 +377,9 @@ async fn load(
         (None, None) => None,
     };
     if let Some(n) = track_no {
-        speaker.seek_track(n).await?;
+        step("jump to the song", speaker.seek_track(n).await)?;
     }
-    speaker.play().await
+    step("play", speaker.play().await)
 }
 
 async fn apply(

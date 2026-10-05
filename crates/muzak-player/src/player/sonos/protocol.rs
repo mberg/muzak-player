@@ -30,7 +30,7 @@ pub fn encode(uri: &str) -> String {
     uri.replace(':', "%3a")
 }
 
-fn xml_escape(s: &str) -> String {
+pub fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -38,7 +38,9 @@ fn xml_escape(s: &str) -> String {
 }
 
 /// The URI and DIDL metadata to enqueue a Spotify item on Sonos, for one service type.
-/// Mirrors SoCo's ShareLink plugin, as sonoscli does.
+/// Mirrors the table in SoCo's ShareLink plugin (soco/plugins/sharelink.py): a song is queued
+/// by its plain encoded Spotify URI. Sonos then stores it as `x-sonos-spotify:…?sid=12&sn=<n>`
+/// with the household's own account number; sending that form ourselves is refused (402).
 pub fn enqueue_item(uri: &str, title: &str, service: u32) -> Option<(String, String)> {
     let enc = encode(uri);
     let (enqueued, item_id, class) = match kind_of(uri)? {
@@ -53,7 +55,7 @@ pub fn enqueue_item(uri: &str, title: &str, service: u32) -> Option<(String, Str
             "object.container.playlistContainer",
         ),
         Kind::Track => (
-            format!("x-sonos-spotify:{enc}?sid={service}&sn=0"),
+            enc.clone(),
             format!("00032020{enc}"),
             "object.item.audioItem.musicTrack",
         ),
@@ -245,7 +247,9 @@ mod tests {
         assert_eq!(uri, "x-rincon-cpcontainer:1006206cspotify%3aplaylist%3ap1");
 
         let (uri, didl) = enqueue_item("spotify:track:t1", "A & B", 2311).unwrap();
-        assert_eq!(uri, "x-sonos-spotify:spotify%3atrack%3at1?sid=2311&sn=0");
+        // A Sonos Beam (S2 18.8) refused every x-sonos-spotify: form with 402 and took this.
+        assert_eq!(uri, "spotify%3atrack%3at1");
+        assert!(didl.contains(r#"id="00032020spotify%3atrack%3at1""#));
         assert!(didl.contains("<dc:title>A &amp; B</dc:title>"));
 
         assert!(enqueue_item("spotify:artist:a1", "X", 3079).is_none());
