@@ -3975,61 +3975,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
-name = "muzak-player"
-version = "0.1.3"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "bluer",
- "chrono",
- "clap",
- "cpal",
- "futures",
- "futures-util",
- "i-slint-backend-testing",
- "image",
- "librespot",
- "reqwest 0.13.5",
- "ring",
- "roxmltree 0.18.1",
- "rupnp",
- "rusqlite",
- "rustls 0.23.45",
- "serde",
- "serde_json",
- "sha1",
- "sherpa-onnx",
- "slint",
- "slint-build",
- "sonor",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "muzak-setup"
-version = "0.1.3"
-dependencies = [
- "anyhow",
- "clap",
- "console",
- "dialoguer",
- "librespot",
- "muzak-player",
- "reqwest 0.13.5",
- "rustls 0.23.45",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8972,6 +8917,61 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "ziggy-player"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bluer",
+ "chrono",
+ "clap",
+ "cpal",
+ "futures",
+ "futures-util",
+ "i-slint-backend-testing",
+ "image",
+ "librespot",
+ "reqwest 0.13.5",
+ "ring",
+ "roxmltree 0.18.1",
+ "rupnp",
+ "rusqlite",
+ "rustls 0.23.45",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sherpa-onnx",
+ "slint",
+ "slint-build",
+ "sonor",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ziggy-setup"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "clap",
+ "console",
+ "dialoguer",
+ "librespot",
+ "reqwest 0.13.5",
+ "rustls 0.23.45",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
+ "ziggy-player",
 ]
 
 [[package]]

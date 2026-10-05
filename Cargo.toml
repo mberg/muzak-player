@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/muzak-player", "crates/muzak-setup"]
+members = ["crates/ziggy-player", "crates/ziggy-setup"]
 
 [workspace.package]
 version = "0.1.3"

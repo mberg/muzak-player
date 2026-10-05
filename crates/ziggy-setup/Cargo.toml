@@ -1,0 +1,26 @@
+[package]
+name = "ziggy-setup"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "ziggy"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+console = "0.16"
+dialoguer = "0.12"
+toml = "1"
+clap = { version = "4", features = ["derive"] }
+librespot = { workspace = true }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"
+# Tests check the configs setup writes load in the player itself.
+ziggy-player = { path = "../ziggy-player" }
