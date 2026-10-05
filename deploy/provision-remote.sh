@@ -36,6 +36,26 @@ printf '[Journal]\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/muzak.conf
 
 install -m 644 "$HERE/muzak-player.service" /etc/systemd/system/muzak-player.service
 systemctl daemon-reload
+# Voice: make a USB microphone the default recording device. The Pi's own default device
+# (the headphone jack) can't record. Playback stays on the headphone jack by default; the
+# player names its Bluetooth or headphone output itself. An asound.conf someone else wrote
+# is left alone.
+MIC=$(arecord -l 2>/dev/null | sed -n 's/^card [0-9]*: \([^ ]*\) \[.*USB.*/\1/p' | head -1)
+if [ -n "$MIC" ] && { [ ! -e /etc/asound.conf ] || grep -q '^# Ziggy' /etc/asound.conf; }; then
+    cat > /etc/asound.conf <<EOA
+# Ziggy: play through the headphone jack by default, record from the USB microphone.
+pcm.!default {
+    type asym
+    playback.pcm "plughw:CARD=Headphones"
+    capture.pcm "plughw:CARD=$MIC"
+}
+ctl.!default {
+    type hw
+    card Headphones
+}
+EOA
+fi
+
 # Raspberry Pi OS Lite starts with the Bluetooth radio blocked; the player needs it on.
 rfkill unblock bluetooth 2>/dev/null || true
 systemctl enable bluealsa.service muzak-player.service

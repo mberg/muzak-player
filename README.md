@@ -90,7 +90,7 @@ Setup trims the boot:
 
 ## Voice control
 
-Voice needs a USB microphone and access to Google's Gemini. Setup offers two ways:
+Voice needs a USB microphone and access to Google's Gemini. Plug the microphone into the Pi before running setup, so setup can make it the Pi's recording device. If you add one later, run `muzak setup` again. Setup offers two ways to reach Gemini:
 
 - **A Google Cloud service account key file (Vertex AI).** Use this if you have Google Cloud credits. In a Google Cloud project, turn on Vertex AI and create a service account with the "Vertex AI User" role. Then create a JSON key for it and give setup the file.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/).
