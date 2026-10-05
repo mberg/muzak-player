@@ -646,12 +646,8 @@ pub fn status(host: &str) -> anyhow::Result<()> {
             say(&format!("  {label}: {v}"));
         }
     }
-    if !health.power_ok() {
-        say(&format!(
-            "{} The Pi has had power or heat trouble (throttled {}). Check the cable and charger.",
-            style("!").red(),
-            health.fact("power").unwrap_or("?")
-        ));
+    for note in health.power_and_heat() {
+        say(&format!("{} {note}", style("!").red()));
     }
     if health.fact("logs") == Some("memory") {
         say("  Logs are only kept until the Pi restarts. `ziggy update` fixes that.");

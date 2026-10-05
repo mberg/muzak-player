@@ -208,11 +208,25 @@ impl Health {
             .map(|(_, v)| v.as_str())
     }
 
-    /// `vcgencmd get_throttled` is a hex mask; zero means the power and heat have been fine.
-    pub fn power_ok(&self) -> bool {
+    /// `vcgencmd get_throttled` is a hex mask: bits 0-3 are happening now, bits 16-19 have
+    /// happened since boot. Under-voltage (0, 16) is a power problem; the rest is heat.
+    fn throttle_bits(&self) -> u32 {
         self.fact("power")
             .and_then(|p| u32::from_str_radix(p.trim_start_matches("0x"), 16).ok())
-            .is_none_or(|bits| bits & 0xF000F == 0)
+            .unwrap_or(0)
+    }
+
+    /// What the throttle flags say, in words; empty when all is well.
+    pub fn power_and_heat(&self) -> Vec<&'static str> {
+        let bits = self.throttle_bits();
+        let mut out = Vec::new();
+        if bits & 0x10001 != 0 {
+            out.push("The Pi has had too little power (under-voltage). Check the cable and charger.");
+        }
+        if bits & 0xE000E != 0 {
+            out.push("The Pi touched its 60°C heat limit and eased off for a moment. That's normal under load; look at airflow only if it keeps happening.");
+        }
+        out
     }
 
     pub fn restarts(&self) -> u32 {
@@ -288,13 +302,21 @@ mod tests {
              2026-10-05T14:52:57 ziggy-micah systemd[1]: Main process exited, code=exited\n",
         );
         assert_eq!(h.restarts(), 2);
-        assert!(h.power_ok());
+        assert!(h.power_and_heat().is_empty());
         assert_eq!(h.fact("logs"), Some("kept"));
         assert_eq!(h.problems.len(), 1);
         // Bit 0 is "under-voltage now"; bit 16 is "under-voltage has happened".
-        assert!(!Health::parse("power=0x50005\n").power_ok());
-        assert!(!Health::parse("power=0x50000\n").power_ok());
-        assert!(Health::parse("power=\n").power_ok(), "unknown isn't a fault");
+        assert_eq!(
+            Health::parse("power=0x50005\n").power_and_heat().len(),
+            2,
+            "low power and throttling"
+        );
+        assert_eq!(Health::parse("power=0x10000\n").power_and_heat().len(), 1);
+        // Bit 19 is "the soft temperature limit has been reached": heat, not power.
+        let heat = Health::parse("power=0x80000\n").power_and_heat();
+        assert_eq!(heat.len(), 1);
+        assert!(heat[0].contains("heat limit"));
+        assert!(Health::parse("power=\n").power_and_heat().is_empty());
     }
 
     #[test]
