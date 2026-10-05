@@ -169,6 +169,8 @@ pub struct DeviceSettings {
     pub saved: crate::settings::Settings,
     /// The name Spotify Connect shows now.
     pub device_name: String,
+    /// The CPU temperature in whole °C, on a Pi.
+    pub temperature_c: Option<i32>,
     /// The Bluetooth speaker in use now; None means the headphone jack.
     pub speaker: Option<crate::settings::Speaker>,
     /// Bluetooth exists on this device (the Pi, or `--fake` mode).

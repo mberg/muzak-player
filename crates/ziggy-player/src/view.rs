@@ -357,6 +357,10 @@ pub struct SettingsView {
     /// "Signing in…" or a problem.
     pub books_message: String,
     pub restarting: bool,
+    /// "47°C", or empty when this computer doesn't report a temperature.
+    pub temperature: String,
+    /// Warm enough to mention (70°C or more).
+    pub temperature_hot: bool,
 }
 
 /// The add-to-playlist picker: the user's own playlists.
@@ -645,6 +649,10 @@ fn settings(state: &AppState) -> SettingsView {
         speakers,
         message,
         restarting: d.restarting,
+        temperature: d
+            .temperature_c
+            .map_or_else(String::new, |c| format!("{c}°C")),
+        temperature_hot: d.temperature_c.is_some_and(|c| c >= 70),
     }
 }
 

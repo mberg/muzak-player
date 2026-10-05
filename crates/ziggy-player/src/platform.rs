@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
-use crate::app::DisplayMode;
+use crate::app::{DisplayMode, Input};
 
 pub struct Platform {
     backlight: Option<Arc<Backlight>>,
@@ -54,6 +54,38 @@ impl Platform {
             }
         });
     }
+}
+
+/// The kernel's CPU temperature, in thousandths of a degree.
+const THERMAL: &str = "/sys/class/thermal/thermal_zone0/temp";
+
+/// Whole °C from the kernel's reading, e.g. "47236" is 47.
+pub fn parse_temperature(text: &str) -> Option<i32> {
+    let millidegrees: i64 = text.trim().parse().ok()?;
+    Some((millidegrees as f64 / 1000.0).round() as i32)
+}
+
+/// Tells the app the CPU temperature every few seconds, when it changes. Does nothing on a
+/// computer that doesn't report one. Must be called inside the tokio runtime.
+pub fn spawn_temperature(inputs: tokio::sync::mpsc::UnboundedSender<Input>) {
+    if !std::path::Path::new(THERMAL).exists() {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut last = None;
+        loop {
+            let now = std::fs::read_to_string(THERMAL)
+                .ok()
+                .and_then(|t| parse_temperature(&t));
+            if now != last {
+                last = now;
+                if inputs.send(Input::Temperature(now)).is_err() {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
 }
 
 pub fn brightness_for(mode: DisplayMode, max: u32) -> u32 {
@@ -120,6 +152,13 @@ pub fn restart() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_kernel_reading_is_whole_degrees() {
+        assert_eq!(parse_temperature("47236\n"), Some(47));
+        assert_eq!(parse_temperature("47500"), Some(48));
+        assert_eq!(parse_temperature("not a number"), None);
+    }
 
     #[test]
     fn brightness_levels() {
