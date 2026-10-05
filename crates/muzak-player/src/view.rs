@@ -406,6 +406,8 @@ pub struct View {
     pub now: NowView,
     pub mini_visible: bool,
     pub banner: Option<String>,
+    /// Voice replies show at the bottom, where "Listening…" was.
+    pub banner_at_bottom: bool,
     /// "Listening…" or "Working on it…" during a voice request; empty otherwise.
     pub voice_status: String,
     pub voice_listening: bool,
@@ -487,6 +489,7 @@ pub fn build(state: &AppState) -> View {
         now: now(state),
         mini_visible: has_playback && screen != ScreenView::NowPlaying && !keyboard,
         banner: banner(state),
+        banner_at_bottom: matches!(state.notice, Some(crate::app::Notice::Voice(_))),
         voice_status: match state.voice.phase {
             crate::app::VoicePhase::Idle => String::new(),
             crate::app::VoicePhase::Listening => "Listening…".into(),
