@@ -1,6 +1,9 @@
 //! The microphone, as 16 kHz mono chunks.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -40,9 +43,35 @@ impl Resampler {
     }
 }
 
+/// Lets a repeating message through at most once per `every`. A stream in trouble can report
+/// the same error thousands of times a second.
+struct Throttle {
+    every: Duration,
+    last: Option<Instant>,
+}
+
+impl Throttle {
+    fn new(every: Duration) -> Self {
+        Self { every, last: None }
+    }
+
+    fn due(&mut self, now: Instant) -> bool {
+        let due = self.last.is_none_or(|t| now.duration_since(t) >= self.every);
+        if due {
+            self.last = Some(now);
+        }
+        due
+    }
+}
+
 /// Opens the microphone (the first input whose name contains `name`, or the default) and sends
-/// 16 kHz mono audio. The stream records while it's kept alive.
-pub fn open(name: Option<&str>, chunks: Sender<Vec<f32>>) -> anyhow::Result<cpal::Stream> {
+/// 16 kHz mono audio. The stream records while it's kept alive. `failed` is set when the
+/// stream reports an error, so the caller can open it again.
+pub fn open(
+    name: Option<&str>,
+    chunks: Sender<Vec<f32>>,
+    failed: Arc<AtomicBool>,
+) -> anyhow::Result<cpal::Stream> {
     let host = cpal::default_host();
     let device = match name {
         Some(name) => host
@@ -75,7 +104,13 @@ pub fn open(name: Option<&str>, chunks: Sender<Vec<f32>>) -> anyhow::Result<cpal
         resampler.run(&mono, &mut out);
         let _ = chunks.send(out);
     };
-    let error = |e| tracing::warn!("microphone: {e}");
+    let throttle = Mutex::new(Throttle::new(Duration::from_secs(10)));
+    let error = move |e: cpal::StreamError| {
+        failed.store(true, Ordering::Relaxed);
+        if throttle.lock().is_ok_and(|mut t| t.due(Instant::now())) {
+            tracing::warn!("microphone: {e}");
+        }
+    };
     let stream_config = config.config();
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => device.build_input_stream(
@@ -105,6 +140,17 @@ pub fn open(name: Option<&str>, chunks: Sender<Vec<f32>>) -> anyhow::Result<cpal
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repeating_error_is_logged_once_per_interval() {
+        let mut t = Throttle::new(Duration::from_secs(10));
+        let start = Instant::now();
+        assert!(t.due(start));
+        assert!(!t.due(start + Duration::from_millis(1)));
+        assert!(!t.due(start + Duration::from_secs(9)));
+        assert!(t.due(start + Duration::from_secs(10)));
+        assert!(!t.due(start + Duration::from_secs(11)));
+    }
 
     #[test]
     fn resampling_keeps_length_and_shape_across_chunks() {

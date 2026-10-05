@@ -73,8 +73,13 @@ pub fn spawn_voice(
             let mut listener = Listener::new(wake);
             loop {
                 let (tx, rx) = std::sync::mpsc::channel();
+                let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 // The stream records while it's alive.
-                let _stream = match super::mic::open(settings.microphone.as_deref(), tx) {
+                let _stream = match super::mic::open(
+                    settings.microphone.as_deref(),
+                    tx,
+                    failed.clone(),
+                ) {
                     Ok(stream) => stream,
                     Err(e) => {
                         tracing::warn!("voice: {e:#}; trying again soon");
@@ -82,13 +87,30 @@ pub fn spawn_voice(
                         continue;
                     }
                 };
-                // Ends when the microphone goes away.
+                // Ends when the microphone goes away: it reports an error and goes quiet, or it
+                // sends nothing for 5 s.
                 let (mut peak, mut since) = (0.0f32, std::time::Instant::now());
                 // VOICE_RECORD_DIR saves what the microphone hears, 10 s per file, for tuning.
                 let record_dir = std::env::var("VOICE_RECORD_DIR").ok().map(PathBuf::from);
                 let mut recording: Vec<f32> = Vec::new();
                 let mut files = 0;
-                while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(5)) {
+                let mut quiet_secs = 0;
+                loop {
+                    let chunk = match rx.recv_timeout(Duration::from_secs(1)) {
+                        Ok(chunk) => {
+                            quiet_secs = 0;
+                            chunk
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            quiet_secs += 1;
+                            let errored = failed.load(std::sync::atomic::Ordering::Relaxed);
+                            if errored || quiet_secs >= 5 {
+                                break;
+                            }
+                            continue;
+                        }
+                        Err(_) => break,
+                    };
                     if listen_now.swap(false, std::sync::atomic::Ordering::Relaxed)
                         && !listener.is_recording()
                     {
