@@ -30,7 +30,7 @@ const LISTEN_REPORT_MS: u64 = 10_000;
 /// How many albums and playlists Recent shows.
 const RECENT_COLLECTIONS: usize = 30;
 /// The last colour scheme index (Daylight).
-const MAX_THEME: u32 = 3;
+const MAX_THEME: u32 = 4;
 /// Sleep timer length unless Settings says otherwise.
 pub const DEFAULT_SLEEP_MINUTES: u32 = 30;
 /// The sleep timer fades the volume out over its last this-many milliseconds.

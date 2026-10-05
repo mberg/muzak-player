@@ -28,7 +28,7 @@ export component SearchScreen inherits Rectangle {
     callback set-filter(int);
     property <length> bar: 116px;
     property <length> results-height: root.height - root.bar - (root.keyboard ? root.keyboard-height : 0px);
-    background: Theme.bg;
+    background: Theme.backdrop;
     // Closes search and returns to the previous section.
     IconButton {
         x: parent.width - self.width - 10px;

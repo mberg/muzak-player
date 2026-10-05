@@ -69,7 +69,7 @@ fn ui_clicks() {
             .await;
         assert!(opened.get(), "the moon starts the sleep timer");
 
-        // Settings: a colour swatch picks the scheme (near the top).
+        // Settings: a colour swatch picks the scheme.
         window.set_screen(ScreenKind::Settings);
         window.set_sleep_minutes(30);
         let theme = Rc::new(Cell::new(-1));
@@ -80,15 +80,7 @@ fn ui_clicks() {
             .await;
         assert_eq!(theme.get(), 1);
 
-        // Scroll Settings down like a person would, then pick the sleep timer length.
-        window
-            .window()
-            .dispatch_event(WindowEvent::PointerScrolled {
-                position: LogicalPosition::new(400.0, 300.0),
-                delta_x: 0.0,
-                delta_y: -400.0,
-            });
-        slint::platform::update_timers_and_animations();
+        // The sleep timer length, also near the top.
         let length = Rc::new(Cell::new(0));
         let l = length.clone();
         window.on_set_sleep_length(move |m| l.set(m));

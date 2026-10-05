@@ -1,18 +1,21 @@
-// Colour schemes: index 0 Midnight (default), 1 Ocean, 2 Forest, 3 Daylight.
+// Colour schemes: index 0 Midnight (default), 1 Ocean, 2 Forest, 3 Daylight, 4 Northern Lights.
 // Only colours change between schemes; sizes and fonts are shared.
 export global Theme {
     in-out property <int> scheme: 0;
-    out property <[string]> scheme-names: ["Midnight", "Ocean", "Forest", "Daylight"];
-    out property <[color]> backgrounds: [#14121f, #0b1620, #101a13, #f6f3ee];
-    out property <[color]> surfaces: [#221f33, #132433, #19291f, #ffffff];
-    out property <[color]> surfaces-hi: [#2f2b45, #1c3447, #24392b, #ebe6dd];
-    out property <[color]> texts: [#f4f2ff, #eef6fb, #eff7f1, #1f1c24];
-    out property <[color]> texts-dim: [#a9a3c7, #9bb4c6, #a2baa8, #6c6676];
-    out property <[color]> accents: [#ffb703, #38bdf8, #7bd389, #e4572e];
-    out property <[color]> accent-texts: [#1b1300, #03202e, #0a2410, #ffffff];
-    out property <[color]> keys: [#3a3555, #24405a, #2c4635, #e2ddd3];
+    out property <[string]> scheme-names: ["Midnight", "Ocean", "Forest", "Daylight", "Northern Lights"];
+    out property <[color]> backgrounds: [#14121f, #0b1620, #101a13, #f6f3ee, #0d0b1e];
+    out property <[color]> surfaces: [#221f33, #132433, #19291f, #ffffff, #1c1838];
+    out property <[color]> surfaces-hi: [#2f2b45, #1c3447, #24392b, #ebe6dd, #2b2552];
+    out property <[color]> texts: [#f4f2ff, #eef6fb, #eff7f1, #1f1c24, #f4efff];
+    out property <[color]> texts-dim: [#a9a3c7, #9bb4c6, #a2baa8, #6c6676, #9fc3d9];
+    out property <[color]> accents: [#ffb703, #38bdf8, #7bd389, #e4572e, #b57bff];
+    out property <[color]> accent-texts: [#1b1300, #03202e, #0a2410, #ffffff, #170a2e];
+    out property <[color]> keys: [#3a3555, #24405a, #2c4635, #e2ddd3, #2f2a5e];
 
     out property <color> bg: self.backgrounds[self.scheme];
+    // What screens are painted with: the background colour, or for Northern Lights a faint
+    // green and blue glow over the night sky.
+    out property <brush> backdrop: self.backdrop-for(self.scheme);
     out property <color> surface: self.surfaces[self.scheme];
     out property <color> surface-hi: self.surfaces-hi[self.scheme];
     out property <color> text: self.texts[self.scheme];
@@ -29,4 +32,11 @@ export global Theme {
     out property <length> font-small: 15px;
     out property <length> font-body: 18px;
     out property <length> font-title: 26px;
+
+    public pure function backdrop-for(index: int) -> brush {
+        if index == 4 {
+            return @linear-gradient(160deg, #0f3a34 0%, #12284f 38%, #1d1240 70%, #0d0b1e 100%);
+        }
+        return self.backgrounds[index];
+    }
 }
