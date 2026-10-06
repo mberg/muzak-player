@@ -361,7 +361,14 @@ pub struct SettingsView {
     pub temperature: String,
     /// Warm enough to mention (70°C or more).
     pub temperature_hot: bool,
+    /// "Wi-Fi 46Brewer · 5 GHz · 66%", "No Wi-Fi", or empty when this computer doesn't report it.
+    pub wifi: String,
+    /// No Wi-Fi, or a signal weak enough to drop out.
+    pub wifi_weak: bool,
 }
+
+/// Below this, music can stall and the connection can drop.
+const WEAK_WIFI: u8 = 40;
 
 /// The add-to-playlist picker: the user's own playlists.
 #[derive(Debug, Clone, PartialEq)]
@@ -653,6 +660,20 @@ fn settings(state: &AppState) -> SettingsView {
             .temperature_c
             .map_or_else(String::new, |c| format!("{c}°C")),
         temperature_hot: d.temperature_c.is_some_and(|c| c >= 70),
+        wifi: match &d.wifi {
+            None => String::new(),
+            Some(crate::app::WifiStatus::Disconnected) => "No Wi-Fi".into(),
+            Some(crate::app::WifiStatus::Connected {
+                network,
+                band,
+                signal,
+            }) => format!("Wi-Fi {network} · {band} · {signal}%"),
+        },
+        wifi_weak: match &d.wifi {
+            None => false,
+            Some(crate::app::WifiStatus::Disconnected) => true,
+            Some(crate::app::WifiStatus::Connected { signal, .. }) => *signal < WEAK_WIFI,
+        },
     }
 }
 

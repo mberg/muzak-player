@@ -26,6 +26,21 @@ pub enum Input {
     Voice(VoiceUpdate),
     /// The CPU temperature in whole °C; None when this computer doesn't report one.
     Temperature(Option<i32>),
+    /// The Wi-Fi connection; None when this computer doesn't report one.
+    Wifi(Option<WifiStatus>),
+}
+
+/// The Wi-Fi connection, as Settings shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WifiStatus {
+    Connected {
+        network: String,
+        /// "2.4 GHz" or "5 GHz".
+        band: String,
+        /// 0-100, from the live signal level.
+        signal: u8,
+    },
+    Disconnected,
 }
 
 /// Work for the audiobooks service.

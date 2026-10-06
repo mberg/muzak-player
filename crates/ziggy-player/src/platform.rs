@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
-use crate::app::{DisplayMode, Input};
+use crate::app::{DisplayMode, Input, WifiStatus};
 
 pub struct Platform {
     backlight: Option<Arc<Backlight>>,
@@ -88,6 +88,101 @@ pub fn spawn_temperature(inputs: tokio::sync::mpsc::UnboundedSender<Input>) {
     });
 }
 
+/// The Wi-Fi network in use, from NetworkManager's last scan: one `IN-USE:SSID:FREQ` line per
+/// access point, the one in use marked `*`. Colons inside a name are escaped as `\:`.
+pub fn parse_network(nmcli: &str) -> Option<(String, String)> {
+    nmcli.lines().find_map(|line| {
+        let fields = split_terse(line);
+        let [in_use, ssid, freq] = fields.as_slice() else {
+            return None;
+        };
+        if in_use != "*" {
+            return None;
+        }
+        let mhz: u32 = freq.trim_end_matches(" MHz").trim().parse().ok()?;
+        let band = if mhz < 3000 { "2.4 GHz" } else if mhz < 5925 { "5 GHz" } else { "6 GHz" };
+        Some((ssid.clone(), band.to_string()))
+    })
+}
+
+/// Splits one line of `nmcli -t` output on unescaped colons.
+fn split_terse(line: &str) -> Vec<String> {
+    let mut fields = vec![String::new()];
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    fields.last_mut().unwrap().push(next);
+                }
+            }
+            ':' => fields.push(String::new()),
+            c => fields.last_mut().unwrap().push(c),
+        }
+    }
+    fields
+}
+
+/// The live signal of wlan0 from `/proc/net/wireless`, as NetworkManager's 0-100: -100 dBm or
+/// weaker is 0, -40 dBm or stronger is 100.
+pub fn parse_signal(proc_net_wireless: &str) -> Option<u8> {
+    let line = proc_net_wireless
+        .lines()
+        .find(|l| l.trim_start().starts_with("wlan0:"))?;
+    let level: f32 = line
+        .split_whitespace()
+        .nth(3)?
+        .trim_end_matches('.')
+        .parse()
+        .ok()?;
+    // Some drivers report an unsigned byte.
+    let dbm = if level > 0.0 { level - 256.0 } else { level };
+    Some(((dbm.clamp(-100.0, -40.0) + 100.0) * 100.0 / 60.0).round() as u8)
+}
+
+/// Tells the app about the Wi-Fi every 10 s, when it changes. Does nothing on a computer
+/// without NetworkManager. Must be called inside the tokio runtime.
+pub fn spawn_wifi(inputs: tokio::sync::mpsc::UnboundedSender<Input>) {
+    if !std::path::Path::new("/proc/net/wireless").exists() {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut last = None;
+        loop {
+            // `--rescan no` reads NetworkManager's last scan; a scan would interrupt playback.
+            let Ok(out) = tokio::process::Command::new("nmcli")
+                .args(["-t", "-f", "IN-USE,SSID,FREQ", "dev", "wifi", "list", "--rescan", "no"])
+                .output()
+                .await
+            else {
+                return;
+            };
+            let now = Some(
+                match (
+                    parse_network(&String::from_utf8_lossy(&out.stdout)),
+                    std::fs::read_to_string("/proc/net/wireless")
+                        .ok()
+                        .and_then(|t| parse_signal(&t)),
+                ) {
+                    (Some((network, band)), Some(signal)) => WifiStatus::Connected {
+                        network,
+                        band,
+                        signal,
+                    },
+                    _ => WifiStatus::Disconnected,
+                },
+            );
+            if now != last {
+                last = now.clone();
+                if inputs.send(Input::Wifi(now)).is_err() {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    });
+}
+
 pub fn brightness_for(mode: DisplayMode, max: u32) -> u32 {
     match mode {
         DisplayMode::Active => max,
@@ -152,6 +247,30 @@ pub fn restart() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_network_in_use_is_found_with_its_band() {
+        let nmcli = " :46Brewer:2422 MHz\n*:46Brewer:5240 MHz\n :Other:5785 MHz\n";
+        assert_eq!(
+            parse_network(nmcli),
+            Some(("46Brewer".into(), "5 GHz".into()))
+        );
+        assert_eq!(
+            parse_network("*:Cafe\\: Guest:2437 MHz\n"),
+            Some(("Cafe: Guest".into(), "2.4 GHz".into()))
+        );
+        assert_eq!(parse_network(" :46Brewer:2422 MHz\n"), None, "nothing in use");
+    }
+
+    #[test]
+    fn the_signal_level_becomes_a_percentage() {
+        let proc = "Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE\n face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22\n wlan0: 0000   54.  -56.  -256        0      0      0     10      0        0\n";
+        assert_eq!(parse_signal(proc), Some(73));
+        assert_eq!(parse_signal(&proc.replace("-56.", "-30.")), Some(100));
+        assert_eq!(parse_signal(&proc.replace("-56.", "-95.")), Some(8));
+        assert_eq!(parse_signal(&proc.replace("-56.", "200.")), Some(73), "200 as a byte is -56 dBm");
+        assert_eq!(parse_signal("no wifi here"), None);
+    }
 
     #[test]
     fn the_kernel_reading_is_whole_degrees() {

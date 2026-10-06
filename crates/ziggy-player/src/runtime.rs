@@ -229,6 +229,7 @@ async fn run(
     let (mut core, effects) = Core::new(core_config, now_ms());
     dispatch(effects, &outputs, &platform);
     crate::platform::spawn_temperature(outputs.inputs.clone());
+    crate::platform::spawn_wifi(outputs.inputs.clone());
     publish(core.state().clone());
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));

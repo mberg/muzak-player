@@ -237,6 +237,7 @@ impl Core {
             Input::Books(update) => self.on_books(update, &mut fx),
             Input::Voice(update) => self.on_voice(update, now_ms, &mut fx),
             Input::Temperature(c) => self.state.device.temperature_c = c,
+            Input::Wifi(wifi) => self.state.device.wifi = wifi,
             Input::SonosRooms(rooms) => {
                 self.state.device.sonos_rooms = rooms;
                 self.state.device.sonos_scanning = false;
