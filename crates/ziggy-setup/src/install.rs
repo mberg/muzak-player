@@ -260,6 +260,22 @@ impl Health {
     }
 }
 
+/// The name Spotify shows for the player: one set on the touchscreen wins over the config.
+pub fn device_name(r: &dyn Remote) -> Option<String> {
+    let on_screen = r
+        .run("sudo cat /var/lib/ziggy/settings.json 2>/dev/null || true")
+        .ok()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .and_then(|v| v["device_name"].as_str().map(str::to_string))
+        .filter(|n| !n.trim().is_empty());
+    on_screen.or_else(|| {
+        read_config(r)
+            .ok()
+            .flatten()
+            .and_then(|t| t.get("device_name").and_then(|v| v.as_str()).map(str::to_string))
+    })
+}
+
 /// Asks the player to forget its Spotify sign-in and wait to be picked in a Spotify app the
 /// next time it starts.
 pub fn request_pairing(r: &dyn Remote) -> anyhow::Result<()> {
@@ -341,6 +357,15 @@ mod tests {
         let files = r.files.borrow();
         let (bytes, mode, _) = &files["/usr/local/bin/ziggy-player"];
         assert_eq!((bytes.as_slice(), mode.as_str()), (&b"\x7fELF"[..], "755"));
+    }
+
+    #[test]
+    fn the_name_set_on_the_screen_wins() {
+        let r = FakeRemote {
+            output: r#"{"device_name": "Ellie's Ziggy", "output": "Jack"}"#.into(),
+            ..Default::default()
+        };
+        assert_eq!(device_name(&r).as_deref(), Some("Ellie's Ziggy"));
     }
 
     #[test]

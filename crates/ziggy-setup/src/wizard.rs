@@ -448,7 +448,10 @@ pub async fn setup(options: SetupOptions) -> anyhow::Result<()> {
     }
     let running = report_running(&ssh)?;
     if running {
-        pair(&ssh, &device_name)?;
+        pair(
+            &ssh,
+            &install::device_name(&ssh).unwrap_or_else(|| device_name.clone()),
+        )?;
     }
 
     println!(
@@ -668,11 +671,7 @@ pub fn update(host: &str, player: PlayerSource) -> anyhow::Result<()> {
     }
     ok("The player is running");
     if migrate {
-        let name = install::read_config(&ssh)
-            .ok()
-            .flatten()
-            .and_then(|t| t.get("device_name").and_then(|v| v.as_str()).map(str::to_string))
-            .unwrap_or_else(|| name_from_host(&ssh.host));
+        let name = install::device_name(&ssh).unwrap_or_else(|| name_from_host(&ssh.host));
         // Soloist downloads and starts on the player's first run; give it a moment.
         std::thread::sleep(Duration::from_secs(20));
         pair(&ssh, &name)?;
@@ -747,11 +746,7 @@ pub async fn signin(host: &str) -> anyhow::Result<()> {
     if !running {
         bail!("the player didn't start:\n{logs}");
     }
-    let name = install::read_config(&ssh)
-        .ok()
-        .flatten()
-        .and_then(|t| t.get("device_name").and_then(|v| v.as_str()).map(str::to_string))
-        .unwrap_or_else(|| name_from_host(&ssh.host));
+    let name = install::device_name(&ssh).unwrap_or_else(|| name_from_host(&ssh.host));
     pair(&ssh, &name)
 }
 
