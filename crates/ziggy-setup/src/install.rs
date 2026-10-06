@@ -91,27 +91,32 @@ pub fn install_wake_model(r: &dyn Remote) -> anyhow::Result<()> {
 
 /// The sign-ins and keys the player needs, from this computer's copy.
 pub struct Secrets<'a> {
-    /// Holds librespot/credentials.json and web-auth.json.
+    /// Holds the library sign-in, web-auth.json.
     pub spotify_dir: &'a Path,
+    /// The Spotify Soloist API key file.
+    pub soloist_key: Option<&'a Path>,
     pub vertex_key: Option<&'a Path>,
 }
 
+/// Where the player reads the Soloist API key (its default in the player's config).
+pub const SOLOIST_KEY_PATH: &str = "/var/lib/ziggy/soloist-api-key";
+/// The player pairs afresh on its next start when this exists.
+const PAIR_REQUEST: &str = "/var/lib/ziggy/soloist-pair";
+
 pub fn install_secrets(r: &dyn Remote, secrets: &Secrets) -> anyhow::Result<()> {
     let state = devconfig::STATE_DIR;
-    let files = [
-        (
-            secrets.spotify_dir.join("librespot/credentials.json"),
-            format!("{state}/librespot/credentials.json"),
-        ),
-        (
-            secrets.spotify_dir.join(crate::spotify::WEB_AUTH_FILE),
-            format!("{state}/{}", crate::spotify::WEB_AUTH_FILE),
-        ),
-    ];
-    for (from, to) in files {
-        if from.is_file() {
-            r.upload(&std::fs::read(&from)?, &to, "600", Some("ziggy-player"))?;
-        }
+    let web_auth = secrets.spotify_dir.join(crate::spotify::WEB_AUTH_FILE);
+    if web_auth.is_file() {
+        r.upload(
+            &std::fs::read(&web_auth)?,
+            &format!("{state}/{}", crate::spotify::WEB_AUTH_FILE),
+            "600",
+            Some("ziggy-player"),
+        )?;
+    }
+    if let Some(key) = secrets.soloist_key {
+        let bytes = std::fs::read(key).with_context(|| format!("reading {}", key.display()))?;
+        r.upload(&bytes, SOLOIST_KEY_PATH, "600", Some("ziggy-player"))?;
     }
     if let Some(key) = secrets.vertex_key {
         let bytes = std::fs::read(key).with_context(|| format!("reading {}", key.display()))?;
@@ -255,6 +260,30 @@ impl Health {
     }
 }
 
+/// Asks the player to forget its Spotify sign-in and wait to be picked in a Spotify app the
+/// next time it starts.
+pub fn request_pairing(r: &dyn Remote) -> anyhow::Result<()> {
+    r.upload(b"", PAIR_REQUEST, "600", Some("ziggy-player"))
+}
+
+/// True once the player's Soloist is signed in to Spotify.
+pub fn is_paired(r: &dyn Remote) -> bool {
+    r.run(
+        "sudo -u ziggy-player /var/lib/ziggy/bin/soloist ctl status -D /var/lib/ziggy/soloist \
+           2>/dev/null | grep -q 'logged in: yes' && echo PAIRED || true",
+    )
+    .is_ok_and(|out| out.contains("PAIRED"))
+}
+
+/// True for a player from before Soloist: BlueALSA instead of PipeWire, or no API key yet.
+pub fn needs_soloist_migration(r: &dyn Remote) -> bool {
+    r.run(&format!(
+        "if ! command -v pw-dump >/dev/null || systemctl is-enabled bluealsa >/dev/null 2>&1 \
+           || ! sudo test -s {SOLOIST_KEY_PATH}; then echo MIGRATE; fi"
+    ))
+    .is_ok_and(|out| out.contains("MIGRATE"))
+}
+
 /// True for a player set up before the rename to Ziggy, which still has the muzak names.
 pub fn needs_rename_migration(r: &dyn Remote) -> bool {
     r.run("test -d /var/lib/muzak && test ! -d /var/lib/ziggy && echo yes || true")
@@ -351,9 +380,9 @@ mod tests {
     #[test]
     fn secrets_go_to_the_ziggy_user_only() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("librespot")).unwrap();
-        std::fs::write(dir.path().join("librespot/credentials.json"), "{}").unwrap();
         std::fs::write(dir.path().join("web-auth.json"), "{}").unwrap();
+        let soloist = dir.path().join("soloist-api-key");
+        std::fs::write(&soloist, "spak_x").unwrap();
         let key = dir.path().join("vertex.json");
         std::fs::write(&key, "{\"type\":\"service_account\"}").unwrap();
         let r = FakeRemote::default();
@@ -361,12 +390,13 @@ mod tests {
             &r,
             &Secrets {
                 spotify_dir: dir.path(),
+                soloist_key: Some(&soloist),
                 vertex_key: Some(&key),
             },
         )
         .unwrap();
         for path in [
-            "/var/lib/ziggy/librespot/credentials.json",
+            "/var/lib/ziggy/soloist-api-key",
             "/var/lib/ziggy/web-auth.json",
             "/var/lib/ziggy/vertex-key.json",
         ] {
@@ -385,7 +415,6 @@ mod tests {
         let r = FakeRemote::default();
         let mut t = devconfig::new_config(&devconfig::Choices {
             device_name: "Den".into(),
-            bitrate: 320,
             audiobookshelf_url: None,
             voice: None,
         });

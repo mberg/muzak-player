@@ -7,7 +7,7 @@ apt-get update
 apt-get install -y --no-install-recommends \
     libasound2t64 libinput10 libudev1 libxkbcommon0 libgbm1 libegl1 libgles2 libdrm2 libfontconfig1 \
     libegl-mesa0 libgl1-mesa-dri \
-    bluez bluez-alsa-utils libasound2-plugin-bluez \
+    bluez pipewire wireplumber libspa-0.2-bluetooth \
     curl bzip2 ca-certificates
 
 # A player set up before the rename to Ziggy: stop its old service, then rename the service
@@ -28,7 +28,28 @@ if [ -d /var/lib/muzak ] && [ ! -d /var/lib/ziggy ]; then
 fi
 
 id ziggy-player >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin --groups video,input,audio,render,bluetooth ziggy-player
-install -d -m 700 -o ziggy-player -g ziggy-player /var/lib/ziggy /var/lib/ziggy/librespot /var/lib/ziggy/models
+install -d -m 700 -o ziggy-player -g ziggy-player /var/lib/ziggy /var/lib/ziggy/models
+
+# Sound: Spotify Soloist plays through PipeWire, which runs in the ziggy-player user's own session,
+# started at boot. BlueALSA would claim Bluetooth speakers first, so it goes. WirePlumber normally
+# offers Bluetooth only to someone logged in at the screen; this Pi has no such person.
+if dpkg -s bluez-alsa-utils >/dev/null 2>&1; then
+    systemctl disable --now bluealsa.service 2>/dev/null || true
+    apt-get purge -y bluez-alsa-utils libasound2-plugin-bluez || true
+fi
+mkdir -p /etc/wireplumber/wireplumber.conf.d
+cat > /etc/wireplumber/wireplumber.conf.d/80-ziggy-bluetooth.conf <<'EOW'
+# Ziggy: Bluetooth speakers work without anyone logged in.
+wireplumber.profiles = {
+  main = {
+    monitor.bluez.seat-monitoring = disabled
+  }
+}
+EOW
+systemctl --global enable pipewire.socket wireplumber.service 2>/dev/null || true
+loginctl enable-linger ziggy-player
+# Already running from an earlier setup: pick up the Bluetooth setting.
+systemctl --user -M ziggy-player@ restart wireplumber.service 2>/dev/null || true
 install -d /etc/ziggy
 
 # Display and boot settings; they need a reboot, so say when anything changed.
@@ -86,7 +107,7 @@ fi
 
 # Raspberry Pi OS Lite starts with the Bluetooth radio blocked; the player needs it on.
 rfkill unblock bluetooth 2>/dev/null || true
-systemctl enable bluealsa.service ziggy-player.service
+systemctl enable ziggy-player.service
 systemctl disable getty@tty1.service || true
 # Nothing waits for the network at boot, and package-list and manual-page jobs don't run
 # while the player starts. (Updates come through `ziggy update`.)
