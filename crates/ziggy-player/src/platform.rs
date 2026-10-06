@@ -29,6 +29,14 @@ impl Platform {
         }
     }
 
+    /// Turns the backlight off at once, cancelling any fade; for shutting down.
+    pub fn screen_off_now(&self) {
+        if let Some(backlight) = &self.backlight {
+            backlight.generation.fetch_add(1, Ordering::SeqCst);
+            backlight.write(0);
+        }
+    }
+
     pub fn set_display(&self, mode: DisplayMode) {
         let Some(backlight) = &self.backlight else {
             return;
@@ -226,6 +234,21 @@ impl Backlight {
         if let Err(e) = std::fs::write(&self.brightness, value.to_string()) {
             tracing::warn!("setting backlight failed: {e}");
         }
+    }
+}
+
+/// Shuts the Pi down cleanly, so the SD card is never cut off mid-write. The service user may
+/// run exactly this through sudo (set up by `ziggy setup` and `ziggy update`).
+pub async fn power_off() {
+    tracing::info!("turning off");
+    match tokio::process::Command::new("sudo")
+        .args(["-n", "/usr/bin/systemctl", "poweroff"])
+        .status()
+        .await
+    {
+        Ok(status) if status.success() => {}
+        Ok(status) => tracing::error!("turning off failed: sudo exited with {status}"),
+        Err(e) => tracing::error!("turning off failed: {e}"),
     }
 }
 

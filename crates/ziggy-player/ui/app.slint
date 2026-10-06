@@ -80,6 +80,7 @@ export component AppWindow inherits Window {
     in property <bool> temperature-hot;
     in property <string> wifi;
     in property <bool> wifi-weak;
+    in property <bool> powering-off;
     in property <bool> restarting;
     in property <string> search-query;
     in property <bool> keyboard-open;
@@ -177,6 +178,7 @@ export component AppWindow inherits Window {
     callback pick-liked();
     callback rename-device();
     callback find-speakers();
+    callback power-off();
     callback connect-speaker(string);
     callback use-jack();
     callback choose-sonos(string);
@@ -337,6 +339,7 @@ export component AppWindow inherits Window {
         restarting: root.restarting;
         rename-device => { root.rename-device(); }
         find-speakers => { root.find-speakers(); }
+        power-off => { root.power-off(); }
         connect-speaker(address) => { root.connect-speaker(address); }
         use-jack => { root.use-jack(); }
         forget-speaker => { root.forget-speaker(); }
@@ -457,6 +460,32 @@ export component AppWindow inherits Window {
         name: root.confirm-delete;
         confirm => { root.confirm-delete-playlist(); }
         cancel => { root.cancel-delete(); }
+    }
+    // Shutting down: a plain screen saying when it's safe to unplug.
+    if root.powering-off: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: #000000;
+        TouchArea {}
+        VerticalLayout {
+            alignment: center;
+            spacing: 10px;
+            Text {
+                text: "Turning off…";
+                color: #ffffff;
+                font-size: Theme.font-title;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Wait until the green light on the Pi stops blinking, then unplug it.\nTo turn it back on, plug it in again.";
+                color: #bbbbbb;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
+            }
+        }
     }
     if root.banner != "" && root.voice-status == "": Banner {
         x: (root.width - self.width) / 2;

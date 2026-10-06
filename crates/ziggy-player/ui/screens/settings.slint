@@ -146,6 +146,9 @@ export component SettingsScreen inherits Rectangle {
     in property <bool> restarting;
     callback rename-device();
     callback find-speakers();
+    callback power-off();
+    // The "Turn off?" question is open.
+    property <bool> confirm-off;
     callback connect-speaker(string);
     callback use-jack();
     callback forget-speaker();
@@ -420,6 +423,68 @@ export component SettingsScreen inherits Rectangle {
                     color: Theme.text-dim;
                     font-size: Theme.font-small;
                     wrap: word-wrap;
+                }
+            }
+            Card {
+                title: "Power";
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    SmallPill {
+                        label: "Turn off";
+                        clicked => { root.confirm-off = true; }
+                    }
+                }
+                Text {
+                    text: "Turns Ziggy off safely. Unplugging it while it's on can damage its memory card.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+    if root.confirm-off: Rectangle {
+        background: #000000a0;
+        TouchArea {
+            clicked => { root.confirm-off = false; }
+        }
+        Rectangle {
+            width: 460px;
+            height: 220px;
+            border-radius: Theme.radius;
+            background: Theme.surface;
+            TouchArea {}
+            VerticalLayout {
+                padding: 24px;
+                spacing: 12px;
+                Text {
+                    text: "Turn off Ziggy?";
+                    color: Theme.text;
+                    font-size: 22px;
+                    font-weight: 800;
+                }
+                Text {
+                    text: "To turn it back on, unplug it and plug it in again.";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-small;
+                    wrap: word-wrap;
+                }
+                Rectangle {}
+                HorizontalLayout {
+                    spacing: 12px;
+                    SmallPill {
+                        label: "Cancel";
+                        clicked => { root.confirm-off = false; }
+                    }
+                    SmallPill {
+                        label: "Turn off";
+                        tint: Theme.danger;
+                        clicked => {
+                            root.confirm-off = false;
+                            root.power-off();
+                        }
+                    }
                 }
             }
         }

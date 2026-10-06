@@ -390,6 +390,7 @@ pub async fn setup(options: SetupOptions) -> anyhow::Result<()> {
         "Preparing the Pi: packages, the ziggy user and the display. A few minutes the first time…",
     );
     let reboot = install::provision(&ssh)?;
+    install::allow_power_off(&ssh)?;
     ok("Pi prepared");
     say("Installing the player…");
     install::install_player(&ssh, &options.player)?;
@@ -614,6 +615,7 @@ pub fn update(host: &str, player: PlayerSource) -> anyhow::Result<()> {
         ok("Moved. Settings, sign-in and speaker are kept");
     }
     install::keep_logs(&ssh)?;
+    install::allow_power_off(&ssh)?;
     say("Installing the player…");
     install::install_player(&ssh, &player)?;
     let after = install::installed_version(&ssh);

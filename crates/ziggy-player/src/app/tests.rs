@@ -1562,6 +1562,35 @@ fn settings_show_the_temperature_when_there_is_one() {
 }
 
 #[test]
+fn three_songs_failing_quickly_pauses_instead_of_skipping_on() {
+    let mut c = playing_at(60);
+    let fail = Input::Player(PlayerUpdate::Unavailable);
+    assert!(c.handle(fail.clone(), 1_000).is_empty());
+    assert_eq!(banner(&c).as_deref(), Some("That song can't play, skipping"));
+    assert!(c.handle(fail.clone(), 2_000).is_empty());
+    let fx = c.handle(fail.clone(), 3_000);
+    assert!(fx.contains(&Effect::Player(PlayerCommand::Pause)), "{fx:?}");
+    assert!(banner(&c).unwrap().contains("Ziggy stopped"));
+    // Failures spread out (a bad song now and then) don't stop the music.
+    let mut c = playing_at(60);
+    for t in [0, 40_000, 80_000, 120_000] {
+        assert!(c.handle(fail.clone(), t).is_empty());
+    }
+}
+
+#[test]
+fn turn_off_pauses_then_shuts_down_once() {
+    let mut c = playing_at(60);
+    let fx = c.handle(ui(UiAction::PowerOff), 0);
+    assert_eq!(
+        fx,
+        [Effect::Player(PlayerCommand::Pause), Effect::PowerOff]
+    );
+    assert!(crate::view::build(c.state()).settings.powering_off);
+    assert!(c.handle(ui(UiAction::PowerOff), 10).is_empty(), "only once");
+}
+
+#[test]
 fn settings_show_the_wifi_and_flag_a_weak_signal() {
     let mut c = core();
     assert_eq!(crate::view::build(c.state()).settings.wifi, "");

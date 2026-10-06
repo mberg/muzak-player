@@ -365,6 +365,8 @@ pub struct SettingsView {
     pub wifi: String,
     /// No Wi-Fi, or a signal weak enough to drop out.
     pub wifi_weak: bool,
+    /// Turn off was confirmed.
+    pub powering_off: bool,
 }
 
 /// Below this, music can stall and the connection can drop.
@@ -669,6 +671,7 @@ fn settings(state: &AppState) -> SettingsView {
                 signal,
             }) => format!("Wi-Fi {network} · {band} · {signal}%"),
         },
+        powering_off: d.powering_off,
         wifi_weak: match &d.wifi {
             None => false,
             Some(crate::app::WifiStatus::Disconnected) => true,
@@ -1061,6 +1064,9 @@ fn banner(state: &AppState) -> Option<String> {
     match &state.notice {
         Some(Notice::NoInternet) => Some("No internet right now".into()),
         Some(Notice::TrackUnavailable) => Some("That song can't play, skipping".into()),
+        Some(Notice::SkippingStopped) => {
+            Some("Spotify won't play these songs right now, so Ziggy stopped. Try again later.".into())
+        }
         Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
         Some(Notice::SpotifyBusy) => {
             Some("Spotify is limiting changes right now. Try again later.".into())

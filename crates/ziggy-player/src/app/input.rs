@@ -191,6 +191,8 @@ pub enum BtCommand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiAction {
+    /// Shut the Pi down, after the person confirmed it.
+    PowerOff,
     ShowSection(Section),
     OpenCollection(String),
     Back,
@@ -406,6 +408,8 @@ pub enum Effect {
     VoiceContext(VoiceContext),
     /// Start listening without the wake word.
     VoiceListen,
+    /// Blank the screen and shut the Pi down.
+    PowerOff,
 }
 
 #[derive(Debug, Clone, PartialEq)]

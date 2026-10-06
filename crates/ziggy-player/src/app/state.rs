@@ -132,6 +132,8 @@ pub enum Notice {
     AddedTo(String),
     /// The song is already in the named playlist, so nothing was added.
     AlreadyIn(String),
+    /// Several songs in a row couldn't play, so playback was paused instead of skipping on.
+    SkippingStopped,
     /// Something was taken out of the named list.
     RemovedFrom(String),
     /// An empty playlist with this name was made.
@@ -173,6 +175,8 @@ pub struct DeviceSettings {
     pub temperature_c: Option<i32>,
     /// The Wi-Fi connection, on a Pi.
     pub wifi: Option<crate::app::WifiStatus>,
+    /// Turn off was confirmed; the Pi is shutting down.
+    pub powering_off: bool,
     /// The Bluetooth speaker in use now; None means the headphone jack.
     pub speaker: Option<crate::settings::Speaker>,
     /// Bluetooth exists on this device (the Pi, or `--fake` mode).
