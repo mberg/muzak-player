@@ -163,6 +163,22 @@ pub fn keep_logs(r: &dyn Remote) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Lets the player's service user shut the Pi down (the Turn off button), and nothing else.
+pub const POWER_SUDOERS: &str =
+    "# Ziggy: the Turn off button in Settings.\nziggy-player ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff\n";
+
+/// Installs the sudo rule for Turn off, checked with visudo first. Safe to run again.
+pub fn allow_power_off(r: &dyn Remote) -> anyhow::Result<()> {
+    r.upload(POWER_SUDOERS.as_bytes(), "/tmp/ziggy-power", "440", None)?;
+    r.run(
+        "sudo visudo -cf /tmp/ziggy-power >/dev/null \
+         && sudo install -m 440 /tmp/ziggy-power /etc/sudoers.d/020_ziggy-player-power; \
+         rc=$?; sudo rm -f /tmp/ziggy-power; exit $rc",
+    )
+    .context("allowing the Turn off button")?;
+    Ok(())
+}
+
 /// How the player is doing, for `ziggy status`: uptime, restarts, power and memory, and the
 /// failures in the log. One `key=value` per line, then the failures after `--- problems`.
 pub fn health(r: &dyn Remote) -> anyhow::Result<Health> {
@@ -296,6 +312,16 @@ mod tests {
         let files = r.files.borrow();
         let (bytes, mode, _) = &files["/usr/local/bin/ziggy-player"];
         assert_eq!((bytes.as_slice(), mode.as_str()), (&b"\x7fELF"[..], "755"));
+    }
+
+    #[test]
+    fn turn_off_is_the_only_thing_the_player_may_sudo() {
+        let r = FakeRemote::default();
+        allow_power_off(&r).unwrap();
+        let rule = r.file("/tmp/ziggy-power").unwrap();
+        assert!(rule.contains("ziggy-player ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff"));
+        assert_eq!(rule.lines().filter(|l| !l.starts_with('#')).count(), 1);
+        assert!(r.all_scripts().contains("visudo -cf /tmp/ziggy-power"));
     }
 
     #[test]

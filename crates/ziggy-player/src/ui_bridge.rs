@@ -247,6 +247,8 @@ pub fn wire_callbacks(window: &AppWindow, inputs: UnboundedSender<Input>) {
     let s = send.clone();
     window.on_find_speakers(move || s(UiAction::FindSpeakers));
     let s = send.clone();
+    window.on_power_off(move || s(UiAction::PowerOff));
+    let s = send.clone();
     window.on_connect_speaker(move |address| s(UiAction::ConnectSpeaker(address.to_string())));
     let s = send.clone();
     window.on_choose_sonos(move |uuid| s(UiAction::ChooseSonos(uuid.to_string())));
@@ -531,6 +533,7 @@ impl Bridge {
         w.set_temperature_hot(s.temperature_hot);
         w.set_wifi(s.wifi.as_str().into());
         w.set_wifi_weak(s.wifi_weak);
+        w.set_powering_off(s.powering_off);
         let speakers: Vec<SpeakerRowData> = s
             .speakers
             .iter()

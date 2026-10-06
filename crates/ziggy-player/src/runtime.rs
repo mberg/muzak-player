@@ -317,6 +317,14 @@ fn dispatch(effects: Vec<Effect>, outputs: &Outputs, platform: &crate::platform:
                     let _ = bluetooth.send(command);
                 }
             }
+            Effect::PowerOff => {
+                platform.screen_off_now();
+                tokio::spawn(async {
+                    // Long enough for the pause to reach the speaker.
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                    crate::platform::power_off().await;
+                });
+            }
             Effect::SaveSettings(settings) => {
                 if let Err(e) = settings.save(&outputs.state_dir) {
                     tracing::error!("saving settings failed: {e:#}");

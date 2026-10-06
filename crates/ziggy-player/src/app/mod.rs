@@ -114,7 +114,14 @@ pub struct Core {
     listen_mark: Option<u64>,
     /// Spotify's recently-played list was asked for because the device has no history yet.
     asked_spotify_recent: bool,
+    /// When recent songs failed to load. librespot skips each one by itself, so without a limit
+    /// a refused account races through a whole playlist asking Spotify for every song.
+    failed_tracks_ms: Vec<u64>,
 }
+
+/// This many songs failing within `FAILED_TRACKS_WINDOW_MS` pauses playback.
+const FAILED_TRACKS_LIMIT: usize = 3;
+const FAILED_TRACKS_WINDOW_MS: u64 = 30_000;
 
 impl Core {
     pub fn new(cfg: CoreConfig, now_ms: u64) -> (Core, Vec<Effect>) {
@@ -197,6 +204,7 @@ impl Core {
             listened_reported: 0,
             listen_mark: None,
             asked_spotify_recent: false,
+            failed_tracks_ms: Vec::new(),
         };
         let mut fx = Vec::new();
         for section in [Section::Playlists, Section::Albums, Section::Recent] {
@@ -1408,6 +1416,13 @@ impl Core {
                 self.state.device.saved.theme = Some(index.min(MAX_THEME));
                 fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
             }
+            UiAction::PowerOff => {
+                if !self.state.device.powering_off {
+                    self.state.device.powering_off = true;
+                    fx.push(Effect::Player(PlayerCommand::Pause));
+                    fx.push(Effect::PowerOff);
+                }
+            }
             UiAction::SetSleepLength(minutes) => {
                 self.state.device.saved.sleep_minutes = Some(minutes);
                 fx.push(Effect::SaveSettings(self.state.device.saved.clone()));
@@ -1498,7 +1513,19 @@ impl Core {
             PlayerUpdate::Volume { percent } => self.state.playback.volume = percent.min(100),
             PlayerUpdate::Shuffle(shuffle) => self.state.playback.shuffle = shuffle,
             PlayerUpdate::Repeat(repeat) => self.state.playback.repeat = repeat,
-            PlayerUpdate::Unavailable => self.notify(Notice::TrackUnavailable, now_ms),
+            PlayerUpdate::Unavailable => {
+                self.failed_tracks_ms
+                    .retain(|t| now_ms.saturating_sub(*t) < FAILED_TRACKS_WINDOW_MS);
+                self.failed_tracks_ms.push(now_ms);
+                if self.failed_tracks_ms.len() >= FAILED_TRACKS_LIMIT {
+                    self.failed_tracks_ms.clear();
+                    fx.push(Effect::Player(PlayerCommand::Pause));
+                    self.state.playback.status = PlayStatus::Paused;
+                    self.notify(Notice::SkippingStopped, now_ms);
+                } else {
+                    self.notify(Notice::TrackUnavailable, now_ms);
+                }
+            }
         }
     }
 
