@@ -1067,9 +1067,9 @@ fn banner(state: &AppState) -> Option<String> {
     match &state.notice {
         Some(Notice::NoInternet) => Some("No internet right now".into()),
         Some(Notice::TrackUnavailable) => Some("That song can't play, skipping".into()),
-        Some(Notice::SkippingStopped) => {
-            Some("Spotify won't play these songs right now, so Ziggy stopped. Try again later.".into())
-        }
+        Some(Notice::SkippingStopped) => Some(
+            "Spotify won't play these songs right now, so Ziggy stopped. Try again later.".into(),
+        ),
         Some(Notice::CouldntSave) => Some("Couldn't save that".into()),
         Some(Notice::SpotifyBusy) => {
             Some("Spotify is limiting changes right now. Try again later.".into())

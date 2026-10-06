@@ -155,7 +155,10 @@ fn spotify_client_id() -> anyhow::Result<String> {
 /// Playback signs in on the Pi itself; see `pair`.
 async fn library_sign_in(dir: &Path, client_id: &str) -> anyhow::Result<()> {
     if dir.join(spotify::WEB_AUTH_FILE).is_file()
-        && yes("Use the Spotify library sign-in saved for this player?", true)?
+        && yes(
+            "Use the Spotify library sign-in saved for this player?",
+            true,
+        )?
     {
         return Ok(());
     }

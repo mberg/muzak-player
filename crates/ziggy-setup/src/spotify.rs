@@ -9,7 +9,7 @@ use librespot_oauth::OAuthClientBuilder;
 
 pub const REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
 /// Keep in sync with `crates/ziggy-player/src/library/web_api.rs`.
-const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify,user-follow-read,user-follow-modify";
+const SCOPES: &str = "playlist-read-private,playlist-read-collaborative,user-library-read,user-read-recently-played,playlist-modify-private,playlist-modify-public,user-library-modify,user-follow-read,user-follow-modify,user-read-playback-state,user-modify-playback-state";
 const API: &str = "https://api.spotify.com/v1";
 
 pub const WEB_AUTH_FILE: &str = "web-auth.json";

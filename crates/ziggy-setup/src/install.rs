@@ -182,8 +182,7 @@ pub fn keep_logs(r: &dyn Remote) -> anyhow::Result<()> {
 }
 
 /// Lets the player's service user shut the Pi down (the Turn off button), and nothing else.
-pub const POWER_SUDOERS: &str =
-    "# Ziggy: the Turn off button in Settings.\nziggy-player ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff\n";
+pub const POWER_SUDOERS: &str = "# Ziggy: the Turn off button in Settings.\nziggy-player ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff\n";
 
 /// Installs the sudo rule for Turn off, checked with visudo first. Safe to run again.
 pub fn allow_power_off(r: &dyn Remote) -> anyhow::Result<()> {
@@ -258,7 +257,9 @@ impl Health {
         let bits = self.throttle_bits();
         let mut out = Vec::new();
         if bits & 0x10001 != 0 {
-            out.push("The Pi has had too little power (under-voltage). Check the cable and charger.");
+            out.push(
+                "The Pi has had too little power (under-voltage). Check the cable and charger.",
+            );
         }
         if bits & 0xE000E != 0 {
             out.push("The Pi touched its 60°C heat limit and eased off for a moment. That's normal under load; look at airflow only if it keeps happening.");
@@ -282,10 +283,11 @@ pub fn device_name(r: &dyn Remote) -> Option<String> {
         .and_then(|v| v["device_name"].as_str().map(str::to_string))
         .filter(|n| !n.trim().is_empty());
     on_screen.or_else(|| {
-        read_config(r)
-            .ok()
-            .flatten()
-            .and_then(|t| t.get("device_name").and_then(|v| v.as_str()).map(str::to_string))
+        read_config(r).ok().flatten().and_then(|t| {
+            t.get("device_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
     })
 }
 
@@ -298,7 +300,7 @@ pub fn request_pairing(r: &dyn Remote) -> anyhow::Result<()> {
 /// True once the player's Soloist is signed in to Spotify.
 pub fn is_paired(r: &dyn Remote) -> bool {
     r.run(
-        "sudo -u ziggy-player /var/lib/ziggy/bin/soloist ctl status -D /var/lib/ziggy/soloist \
+        "sudo -u ziggy-player /var/lib/ziggy/bin/soloist ctl -w 127.0.0.1:47321 status \
            2>/dev/null | grep -q 'logged in: yes' && echo PAIRED || true",
     )
     .is_ok_and(|out| out.contains("PAIRED"))
@@ -326,9 +328,9 @@ pub fn installed_version(r: &dyn Remote) -> Option<String> {
         "/usr/local/bin/ziggy-player --version 2>/dev/null \
          || /usr/local/bin/muzak-player --version 2>/dev/null || true",
     )
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]

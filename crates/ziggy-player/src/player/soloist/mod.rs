@@ -33,6 +33,22 @@ const EXIT_EXPIRED: i32 = 10;
 pub const PAIR_REQUEST: &str = "soloist-pair";
 /// The account's ID, which the library caches; Liked Songs needs it.
 const ACCOUNT_KEY: &str = "account";
+/// Soloist's local WebSocket, on a fixed port so `ziggy` can ask it too (`soloist ctl -w`).
+pub const WS_PORT: u16 = 47321;
+/// How long a list may take to skip ahead to the tapped song before the sound comes back anyway.
+const SKIP_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Starts a list at a song on this device through Spotify's Web API, which is instant. Gets the
+/// list's URI and where to start; false when that didn't work and the engine should skip ahead
+/// itself.
+pub type StartFn = Arc<
+    dyn Fn(
+            String,
+            crate::library::web_api::StartAt,
+        ) -> futures_util::future::BoxFuture<'static, bool>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone)]
 pub struct SoloistSettings {
@@ -62,16 +78,18 @@ impl SoloistSettings {
 pub fn spawn(
     settings: SoloistSettings,
     cache: Arc<DiskCache>,
+    start: Option<StartFn>,
     inputs: UnboundedSender<Input>,
 ) -> UnboundedSender<PlayerCommand> {
     let (tx, rx) = mpsc::unbounded_channel();
-    tokio::spawn(run(settings, cache, inputs, rx));
+    tokio::spawn(run(settings, cache, start, inputs, rx));
     tx
 }
 
 async fn run(
     settings: SoloistSettings,
     cache: Arc<DiskCache>,
+    start: Option<StartFn>,
     inputs: UnboundedSender<Input>,
     mut commands: UnboundedReceiver<PlayerCommand>,
 ) {
@@ -79,7 +97,15 @@ async fn run(
     let mut force_download = false;
     loop {
         let started = std::time::Instant::now();
-        let result = serve(&settings, &cache, &inputs, &mut commands, force_download).await;
+        let result = serve(
+            &settings,
+            &cache,
+            start.as_ref(),
+            &inputs,
+            &mut commands,
+            force_download,
+        )
+        .await;
         force_download = false;
         let _ = inputs.send(Input::Player(PlayerUpdate::Disconnected));
         match result {
@@ -109,6 +135,7 @@ enum Exit {
 async fn serve(
     settings: &SoloistSettings,
     cache: &DiskCache,
+    start: Option<&StartFn>,
     inputs: &UnboundedSender<Input>,
     commands: &mut UnboundedReceiver<PlayerCommand>,
     force_download: bool,
@@ -130,10 +157,7 @@ async fn serve(
     if pair_request.exists() {
         tracing::info!("waiting to be picked in a Spotify app to sign in");
         let _ = inputs.send(Input::PairingNeeded(true));
-        let status = soloist(&bin, settings, &key)
-            .arg("--pair")
-            .status()
-            .await?;
+        let status = soloist(&bin, settings, &key).arg("--pair").status().await?;
         if status.code() == Some(EXIT_EXPIRED) {
             return Ok(Exit::Expired);
         }
@@ -141,12 +165,10 @@ async fn serve(
         let _ = std::fs::remove_file(&pair_request);
     }
 
-    let port_file = settings.data_dir().join("ws.port");
-    let _ = std::fs::remove_file(&port_file);
     let mut cmd = soloist(&bin, settings, &key);
     cmd.args(["--cache-size", "200"])
         .args(["--initial-volume", &settings.initial_volume.to_string()])
-        .args(["--ws", "127.0.0.1:0"]);
+        .args(["--ws", &format!("127.0.0.1:{WS_PORT}")]);
     // A speaker, or the headphone jack: never whatever PipeWire made the default, which is a
     // Bluetooth speaker as soon as one connects.
     let output = match &settings.output {
@@ -164,11 +186,10 @@ async fn serve(
         .spawn()?;
     forward_logs(&mut child);
 
-    let port = match wait_for_port(&port_file, &mut child).await? {
-        Ok(port) => port,
+    let ws = match connect(&mut child).await? {
+        Ok(ws) => ws,
         Err(exit) => return Ok(exit),
     };
-    let (ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}")).await?;
     let (mut tx, mut rx) = ws.split();
     tracing::info!("Soloist is running as {:?}", settings.device_name);
 
@@ -179,7 +200,11 @@ async fn serve(
         let mut frames: Vec<Value> = Vec::new();
         tokio::select! {
             _ = clock.tick() => {
-                if let Some(position_ms) = session.position_now(std::time::Instant::now()) {
+                let now = std::time::Instant::now();
+                session.give_up_skipping(now);
+                if session.skipping.is_none()
+                    && let Some(position_ms) = session.position_now(now)
+                {
                     let _ = inputs.send(Input::Player(PlayerUpdate::Position { position_ms }));
                 }
             }
@@ -220,16 +245,42 @@ async fn serve(
                     }
                     Event::Position { position_ms, speed } => {
                         session.anchor = Some((position_ms, std::time::Instant::now(), speed));
-                        let _ = inputs.send(Input::Player(PlayerUpdate::Position { position_ms }));
+                        if session.skipping.is_none() {
+                            let _ = inputs.send(Input::Player(PlayerUpdate::Position { position_ms }));
+                        }
                     }
-                    Event::Queue { upcoming, .. } => frames = session.start_from_queue(&upcoming),
+                    Event::Queue { upcoming, .. } => {
+                        frames = session.start_from_queue(&upcoming, std::time::Instant::now());
+                    }
                     Event::Error(message) => tracing::warn!("Soloist refused a command: {message}"),
                     Event::Other => {}
                 }
             }
         }
+        frames.append(&mut session.outbox);
         for frame in frames {
             tx.send(Message::text(frame.to_string())).await?;
+        }
+        if let Some(load) = session.load.take() {
+            // Spotify's Web API starts a list at a song directly; skipping is the fallback.
+            let started = match (start, load.start.clone()) {
+                (Some(start), Some(at)) => {
+                    tokio::time::timeout(Duration::from_secs(6), start(load.uri.clone(), at))
+                        .await
+                        .unwrap_or(false)
+                }
+                _ => false,
+            };
+            if !started {
+                tx.send(Message::text(
+                    json!({ "type": "command", "command": "play", "uri": load.uri }).to_string(),
+                ))
+                .await?;
+                if let Some(at) = load.start {
+                    session.start = Some(at);
+                    session.after_load = Some(Duration::from_millis(800));
+                }
+            }
         }
         if let Some(after) = session.after_load.take() {
             // Let Soloist load the list before asking where it starts.
@@ -256,14 +307,49 @@ struct Session {
     volume_set_at: Option<std::time::Instant>,
     /// The last position Soloist reported, when, and how fast it moves (0 when paused).
     anchor: Option<(u32, std::time::Instant, f64)>,
+    /// A list to start once the frames before it (shuffle) are sent.
+    load: Option<Load>,
     /// A list was just started and should skip ahead to this song once the queue is known.
-    start: Option<(Option<String>, Option<u32>)>,
+    start: Option<crate::library::web_api::StartAt>,
     after_load: Option<Duration>,
+    /// Skipping ahead quietly: the song to reach, the volume to put back, and when to give up.
+    skipping: Option<(Option<String>, u8, std::time::Instant)>,
+    /// Frames to send after an event, such as the volume put back once the song is reached.
+    outbox: Vec<Value>,
+}
+
+/// Starting a list.
+#[derive(Debug, Clone, PartialEq)]
+struct Load {
+    uri: String,
+    /// Where to start, unless at the top.
+    start: Option<crate::library::web_api::StartAt>,
 }
 
 impl Session {
     /// Notes what an update says; false when it shouldn't reach the app.
     fn forward(&mut self, update: &PlayerUpdate, now: std::time::Instant) -> bool {
+        // While skipping ahead, the songs passed on the way don't reach the screen.
+        if let Some((target, volume, _)) = &self.skipping {
+            match update {
+                PlayerUpdate::TrackChanged(t)
+                    if target.is_none() || target.as_deref() == Some(&t.uri) =>
+                {
+                    let volume = *volume;
+                    self.finish_skipping(volume, now);
+                }
+                PlayerUpdate::TrackChanged(t) => {
+                    self.current_uri = Some(t.uri.clone());
+                    return false;
+                }
+                PlayerUpdate::Volume { .. }
+                | PlayerUpdate::Playing { .. }
+                | PlayerUpdate::Position { .. } => {
+                    return false;
+                }
+                _ => {}
+            }
+        }
         match update {
             PlayerUpdate::TrackChanged(t) => {
                 self.current_uri = Some(t.uri.clone());
@@ -330,34 +416,64 @@ impl Session {
             tracing::warn!("Liked Songs needs the account, which hasn't loaded yet");
         }
         let uri = protocol::context_uri_for(&context_uri, &username);
-        let starts_later = start_uri.is_some() || start_index.is_some_and(|i| i > 0);
-        if starts_later {
-            self.start = Some((start_uri, start_index));
-            self.after_load = Some(Duration::from_millis(800));
-        }
-        protocol::load_frames(&uri, shuffle)
+        use crate::library::web_api::StartAt;
+        let start = match (start_uri, start_index) {
+            (Some(uri), _) => Some(StartAt::Uri(uri)),
+            (None, Some(i)) if i > 0 => Some(StartAt::Position(i)),
+            _ => None,
+        };
+        self.load = Some(Load { uri, start });
+        // Shuffle first, so the list plays in the right order; the list itself starts next.
+        protocol::frames(&PlayerCommand::SetShuffle(shuffle))
     }
 
-    /// Skips from the top of the list to the song that was tapped, quietly.
-    fn start_from_queue(&mut self, upcoming: &[String]) -> Vec<Value> {
-        let Some((start_uri, start_index)) = self.start.take() else {
+    /// The fallback: skips from the top of the list to the song that was tapped, with the
+    /// sound down and the songs in between kept off the screen.
+    fn start_from_queue(&mut self, upcoming: &[String], now: std::time::Instant) -> Vec<Value> {
+        use crate::library::web_api::StartAt;
+        let Some(start) = self.start.take() else {
             return Vec::new();
+        };
+        let (start_uri, start_index) = match &start {
+            StartAt::Uri(uri) => (Some(uri.as_str()), None),
+            StartAt::Position(i) => (None, Some(*i)),
         };
         let skips = protocol::skips_to(
             upcoming,
             self.current_uri.as_deref(),
-            start_uri.as_deref(),
+            start_uri,
             start_index,
         )
         .unwrap_or(0);
         if skips == 0 {
             return Vec::new();
         }
-        let volume = self.volume;
+        let target = start_uri
+            .map(str::to_string)
+            .or_else(|| upcoming.get(skips - 1).cloned());
+        self.skipping = Some((target, self.volume, now + SKIP_TIMEOUT));
+        self.volume_set_at = Some(now);
         let mut frames = vec![json!({ "type": "command", "command": "set_volume", "volume": 0 })];
         frames.extend(std::iter::repeat_n(protocol::command("skip_next"), skips));
-        frames.push(json!({ "type": "command", "command": "set_volume", "volume": volume }));
         frames
+    }
+
+    /// The tapped song is playing: the sound comes back.
+    fn finish_skipping(&mut self, volume: u8, now: std::time::Instant) {
+        self.skipping = None;
+        self.volume_set_at = Some(now);
+        self.outbox
+            .push(json!({ "type": "command", "command": "set_volume", "volume": volume }));
+    }
+
+    /// Never leave the sound down: after a while, whatever is playing is heard.
+    fn give_up_skipping(&mut self, now: std::time::Instant) {
+        if let Some((_, volume, until)) = self.skipping
+            && now >= until
+        {
+            tracing::warn!("didn't reach the tapped song; playing what's there");
+            self.finish_skipping(volume, now);
+        }
     }
 }
 
@@ -406,8 +522,14 @@ async fn jack_node() -> Option<String> {
 /// 10 s only at debug level.
 fn forward_logs(child: &mut Child) {
     for stream in [
-        child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
-        child.stderr.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
     ]
     .into_iter()
     .flatten()
@@ -425,20 +547,25 @@ fn forward_logs(child: &mut Child) {
     }
 }
 
-/// Soloist writes its WebSocket port to a file once it's listening.
-async fn wait_for_port(
-    port_file: &Path,
+/// Connects to Soloist's WebSocket once it's listening.
+async fn connect(
     child: &mut Child,
-) -> anyhow::Result<Result<u16, Exit>> {
+) -> anyhow::Result<
+    Result<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        Exit,
+    >,
+> {
     for _ in 0..150 {
         if let Some(status) = child.try_wait()? {
             return Ok(Err(exit_of(status)));
         }
-        if let Some(port) = std::fs::read_to_string(port_file)
-            .ok()
-            .and_then(|p| p.trim().parse().ok())
+        if let Ok((ws, _)) =
+            tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{WS_PORT}")).await
         {
-            return Ok(Ok(port));
+            return Ok(Ok(ws));
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
@@ -468,7 +595,10 @@ async fn ensure_binary(bin: &Path, force: bool) -> anyhow::Result<PathBuf> {
     let result = download(dir).await;
     match (result, bin.exists()) {
         (Ok(()), _) => {
-            tracing::info!("installed Soloist {}", version(bin).await.unwrap_or_default());
+            tracing::info!(
+                "installed Soloist {}",
+                version(bin).await.unwrap_or_default()
+            );
             Ok(bin.to_path_buf())
         }
         // Offline, say: the old build still works until it expires.
@@ -527,55 +657,122 @@ mod tests {
     #[test]
     fn the_build_date_comes_from_the_version_line() {
         assert_eq!(
-            build_date("soloist 1.3.8.111 build 1791288124 (20261006) (g5c3a2053ac) (linux/aarch64)"),
+            build_date(
+                "soloist 1.3.8.111 build 1791288124 (20261006) (g5c3a2053ac) (linux/aarch64)"
+            ),
             chrono::NaiveDate::from_ymd_opt(2026, 10, 6)
         );
         assert_eq!(build_date("soloist 1.3.8"), None);
     }
 
     #[test]
-    fn tapping_a_song_starts_the_list_then_skips_to_it_quietly() {
+    fn a_list_starting_at_a_song_is_shuffled_then_handed_to_the_web_api() {
+        use crate::library::web_api::StartAt;
         let dir = tempfile::tempdir().unwrap();
         let cache = DiskCache::new(dir.path().to_path_buf()).unwrap();
         cache
-            .write(ACCOUNT_KEY, &Account { id: "31fz".into(), name: "Ellie".into() })
+            .write(
+                ACCOUNT_KEY,
+                &Account {
+                    id: "31fz".into(),
+                    name: "Ellie".into(),
+                },
+            )
             .unwrap();
-        let mut s = Session { logged_in: true, volume: 60, ..Default::default() };
+        let mut s = Session {
+            logged_in: true,
+            volume: 60,
+            ..Default::default()
+        };
         let frames = s.frames_for(
             PlayerCommand::Load {
                 context_uri: LIKED_URI.into(),
-                start_index: None,
+                start_index: Some(7),
                 start_uri: Some("spotify:track:c".into()),
                 shuffle: false,
             },
             &cache,
             std::time::Instant::now(),
         );
-        assert_eq!(frames[1]["uri"], "spotify:user:31fz:collection");
-        assert!(s.after_load.is_some(), "asks for the queue after loading");
-        s.forward(
-            &PlayerUpdate::TrackChanged(Track {
-                uri: "spotify:track:a".into(),
-                ..Default::default()
-            }),
-            std::time::Instant::now(),
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["command"], "set_shuffle");
+        assert_eq!(
+            s.load,
+            Some(Load {
+                uri: "spotify:user:31fz:collection".into(),
+                start: Some(StartAt::Uri("spotify:track:c".into())),
+            })
         );
-        let skip = s.start_from_queue(&["spotify:track:b".into(), "spotify:track:c".into()]);
-        let names: Vec<&str> = skip.iter().map(|f| f["command"].as_str().unwrap()).collect();
-        assert_eq!(names, ["set_volume", "skip_next", "skip_next", "set_volume"]);
+    }
+
+    #[test]
+    fn the_fallback_skips_quietly_and_hides_the_songs_in_between() {
+        use crate::library::web_api::StartAt;
+        let t0 = std::time::Instant::now();
+        let mut s = Session {
+            logged_in: true,
+            volume: 60,
+            current_uri: Some("spotify:track:a".into()),
+            start: Some(StartAt::Uri("spotify:track:c".into())),
+            ..Default::default()
+        };
+        let skip = s.start_from_queue(&["spotify:track:b".into(), "spotify:track:c".into()], t0);
+        let names: Vec<&str> = skip
+            .iter()
+            .map(|f| f["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["set_volume", "skip_next", "skip_next"]);
         assert_eq!(skip[0]["volume"], 0);
-        assert_eq!(skip[3]["volume"], 60);
-        assert!(s.start_from_queue(&[]).is_empty(), "only once");
+        let song = |uri: &str| {
+            PlayerUpdate::TrackChanged(Track {
+                uri: uri.into(),
+                ..Default::default()
+            })
+        };
+        assert!(
+            !s.forward(&song("spotify:track:b"), t0),
+            "passed on the way: hidden"
+        );
+        assert!(s.outbox.is_empty(), "still quiet");
+        assert!(
+            s.forward(&song("spotify:track:c"), t0),
+            "the tapped song shows"
+        );
+        assert_eq!(s.outbox[0]["volume"], 60, "and the sound comes back");
+        assert!(s.start_from_queue(&[], t0).is_empty(), "only once");
+    }
+
+    #[test]
+    fn skipping_never_leaves_the_sound_down() {
+        let t0 = std::time::Instant::now();
+        let mut s = Session {
+            skipping: Some((Some("spotify:track:z".into()), 50, t0 + SKIP_TIMEOUT)),
+            ..Default::default()
+        };
+        s.give_up_skipping(t0 + Duration::from_secs(5));
+        assert!(s.outbox.is_empty());
+        s.give_up_skipping(t0 + SKIP_TIMEOUT);
+        assert_eq!(s.outbox[0]["volume"], 50);
+        assert!(s.skipping.is_none());
     }
 
     #[test]
     fn the_clock_counts_on_while_playing_and_stops_when_paused() {
         let t0 = std::time::Instant::now();
-        let mut s = Session { anchor: Some((10_000, t0, 1.0)), ..Default::default() };
+        let mut s = Session {
+            anchor: Some((10_000, t0, 1.0)),
+            ..Default::default()
+        };
         assert_eq!(s.position_now(t0 + Duration::from_secs(3)), Some(13_000));
-        s.forward(&PlayerUpdate::Paused { position_ms: 0 }, t0 + Duration::from_secs(5));
+        s.forward(
+            &PlayerUpdate::Paused { position_ms: 0 },
+            t0 + Duration::from_secs(5),
+        );
         assert_eq!(s.position_now(t0 + Duration::from_secs(9)), None, "paused");
-        s.forward(&PlayerUpdate::Playing { position_ms: 0 }, t0 + Duration::from_secs(9));
+        s.forward(
+            &PlayerUpdate::Playing { position_ms: 0 },
+            t0 + Duration::from_secs(9),
+        );
         assert_eq!(s.position_now(t0 + Duration::from_secs(10)), Some(16_000));
     }
 
@@ -584,17 +781,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = DiskCache::new(dir.path().to_path_buf()).unwrap();
         let t0 = std::time::Instant::now();
-        let mut s = Session { logged_in: true, ..Default::default() };
+        let mut s = Session {
+            logged_in: true,
+            ..Default::default()
+        };
         s.frames_for(PlayerCommand::SetVolume { percent: 70 }, &cache, t0);
-        assert!(!s.forward(&PlayerUpdate::Volume { percent: 64 }, t0 + Duration::from_millis(500)));
-        assert!(s.forward(&PlayerUpdate::Volume { percent: 40 }, t0 + Duration::from_secs(3)));
+        assert!(!s.forward(
+            &PlayerUpdate::Volume { percent: 64 },
+            t0 + Duration::from_millis(500)
+        ));
+        assert!(s.forward(
+            &PlayerUpdate::Volume { percent: 40 },
+            t0 + Duration::from_secs(3)
+        ));
     }
 
     #[test]
     fn a_list_from_the_top_needs_no_skipping() {
         let dir = tempfile::tempdir().unwrap();
         let cache = DiskCache::new(dir.path().to_path_buf()).unwrap();
-        let mut s = Session { logged_in: true, ..Default::default() };
+        let mut s = Session {
+            logged_in: true,
+            ..Default::default()
+        };
         s.frames_for(
             PlayerCommand::Load {
                 context_uri: "spotify:album:x".into(),
@@ -605,7 +814,6 @@ mod tests {
             &cache,
             std::time::Instant::now(),
         );
-        assert!(s.after_load.is_none());
-        assert!(s.start_from_queue(&["spotify:track:b".into()]).is_empty());
+        assert_eq!(s.load.as_ref().map(|l| l.start.clone()), Some(None));
     }
 }

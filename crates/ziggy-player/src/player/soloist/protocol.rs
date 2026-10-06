@@ -35,10 +35,18 @@ pub fn frames(command: &PlayerCommand) -> Vec<Value> {
         PlayerCommand::Next => vec![self::command("skip_next")],
         PlayerCommand::Previous => vec![self::command("skip_prev")],
         PlayerCommand::Seek { position_ms } => {
-            vec![with(self::command("seek"), "position_ms", json!(position_ms))]
+            vec![with(
+                self::command("seek"),
+                "position_ms",
+                json!(position_ms),
+            )]
         }
         PlayerCommand::SetVolume { percent } => {
-            vec![with(self::command("set_volume"), "volume", json!(percent.min(&100)))]
+            vec![with(
+                self::command("set_volume"),
+                "volume",
+                json!(percent.min(&100)),
+            )]
         }
         PlayerCommand::SetShuffle(on) => {
             vec![with(self::command("set_shuffle"), "enabled", json!(on))]
@@ -94,11 +102,17 @@ pub fn skips_to(
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// Signed in to Spotify or not; while not, the device waits to be picked in a Spotify app.
-    Auth { logged_in: bool, username: Option<String> },
+    Auth {
+        logged_in: bool,
+        username: Option<String>,
+    },
     Updates(Vec<PlayerUpdate>),
     /// Where playback is, and how fast it moves (0 when paused). Soloist sends this only when
     /// it changes; the engine counts on from it.
-    Position { position_ms: u32, speed: f64 },
+    Position {
+        position_ms: u32,
+        speed: f64,
+    },
     /// The upcoming tracks, as asked for with `get_queue`.
     Queue {
         current: Option<String>,
@@ -239,11 +253,13 @@ pub fn track(item: &Value) -> Option<Track> {
     let covers = d["visual_identity"]["cover"].as_array();
     // "default" is about 300 px, right for the screen; fall back to any.
     let image_url = covers.and_then(|c| {
-        ["default", "large", "small", "xlarge"].iter().find_map(|size| {
-            c.iter()
-                .find(|i| i["size"].as_str() == Some(size))
-                .and_then(|i| i["url"].as_str().map(str::to_string))
-        })
+        ["default", "large", "small", "xlarge"]
+            .iter()
+            .find_map(|size| {
+                c.iter()
+                    .find(|i| i["size"].as_str() == Some(size))
+                    .and_then(|i| i["url"].as_str().map(str::to_string))
+            })
     });
     Some(Track {
         uri: uri.to_string(),
@@ -283,7 +299,11 @@ pub fn jack_node(pw_dump: &str) -> Option<String> {
     sinks
         .iter()
         .find(|n| n.contains("mailbox") || n.contains("bcm2835") || n.contains("Headphones"))
-        .or_else(|| sinks.iter().find(|n| !n.contains("hdmi") && !n.contains("usb")))
+        .or_else(|| {
+            sinks
+                .iter()
+                .find(|n| !n.contains("hdmi") && !n.contains("usb"))
+        })
         .cloned()
 }
 
@@ -321,9 +341,18 @@ mod tests {
         assert_eq!(t.name, "All I Want");
         assert_eq!(t.artists, "Olivia Rodrigo, Disney");
         assert_eq!(t.album, "All I Want (Single)");
-        assert_eq!(t.album_uri.as_deref(), Some("spotify:album:5p3gSxNiXeYlPlztVAUjB2"));
-        assert_eq!(t.artist_uri.as_deref(), Some("spotify:artist:1McMsnEElThX1knmY4oliG"));
-        assert_eq!(t.image_url.as_deref(), Some("https://i.scdn.co/image/default"));
+        assert_eq!(
+            t.album_uri.as_deref(),
+            Some("spotify:album:5p3gSxNiXeYlPlztVAUjB2")
+        );
+        assert_eq!(
+            t.artist_uri.as_deref(),
+            Some("spotify:artist:1McMsnEElThX1knmY4oliG")
+        );
+        assert_eq!(
+            t.image_url.as_deref(),
+            Some("https://i.scdn.co/image/default")
+        );
         assert_eq!(t.duration_ms, 177_322);
         assert_eq!(
             &updates[1..],
@@ -344,8 +373,13 @@ mod tests {
             Event::Updates(vec![PlayerUpdate::Playing { position_ms: 0 }])
         );
         assert_eq!(
-            parse(r#"{"type":"position_sync","position":{"position_ms":45000,"timestamp_ms":1,"speed":1.0}}"#),
-            Event::Position { position_ms: 45000, speed: 1.0 }
+            parse(
+                r#"{"type":"position_sync","position":{"position_ms":45000,"timestamp_ms":1,"speed":1.0}}"#
+            ),
+            Event::Position {
+                position_ms: 45000,
+                speed: 1.0
+            }
         );
         assert_eq!(
             parse(r#"{"type":"volume_changed","volume":42}"#),
@@ -353,7 +387,10 @@ mod tests {
         );
         assert_eq!(
             parse(r#"{"type":"auth_state","logged_in":false,"is_active":false,"device_name":"K"}"#),
-            Event::Auth { logged_in: false, username: None }
+            Event::Auth {
+                logged_in: false,
+                username: None
+            }
         );
         assert_eq!(
             parse(r#"{"type":"device_changed","is_active":false,"device_name":"K"}"#),
@@ -425,7 +462,10 @@ mod tests {
             context_uri_for(LIKED_URI, "31fz"),
             "spotify:user:31fz:collection"
         );
-        assert_eq!(context_uri_for("spotify:album:x", "31fz"), "spotify:album:x");
+        assert_eq!(
+            context_uri_for("spotify:album:x", "31fz"),
+            "spotify:album:x"
+        );
         assert_eq!(
             bluetooth_node("3C:B8:A9:30:65:8E"),
             "bluez_output.3C_B8_A9_30_65_8E.1"

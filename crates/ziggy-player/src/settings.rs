@@ -96,10 +96,7 @@ mod tests {
     use super::*;
 
     fn pi_config() -> Config {
-        Config::parse(
-            "device_name = \"Ziggy\"\nstate_dir = \"/tmp/x\"\n",
-        )
-        .unwrap()
+        Config::parse("device_name = \"Ziggy\"\nstate_dir = \"/tmp/x\"\n").unwrap()
     }
 
     #[test]

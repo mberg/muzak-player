@@ -50,6 +50,12 @@ wireplumber.profiles = {
 wireplumber.settings = {
   device.routes.default-sink-volume = 1.0
 }
+# Music only: no phone-call (hands-free) mode, which is mono and tinny. A speaker with a
+# microphone could otherwise fall back to it when music mode fails to connect once.
+monitor.bluez.properties = {
+  bluez5.roles = [ a2dp_sink a2dp_source ]
+  bluez5.hfphsp-backend = "none"
+}
 EOW
 # PipeWire runs for the player only: not for whoever logs in over SSH, which would start a second
 # copy competing for the speaker.

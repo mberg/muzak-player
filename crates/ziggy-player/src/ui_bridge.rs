@@ -144,8 +144,7 @@ pub fn publish(state: AppState) {
 
 /// The big copy of a cover, for Now Playing and a book's page.
 fn large(url: &Option<String>) -> Option<String> {
-    url.as_ref()
-        .map(|u| format!("{}{u}", crate::images::LARGE))
+    url.as_ref().map(|u| format!("{}{u}", crate::images::LARGE))
 }
 
 /// Called from the image loader with a decoded cover.

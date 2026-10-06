@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use ziggy_player::config::Config;
-use ziggy_player::{AppWindow, runtime, ui_bridge};
 use slint::ComponentHandle;
 use tracing_subscriber::EnvFilter;
+use ziggy_player::config::Config;
+use ziggy_player::{AppWindow, runtime, ui_bridge};
 
 #[derive(Parser)]
 #[command(version, about = "Ziggy touchscreen Spotify player")]
@@ -25,8 +25,7 @@ fn main() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("rustls crypto provider already installed"))?;
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
     let args = Args::parse();

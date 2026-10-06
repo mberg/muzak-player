@@ -159,7 +159,10 @@ mod tests {
 
     #[test]
     fn covers_are_small_unless_asked_for_large() {
-        assert_eq!(sized("https://i.scdn.co/a"), ("https://i.scdn.co/a", SMALL_PX));
+        assert_eq!(
+            sized("https://i.scdn.co/a"),
+            ("https://i.scdn.co/a", SMALL_PX)
+        );
         assert_eq!(
             sized("large:https://i.scdn.co/a"),
             ("https://i.scdn.co/a", LARGE_PX)

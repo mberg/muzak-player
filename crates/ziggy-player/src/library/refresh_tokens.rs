@@ -53,14 +53,20 @@ async fn refresh(client_id: &str, refresh_token: &str) -> Result<Refreshed, Fetc
     let status = response.status();
     if status == reqwest::StatusCode::BAD_REQUEST || status == reqwest::StatusCode::UNAUTHORIZED {
         // invalid_grant: the sign-in was revoked or expired; `ziggy signin` fixes it.
-        tracing::warn!("Spotify refused the saved sign-in: {}", response.text().await.unwrap_or_default());
+        tracing::warn!(
+            "Spotify refused the saved sign-in: {}",
+            response.text().await.unwrap_or_default()
+        );
         return Err(FetchError::Auth);
     }
     if !status.is_success() {
         tracing::warn!("web token refresh failed: HTTP {status}");
         return Err(FetchError::Offline);
     }
-    response.json::<Refreshed>().await.map_err(|e| FetchError::Other(e.to_string()))
+    response
+        .json::<Refreshed>()
+        .await
+        .map_err(|e| FetchError::Other(e.to_string()))
 }
 
 struct Cached {

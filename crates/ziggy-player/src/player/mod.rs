@@ -1,6 +1,6 @@
 pub mod fake;
-pub mod sonos;
 pub mod soloist;
+pub mod sonos;
 
 use tokio::sync::mpsc::{self, UnboundedSender};
 
