@@ -10,6 +10,9 @@ Group=ziggy-player
 SupplementaryGroups=video input audio render bluetooth
 Environment=SLINT_BACKEND=linuxkms-femtovg
 Environment=RUST_LOG=info
+# glibc gives every thread its own memory pool by default, and they grow; two keep the player's
+# memory from creeping up over days on a 512 MB Pi.
+Environment=MALLOC_ARENA_MAX=2
 ExecStart=/usr/local/bin/ziggy-player --config /etc/ziggy/config.toml
 UMask=0077
 Restart=always

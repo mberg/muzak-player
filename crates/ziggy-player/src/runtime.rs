@@ -164,7 +164,7 @@ async fn run(
         (player, library)
     };
     spawn_image_loader(
-        Arc::new(ImageLoader::new(config.images_dir(), 300)?.with_books(books_handle.clone())),
+        Arc::new(ImageLoader::new(config.images_dir())?.with_books(books_handle.clone())),
         image_requests,
         images,
     );

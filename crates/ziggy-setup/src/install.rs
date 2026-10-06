@@ -155,6 +155,19 @@ pub fn restart(r: &dyn Remote) -> anyhow::Result<(bool, String)> {
     ))
 }
 
+/// Installs the player's systemd unit as this version of `ziggy` has it, so an update also
+/// brings changes to how the service runs.
+pub fn install_service(r: &dyn Remote) -> anyhow::Result<()> {
+    r.upload(
+        SERVICE.as_bytes(),
+        "/etc/systemd/system/ziggy-player.service",
+        "644",
+        None,
+    )?;
+    r.run("sudo systemctl daemon-reload")?;
+    Ok(())
+}
+
 /// Keeps the Pi's logs across reboots (capped), so a crash can be read afterwards. Safe to run
 /// again; the same settings are in the provisioning script.
 pub fn keep_logs(r: &dyn Remote) -> anyhow::Result<()> {
