@@ -107,14 +107,7 @@ impl Remote for Ssh {
         mode: &str,
         owner: Option<&str>,
     ) -> anyhow::Result<()> {
-        let owner = owner.map_or(String::new(), |o| format!("-o {o} -g {o} "));
-        self.with_input(
-            &format!(
-                "sudo install -D -m {mode} {owner}/dev/stdin {}",
-                quote(path)
-            ),
-            bytes,
-        )?;
+        self.with_input(&upload_script(path, mode, owner), bytes)?;
         Ok(())
     }
 
@@ -154,6 +147,36 @@ mod live {
         assert!(out.contains("640"), "{out}");
         assert!(ssh.run("exit 3").is_err(), "a failing script is an error");
         assert!(!Ssh::new("nowhere.invalid").reachable());
+    }
+}
+
+/// Writes stdin to `path` so that losing power part-way can never leave a broken file: the new
+/// copy is written beside it and saved to the card, then swapped in with a rename, which is
+/// all or nothing. Until then the old file stays as it was.
+fn upload_script(path: &str, mode: &str, owner: Option<&str>) -> String {
+    let owner = owner.map_or(String::new(), |o| format!("-o {o} -g {o} "));
+    let new = quote(&format!("{path}.new"));
+    let path = quote(path);
+    format!(
+        "sudo install -D -m {mode} {owner}/dev/stdin {new} && sudo sync {new} \
+         && sudo mv -f {new} {path} && sudo sync"
+    )
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use super::*;
+
+    #[test]
+    fn uploads_are_saved_then_swapped_in() {
+        let script = upload_script("/usr/local/bin/ziggy-player", "755", None);
+        let write = script.find("install -D -m 755 /dev/stdin '/usr/local/bin/ziggy-player.new'");
+        let save = script.find("sync '/usr/local/bin/ziggy-player.new'");
+        let swap = script.find("mv -f '/usr/local/bin/ziggy-player.new' '/usr/local/bin/ziggy-player'");
+        assert!(write.is_some() && save.is_some() && swap.is_some(), "{script}");
+        assert!(write < save && save < swap, "{script}");
+        assert!(upload_script("/var/lib/ziggy/web-auth.json", "600", Some("ziggy-player"))
+            .contains("-o ziggy-player -g ziggy-player /dev/stdin"));
     }
 }
 

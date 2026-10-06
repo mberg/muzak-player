@@ -58,7 +58,10 @@ pub fn install_player(r: &dyn Remote, source: &PlayerSource) -> anyhow::Result<(
                 "tmp=$(mktemp -d)\n\
                  curl -fsSL '{url}' -o \"$tmp/player.tar.gz\"\n\
                  tar xzf \"$tmp/player.tar.gz\" -C \"$tmp\"\n\
-                 sudo install -m 755 \"$tmp/ziggy-player\" /usr/local/bin/ziggy-player\n\
+                 sudo install -m 755 \"$tmp/ziggy-player\" /usr/local/bin/ziggy-player.new\n\
+                 sudo sync /usr/local/bin/ziggy-player.new\n\
+                 sudo mv -f /usr/local/bin/ziggy-player.new /usr/local/bin/ziggy-player\n\
+                 sudo sync\n\
                  rm -rf \"$tmp\""
             ))
             .with_context(|| format!("downloading the player from {url}"))?;
