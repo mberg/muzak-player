@@ -745,7 +745,14 @@ pub async fn signin(host: &str) -> anyhow::Result<()> {
             vertex_key: None,
         },
     )?;
-    install::request_pairing(&ssh)?;
+    // Playback is signed in separately, on the Pi; only a change of account needs it again.
+    let repair = yes(
+        "Sign playback in again too? (Only needed to change the Spotify account.)",
+        false,
+    )?;
+    if repair {
+        install::request_pairing(&ssh)?;
+    }
     let (running, logs) = install::restart(&ssh)?;
     if !running {
         bail!("the player didn't start:\n{logs}");
