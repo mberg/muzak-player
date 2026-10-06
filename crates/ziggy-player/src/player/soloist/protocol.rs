@@ -96,6 +96,9 @@ pub enum Event {
     /// Signed in to Spotify or not; while not, the device waits to be picked in a Spotify app.
     Auth { logged_in: bool, username: Option<String> },
     Updates(Vec<PlayerUpdate>),
+    /// Where playback is, and how fast it moves (0 when paused). Soloist sends this only when
+    /// it changes; the engine counts on from it.
+    Position { position_ms: u32, speed: f64 },
     /// The upcoming tracks, as asked for with `get_queue`.
     Queue {
         current: Option<String>,
@@ -114,7 +117,14 @@ pub fn parse(frame: &str) -> Event {
             logged_in: v["logged_in"].as_bool().unwrap_or(false),
             username: v["username"].as_str().map(str::to_string),
         },
-        "playback_state" => Event::Updates(playback_state(&v)),
+        "playback_state" => {
+            let mut updates = playback_state(&v);
+            // The engine counts on from here, so the screen's clock moves every second.
+            updates.push(PlayerUpdate::Position {
+                position_ms: position(&v["position"]),
+            });
+            Event::Updates(updates)
+        }
         "track_changed" => Event::Updates(
             track(&v["item"])
                 .map(PlayerUpdate::TrackChanged)
@@ -126,9 +136,10 @@ pub fn parse(frame: &str) -> Event {
                 .into_iter()
                 .collect(),
         ),
-        "position_sync" => Event::Updates(vec![PlayerUpdate::Position {
+        "position_sync" => Event::Position {
             position_ms: position(&v["position"]),
-        }]),
+            speed: v["position"]["speed"].as_f64().unwrap_or(0.0),
+        },
         "volume_changed" => Event::Updates(volume(&v["volume"]).into_iter().collect()),
         "options_changed" => Event::Updates(options(&v["options"])),
         // Another device took over playback: this one is no longer playing.
@@ -321,6 +332,7 @@ mod tests {
                 PlayerUpdate::Shuffle(false),
                 PlayerUpdate::Repeat(Repeat::Context),
                 PlayerUpdate::Paused { position_ms: 5572 },
+                PlayerUpdate::Position { position_ms: 5572 },
             ]
         );
     }
@@ -333,7 +345,7 @@ mod tests {
         );
         assert_eq!(
             parse(r#"{"type":"position_sync","position":{"position_ms":45000,"timestamp_ms":1,"speed":1.0}}"#),
-            Event::Updates(vec![PlayerUpdate::Position { position_ms: 45000 }])
+            Event::Position { position_ms: 45000, speed: 1.0 }
         );
         assert_eq!(
             parse(r#"{"type":"volume_changed","volume":42}"#),

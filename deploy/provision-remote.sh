@@ -38,17 +38,26 @@ if dpkg -s bluez-alsa-utils >/dev/null 2>&1; then
     apt-get purge -y bluez-alsa-utils libasound2-plugin-bluez || true
 fi
 mkdir -p /etc/wireplumber/wireplumber.conf.d
-cat > /etc/wireplumber/wireplumber.conf.d/80-ziggy-bluetooth.conf <<'EOW'
+rm -f /etc/wireplumber/wireplumber.conf.d/80-ziggy-bluetooth.conf
+cat > /etc/wireplumber/wireplumber.conf.d/80-ziggy.conf <<'EOW'
 # Ziggy: Bluetooth speakers work without anyone logged in.
 wireplumber.profiles = {
   main = {
     monitor.bluez.seat-monitoring = disabled
   }
 }
+# Ziggy sets the volume itself; a speaker or the jack starts at full volume, not 40%.
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
 EOW
-systemctl --global enable pipewire.socket wireplumber.service 2>/dev/null || true
+# PipeWire runs for the player only: not for whoever logs in over SSH, which would start a second
+# copy competing for the speaker.
+systemctl --global disable pipewire.socket pipewire.service wireplumber.service \
+    pipewire-pulse.socket 2>/dev/null || true
 loginctl enable-linger ziggy-player
-# Already running from an earlier setup: pick up the Bluetooth setting.
+systemctl --user -M ziggy-player@ enable pipewire.socket wireplumber.service 2>/dev/null || true
+# Already running from an earlier setup: pick up the settings.
 systemctl --user -M ziggy-player@ restart wireplumber.service 2>/dev/null || true
 install -d /etc/ziggy
 

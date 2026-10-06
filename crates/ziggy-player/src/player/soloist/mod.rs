@@ -173,9 +173,16 @@ async fn serve(
     tracing::info!("Soloist is running as {:?}", settings.device_name);
 
     let mut session = Session::default();
+    let mut clock = tokio::time::interval(Duration::from_secs(1));
+    clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let mut frames: Vec<Value> = Vec::new();
         tokio::select! {
+            _ = clock.tick() => {
+                if let Some(position_ms) = session.position_now(std::time::Instant::now()) {
+                    let _ = inputs.send(Input::Player(PlayerUpdate::Position { position_ms }));
+                }
+            }
             status = child.wait() => return Ok(exit_of(status?)),
             command = commands.recv() => {
                 let Some(command) = command else { return Ok(Exit::CommandsClosed) };
@@ -183,7 +190,7 @@ async fn serve(
                     // The core sends a pending Load again once the player is Connected.
                     continue;
                 }
-                frames = session.frames_for(command, cache);
+                frames = session.frames_for(command, cache, std::time::Instant::now());
             }
             message = rx.next() => {
                 let Some(message) = message else {
@@ -204,10 +211,16 @@ async fn serve(
                         }
                     }
                     Event::Updates(updates) => {
+                        let now = std::time::Instant::now();
                         for update in updates {
-                            session.note(&update);
-                            let _ = inputs.send(Input::Player(update));
+                            if session.forward(&update, now) {
+                                let _ = inputs.send(Input::Player(update));
+                            }
                         }
+                    }
+                    Event::Position { position_ms, speed } => {
+                        session.anchor = Some((position_ms, std::time::Instant::now(), speed));
+                        let _ = inputs.send(Input::Player(PlayerUpdate::Position { position_ms }));
                     }
                     Event::Queue { upcoming, .. } => frames = session.start_from_queue(&upcoming),
                     Event::Error(message) => tracing::warn!("Soloist refused a command: {message}"),
@@ -229,27 +242,77 @@ async fn serve(
     }
 }
 
+/// How long Soloist's echoes of a volume Ziggy just set are ignored. A dragged slider sends a
+/// stream of volumes, and late echoes would pull it back.
+const VOLUME_ECHO: Duration = Duration::from_millis(1500);
+
 /// What the engine remembers between frames.
 #[derive(Default)]
 struct Session {
     logged_in: bool,
     current_uri: Option<String>,
     volume: u8,
+    /// When Ziggy last set the volume itself.
+    volume_set_at: Option<std::time::Instant>,
+    /// The last position Soloist reported, when, and how fast it moves (0 when paused).
+    anchor: Option<(u32, std::time::Instant, f64)>,
     /// A list was just started and should skip ahead to this song once the queue is known.
     start: Option<(Option<String>, Option<u32>)>,
     after_load: Option<Duration>,
 }
 
 impl Session {
-    fn note(&mut self, update: &PlayerUpdate) {
+    /// Notes what an update says; false when it shouldn't reach the app.
+    fn forward(&mut self, update: &PlayerUpdate, now: std::time::Instant) -> bool {
         match update {
-            PlayerUpdate::TrackChanged(t) => self.current_uri = Some(t.uri.clone()),
-            PlayerUpdate::Volume { percent } => self.volume = *percent,
+            PlayerUpdate::TrackChanged(t) => {
+                self.current_uri = Some(t.uri.clone());
+                self.anchor = Some((0, now, self.speed()));
+            }
+            PlayerUpdate::Volume { percent } => {
+                if self
+                    .volume_set_at
+                    .is_some_and(|at| now.duration_since(at) < VOLUME_ECHO)
+                {
+                    return false;
+                }
+                self.volume = *percent;
+            }
+            PlayerUpdate::Playing { .. } => self.anchor = Some((self.position_at(now), now, 1.0)),
+            PlayerUpdate::Paused { .. } | PlayerUpdate::Stopped => {
+                self.anchor = Some((self.position_at(now), now, 0.0));
+            }
             _ => {}
         }
+        true
     }
 
-    fn frames_for(&mut self, command: PlayerCommand, cache: &DiskCache) -> Vec<Value> {
+    fn speed(&self) -> f64 {
+        self.anchor.map_or(0.0, |(_, _, speed)| speed)
+    }
+
+    /// Where playback is, counted on from Soloist's last report.
+    fn position_at(&self, now: std::time::Instant) -> u32 {
+        self.anchor.map_or(0, |(position, at, speed)| {
+            position.saturating_add((now.duration_since(at).as_millis() as f64 * speed) as u32)
+        })
+    }
+
+    /// The same, but only while playing: the clock the screen shows then.
+    fn position_now(&self, now: std::time::Instant) -> Option<u32> {
+        (self.speed() > 0.0).then(|| self.position_at(now))
+    }
+
+    fn frames_for(
+        &mut self,
+        command: PlayerCommand,
+        cache: &DiskCache,
+        now: std::time::Instant,
+    ) -> Vec<Value> {
+        if let PlayerCommand::SetVolume { percent } = command {
+            self.volume = percent;
+            self.volume_set_at = Some(now);
+        }
         let PlayerCommand::Load {
             context_uri,
             start_index,
@@ -486,19 +549,45 @@ mod tests {
                 shuffle: false,
             },
             &cache,
+            std::time::Instant::now(),
         );
         assert_eq!(frames[1]["uri"], "spotify:user:31fz:collection");
         assert!(s.after_load.is_some(), "asks for the queue after loading");
-        s.note(&PlayerUpdate::TrackChanged(Track {
-            uri: "spotify:track:a".into(),
-            ..Default::default()
-        }));
+        s.forward(
+            &PlayerUpdate::TrackChanged(Track {
+                uri: "spotify:track:a".into(),
+                ..Default::default()
+            }),
+            std::time::Instant::now(),
+        );
         let skip = s.start_from_queue(&["spotify:track:b".into(), "spotify:track:c".into()]);
         let names: Vec<&str> = skip.iter().map(|f| f["command"].as_str().unwrap()).collect();
         assert_eq!(names, ["set_volume", "skip_next", "skip_next", "set_volume"]);
         assert_eq!(skip[0]["volume"], 0);
         assert_eq!(skip[3]["volume"], 60);
         assert!(s.start_from_queue(&[]).is_empty(), "only once");
+    }
+
+    #[test]
+    fn the_clock_counts_on_while_playing_and_stops_when_paused() {
+        let t0 = std::time::Instant::now();
+        let mut s = Session { anchor: Some((10_000, t0, 1.0)), ..Default::default() };
+        assert_eq!(s.position_now(t0 + Duration::from_secs(3)), Some(13_000));
+        s.forward(&PlayerUpdate::Paused { position_ms: 0 }, t0 + Duration::from_secs(5));
+        assert_eq!(s.position_now(t0 + Duration::from_secs(9)), None, "paused");
+        s.forward(&PlayerUpdate::Playing { position_ms: 0 }, t0 + Duration::from_secs(9));
+        assert_eq!(s.position_now(t0 + Duration::from_secs(10)), Some(16_000));
+    }
+
+    #[test]
+    fn echoes_of_a_volume_just_set_are_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCache::new(dir.path().to_path_buf()).unwrap();
+        let t0 = std::time::Instant::now();
+        let mut s = Session { logged_in: true, ..Default::default() };
+        s.frames_for(PlayerCommand::SetVolume { percent: 70 }, &cache, t0);
+        assert!(!s.forward(&PlayerUpdate::Volume { percent: 64 }, t0 + Duration::from_millis(500)));
+        assert!(s.forward(&PlayerUpdate::Volume { percent: 40 }, t0 + Duration::from_secs(3)));
     }
 
     #[test]
@@ -514,6 +603,7 @@ mod tests {
                 shuffle: true,
             },
             &cache,
+            std::time::Instant::now(),
         );
         assert!(s.after_load.is_none());
         assert!(s.start_from_queue(&["spotify:track:b".into()]).is_empty());
