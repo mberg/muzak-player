@@ -430,6 +430,8 @@ pub struct View {
     /// The dim screen shows a clock, except while falling asleep to a sleep timer.
     pub show_clock: bool,
     pub auth_needed: bool,
+    /// The player waits to be picked in a Spotify app; the screen says how, by its name.
+    pub pairing_needed: bool,
     pub search: SearchView,
     pub artist: Option<ArtistView>,
     pub picker: Option<PickerView>,
@@ -513,6 +515,7 @@ pub fn build(state: &AppState) -> View {
         display: state.display,
         show_clock: state.sleep_ends_ms.is_none(),
         auth_needed: state.auth_needed,
+        pairing_needed: state.pairing_needed,
         search: search(state),
         artist: artist(state),
         picker: state.picker.as_ref().map(|_| PickerView {

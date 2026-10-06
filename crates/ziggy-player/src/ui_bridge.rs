@@ -394,6 +394,7 @@ impl Bridge {
         w.set_clock(chrono::Local::now().format("%-I:%M").to_string().into());
         w.set_show_clock(v.show_clock);
         w.set_auth_needed(v.auth_needed);
+        w.set_pairing_needed(v.pairing_needed);
 
         // Search rows and artist albums are built only while shown, so their covers are
         // requested only then.
