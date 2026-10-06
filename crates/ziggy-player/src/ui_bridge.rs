@@ -529,6 +529,8 @@ impl Bridge {
         w.set_restarting(s.restarting);
         w.set_temperature(s.temperature.as_str().into());
         w.set_temperature_hot(s.temperature_hot);
+        w.set_wifi(s.wifi.as_str().into());
+        w.set_wifi_weak(s.wifi_weak);
         let speakers: Vec<SpeakerRowData> = s
             .speakers
             .iter()

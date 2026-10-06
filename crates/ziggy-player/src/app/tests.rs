@@ -1562,6 +1562,29 @@ fn settings_show_the_temperature_when_there_is_one() {
 }
 
 #[test]
+fn settings_show_the_wifi_and_flag_a_weak_signal() {
+    let mut c = core();
+    assert_eq!(crate::view::build(c.state()).settings.wifi, "");
+    let connected = |signal| {
+        Input::Wifi(Some(crate::app::WifiStatus::Connected {
+            network: "46Brewer".into(),
+            band: "5 GHz".into(),
+            signal,
+        }))
+    };
+    c.handle(connected(66), 0);
+    let v = crate::view::build(c.state()).settings;
+    assert_eq!(v.wifi, "Wi-Fi 46Brewer · 5 GHz · 66%");
+    assert!(!v.wifi_weak);
+    c.handle(connected(30), 0);
+    assert!(crate::view::build(c.state()).settings.wifi_weak);
+    c.handle(Input::Wifi(Some(crate::app::WifiStatus::Disconnected)), 0);
+    let v = crate::view::build(c.state()).settings;
+    assert_eq!(v.wifi, "No Wi-Fi");
+    assert!(v.wifi_weak);
+}
+
+#[test]
 fn picking_a_colour_scheme_saves_without_a_restart() {
     let mut c = core();
     let fx = c.handle(ui(UiAction::SetTheme(1)), 0);

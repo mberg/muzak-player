@@ -141,6 +141,8 @@ export component SettingsScreen inherits Rectangle {
     in property <string> bluetooth-note;
     in property <string> temperature;
     in property <bool> temperature-hot;
+    in property <string> wifi;
+    in property <bool> wifi-weak;
     in property <bool> restarting;
     callback rename-device();
     callback find-speakers();
@@ -175,14 +177,23 @@ export component SettingsScreen inherits Rectangle {
                     font-size: Theme.font-title;
                     font-weight: 800;
                 }
-                // The Pi's temperature, small and out of the way; empty on a computer.
-                Text {
+                // The Pi's Wi-Fi and temperature, small and out of the way; empty on a computer.
+                VerticalLayout {
                     horizontal-stretch: 1;
-                    text: root.temperature == "" ? "" : "Temperature " + root.temperature;
-                    color: root.temperature-hot ? Theme.danger : Theme.text-dim;
-                    font-size: Theme.font-small;
-                    horizontal-alignment: right;
-                    vertical-alignment: center;
+                    alignment: center;
+                    if root.wifi != "": Text {
+                        text: root.wifi;
+                        color: root.wifi-weak ? Theme.danger : Theme.text-dim;
+                        font-size: Theme.font-small;
+                        horizontal-alignment: right;
+                        overflow: elide;
+                    }
+                    if root.temperature != "": Text {
+                        text: "Temperature " + root.temperature;
+                        color: root.temperature-hot ? Theme.danger : Theme.text-dim;
+                        font-size: Theme.font-small;
+                        horizontal-alignment: right;
+                    }
                 }
             }
             Card {

@@ -171,6 +171,8 @@ pub struct DeviceSettings {
     pub device_name: String,
     /// The CPU temperature in whole °C, on a Pi.
     pub temperature_c: Option<i32>,
+    /// The Wi-Fi connection, on a Pi.
+    pub wifi: Option<crate::app::WifiStatus>,
     /// The Bluetooth speaker in use now; None means the headphone jack.
     pub speaker: Option<crate::settings::Speaker>,
     /// Bluetooth exists on this device (the Pi, or `--fake` mode).

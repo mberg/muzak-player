@@ -78,6 +78,8 @@ export component AppWindow inherits Window {
     in property <string> bluetooth-note;
     in property <string> temperature;
     in property <bool> temperature-hot;
+    in property <string> wifi;
+    in property <bool> wifi-weak;
     in property <bool> restarting;
     in property <string> search-query;
     in property <bool> keyboard-open;
@@ -330,6 +332,8 @@ export component AppWindow inherits Window {
         bluetooth-note: root.bluetooth-note;
         temperature: root.temperature;
         temperature-hot: root.temperature-hot;
+        wifi: root.wifi;
+        wifi-weak: root.wifi-weak;
         restarting: root.restarting;
         rename-device => { root.rename-device(); }
         find-speakers => { root.find-speakers(); }
